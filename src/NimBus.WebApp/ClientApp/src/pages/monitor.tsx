@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import moment from "moment";
 import { cn } from "lib/utils";
 import { useEnv, getApplicationStatus } from "hooks/app-status";
+import { canContributeTo, useAccess } from "hooks/use-access";
 import {
   useMonitorData,
   type FleetSample,
@@ -39,10 +40,11 @@ export type EndpointState = "nogo" | "acked" | "hold" | "go";
 /**
  * Live Status Monitor — designed for a wall display, not a desktop tool.
  *
- *  - Header: environment, T+ since the first open failure, local + UTC clock
+ *  - Header: environment, T+ since the oldest open failure, local + UTC clock
  *  - KPI strip: GO ring (one segment per endpoint), failing / backlog /
  *    failed totals, and a 10-minute fleet telemetry chart
- *  - Failing band sorted by impact, with hero numbers + ACK
+ *  - Failing band sorted by impact, with hero numbers + ACK (shared across
+ *    every Monitor; Contributors on the endpoint can ACK, everyone sees it)
  *  - Backlog band for amber pending/deferred (≠ failed), next to the
  *    healthy endpoints so green endpoints don't burn pixels
  *  - Footer: legend, ticker of recent events and a refresh heartbeat
@@ -52,6 +54,7 @@ export type EndpointState = "nogo" | "acked" | "hold" | "go";
 export default function Monitor() {
   const data = useMonitorData();
   const envFromHook = useEnv();
+  const { access } = useAccess();
   const [tenantLabel, setTenantLabel] = useState<string | undefined>();
   const [now, setNow] = useState(() => new Date());
   const [showCursor, setShowCursor] = useState(true);
@@ -92,6 +95,10 @@ export default function Monitor() {
   const openSince = firstOpenFailureAt(data.endpoints);
   const env = envFromHook ?? "dev";
   const nowMs = now.getTime();
+  // Until access resolves, offer ACK and let the server decide: a transient
+  // /me failure must not strand an operator without the button.
+  const canAck = (endpointId: string) =>
+    access === null || canContributeTo(access, endpointId);
 
   return (
     <div
@@ -118,6 +125,7 @@ export default function Monitor() {
           clock={now}
           unackedFresh={summary.unackedFreshFailures}
           openSince={openSince}
+          actionError={data.actionError}
         />
         <KpiStrip
           endpoints={data.endpoints}
@@ -129,6 +137,7 @@ export default function Monitor() {
           total={data.endpoints.length}
           onAck={data.ack}
           onUnack={data.unack}
+          canAck={canAck}
           now={nowMs}
         />
         {(bands.watching.length > 0 || bands.healthy.length > 0) && (
@@ -169,9 +178,17 @@ interface HeroProps {
   clock: Date;
   unackedFresh: number;
   openSince: number | undefined;
+  actionError?: string;
 }
 
-const Hero = ({ env, tenant, clock, unackedFresh, openSince }: HeroProps) => {
+const Hero = ({
+  env,
+  tenant,
+  clock,
+  unackedFresh,
+  openSince,
+  actionError,
+}: HeroProps) => {
   const upperEnv = env.toUpperCase();
   // PROD environments get a red-tinted pill because that's the room's most
   // load-bearing question after "is anything broken?" — anything else just
@@ -201,6 +218,9 @@ const Hero = ({ env, tenant, clock, unackedFresh, openSince }: HeroProps) => {
               {` · ${unackedFresh} new failure${unackedFresh === 1 ? "" : "s"}`}
             </span>
           )}
+          {actionError && (
+            <span className={DANGER_TEXT}>{` · ACK not saved: ${actionError}`}</span>
+          )}
         </div>
       </div>
       <div className="flex-1" />
@@ -216,7 +236,7 @@ const Hero = ({ env, tenant, clock, unackedFresh, openSince }: HeroProps) => {
         {upperEnv}
       </span>
       <div className="pl-[1.6em] border-l border-border">
-        <Label>{openSince ? "T+ first failure seen" : "No open failures"}</Label>
+        <Label>{openSince ? "T+ since first failure" : "No open failures"}</Label>
         <div
           className={cn(
             "font-mono font-medium text-[2.6em] leading-none mt-[0.15em]",
@@ -561,10 +581,18 @@ interface FailingBandProps {
   total: number;
   onAck: (id: string, reason?: string) => void;
   onUnack: (id: string) => void;
+  canAck: (id: string) => boolean;
   now: number;
 }
 
-const FailingBand = ({ endpoints, total, onAck, onUnack, now }: FailingBandProps) => {
+const FailingBand = ({
+  endpoints,
+  total,
+  onAck,
+  onUnack,
+  canAck,
+  now,
+}: FailingBandProps) => {
   if (total === 0) return null;
   if (endpoints.length === 0) {
     return (
@@ -603,6 +631,7 @@ const FailingBand = ({ endpoints, total, onAck, onUnack, now }: FailingBandProps
             now={now}
             onAck={onAck}
             onUnack={onUnack}
+            canAck={canAck(e.id)}
           />
         ))}
       </div>
@@ -682,9 +711,17 @@ interface FailingCardProps {
   now: number;
   onAck: (id: string, reason?: string) => void;
   onUnack: (id: string) => void;
+  /** Contributor on the endpoint: may place or clear the shared ACK. */
+  canAck: boolean;
 }
 
-const FailingCard = ({ endpoint, now, onAck, onUnack }: FailingCardProps) => {
+const FailingCard = ({
+  endpoint,
+  now,
+  onAck,
+  onUnack,
+  canAck,
+}: FailingCardProps) => {
   const acked = Boolean(endpoint.ack);
   // A failing endpoint can also be drowning in queued work — worth knowing
   // before you ack the failure — so a deep backlog turns its queue amber.
@@ -696,18 +733,32 @@ const FailingCard = ({ endpoint, now, onAck, onUnack }: FailingCardProps) => {
   const pulse = endpoint.isFreshFailure && !acked;
   const rising = (endpoint.ratePerMin ?? 0) > 0;
 
+  const ackTitle = endpoint.ack
+    ? [
+        `Acknowledged ${moment(endpoint.ack.ackedAt).format("HH:mm")}`,
+        endpoint.ack.acknowledgedBy && `by ${endpoint.ack.acknowledgedBy}`,
+        endpoint.ack.reason && `"${endpoint.ack.reason}"`,
+        `expires ${moment(endpoint.ack.expiresAt).format("HH:mm")} or on recovery`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
+
   const sinceText = (() => {
     if (endpoint.ack) {
       const reason = endpoint.ack.reason
-        ? ` · "${truncate(endpoint.ack.reason, 24)}"`
+        ? ` · "${truncate(endpoint.ack.reason, 20)}"`
+        : "";
+      const by = endpoint.ack.acknowledgedBy
+        ? ` by ${truncate(shortName(endpoint.ack.acknowledgedBy), 14)}`
         : "";
       // Expiry rules live in the ACK button's tooltip; keep this to one line.
-      return `Acked ${formatDuration(now - endpoint.ack.ackedAt)} ago${reason}`;
+      return `Acked ${formatDuration(now - endpoint.ack.ackedAt)} ago${by}${reason}`;
     }
-    // The API has no failure start time — `firstFailureAt` is when this page
-    // first saw the endpoint failing, so say "seen" rather than "since".
+    // Counted from the oldest failure still open on the server, so it
+    // survives reloads and reads the same on every screen.
     if (endpoint.firstFailureAt) {
-      return `First seen ${formatDuration(now - endpoint.firstFailureAt)} ago`;
+      return `Failing for ${formatDuration(now - endpoint.firstFailureAt)}`;
     }
     return "—";
   })();
@@ -736,6 +787,7 @@ const FailingCard = ({ endpoint, now, onAck, onUnack }: FailingCardProps) => {
         )}
         <AckButton
           acked={acked}
+          disabled={!canAck}
           onAck={() => onAck(endpoint.id)}
           onUnack={() => onUnack(endpoint.id)}
         />
@@ -769,6 +821,7 @@ const FailingCard = ({ endpoint, now, onAck, onUnack }: FailingCardProps) => {
 
       <CardFoot
         text={sinceText}
+        title={ackTitle}
         textClass={acked ? "text-muted-foreground" : cn(DANGER_TEXT, "font-bold")}
         borderClass={acked ? "border-border" : "border-status-danger/30"}
         values={endpoint.samples.map((s) => s.failed)}
@@ -922,12 +975,15 @@ const Stat = ({
 
 const CardFoot = ({
   text,
+  title,
   textClass,
   borderClass,
   values,
   sparkClass,
 }: {
   text: string;
+  /** Untruncated detail for the hover tooltip. */
+  title?: string;
   textClass: string;
   borderClass: string;
   values: number[];
@@ -939,7 +995,9 @@ const CardFoot = ({
       borderClass,
     )}
   >
-    <span className={cn("min-w-0", textClass)}>{text}</span>
+    <span className={cn("min-w-0", textClass)} title={title}>
+      {text}
+    </span>
     <Sparkline values={values} className={sparkClass} />
   </div>
 );
@@ -966,29 +1024,45 @@ const BacklogTag = ({ level }: { level: BacklogLevel }) => (
 
 const AckButton = ({
   acked,
+  disabled,
   onAck,
   onUnack,
 }: {
   acked: boolean;
+  /** Read-only viewers still see the ACK state but cannot change it. */
+  disabled: boolean;
   onAck: () => void;
   onUnack: () => void;
 }) => (
   <button
     type="button"
+    disabled={disabled}
     onClick={(e) => {
       e.preventDefault();
-      acked ? onUnack() : onAck();
+      if (acked) onUnack();
+      else onAck();
     }}
     className={cn(
       "font-mono text-[0.7em] tracking-[0.14em] uppercase font-bold shrink-0",
       "px-[0.7em] py-[0.35em] rounded-nb-sm border",
       acked
         ? cn("bg-status-success/[0.14] border-status-success/40", SUCCESS_TEXT)
-        : "bg-transparent text-muted-foreground border-border-strong hover:text-foreground hover:border-foreground/40",
-      "transition-colors cursor-pointer",
+        : "bg-transparent text-muted-foreground border-border-strong",
+      disabled
+        ? "cursor-default"
+        : cn(
+            "transition-colors cursor-pointer",
+            !acked && "hover:text-foreground hover:border-foreground/40",
+          ),
       "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2",
     )}
-    title={acked ? "Click to clear acknowledgement" : "Acknowledge this failure (auto-expires after 4 h or on recovery)"}
+    title={
+      disabled
+        ? "Acknowledging requires Contributor on this endpoint"
+        : acked
+          ? "Click to clear the acknowledgement on every Monitor"
+          : "Acknowledge on every Monitor (auto-expires after 4 h or on recovery)"
+    }
   >
     {acked ? "✓ acked" : "ack"}
   </button>
@@ -1416,11 +1490,15 @@ function formatDate(d: Date): string {
 }
 
 /** HH:MM:SS elapsed, for the T+ clock. */
-function formatElapsed(ms: number): string {
+export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
-  return [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
+  const clock = [Math.floor((s % 86_400) / 3600), Math.floor((s % 3600) / 60), s % 60]
     .map((part) => part.toString().padStart(2, "0"))
     .join(":");
+  // The clock counts from the oldest open failure on the server, which can
+  // be days old — "64d 06:24:23" rather than "1542:24:23".
+  const days = Math.floor(s / 86_400);
+  return days > 0 ? `${days}d ${clock}` : clock;
 }
 
 /** Compact duration: "16s", "52m 52s", "2h 04m". */
@@ -1436,4 +1514,10 @@ function formatDuration(ms: number): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+/** "alice@example.com" → "alice"; display names pass through. */
+function shortName(user: string): string {
+  const at = user.indexOf("@");
+  return at > 0 ? user.slice(0, at) : user;
 }

@@ -9,18 +9,25 @@ internal sealed partial class SqlServerMessageTrackingStore
     public async Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
     {
         var sql = $@"
-SELECT Status, COUNT(*) AS Count
+SELECT Status, COUNT(*) AS Count, MIN(UpdatedAtUtc) AS OldestUpdatedAtUtc
 FROM {T("UnresolvedEvents")}
 WHERE EndpointId = @EndpointId AND Deleted = 0
   AND Status IN ('Pending','Deferred','Failed','DeadLettered','Unsupported')
 GROUP BY Status";
         await using var conn = await OpenAsync();
-        var rows = await conn.QueryAsync<(string Status, int Count)>(sql, new { EndpointId = endpointId }, commandTimeout: _context.CommandTimeout);
+        var rows = (await conn.QueryAsync<(string Status, int Count, DateTime OldestUpdatedAtUtc)>(
+            sql, new { EndpointId = endpointId }, commandTimeout: _context.CommandTimeout)).ToList();
         var dict = rows.ToDictionary(r => r.Status, r => r.Count);
+        // datetime2 reads back as DateTimeKind.Unspecified; the column is UTC.
+        var oldestFailure = rows
+            .Where(r => r.Status is "Failed" or "DeadLettered")
+            .Select(r => (DateTime?)DateTime.SpecifyKind(r.OldestUpdatedAtUtc, DateTimeKind.Utc))
+            .Min();
         return new EndpointStateCount
         {
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
+            OldestFailureAt = oldestFailure,
             PendingCount = dict.GetValueOrDefault("Pending"),
             DeferredCount = dict.GetValueOrDefault("Deferred"),
             FailedCount = dict.GetValueOrDefault("Failed"),

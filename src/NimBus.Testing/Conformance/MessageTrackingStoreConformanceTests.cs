@@ -900,6 +900,62 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task DownloadEndpointStateCount_reports_oldest_open_failure()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-oldest-failure");
+
+        // Uploads happen in real time, oldest first: providers differ on whether UpdatedAt
+        // is the caller's value or stamped on write, but both preserve upload order.
+        async Task Upload(Func<string, string, string, UnresolvedEvent, Task<bool>> upload, string name)
+        {
+            await upload(Id(name), name, endpointId, SampleEvent(endpointId, Id(name), name));
+            await Task.Delay(50);
+        }
+
+        // Only open failures count: older Pending work and removed failures are ignored.
+        await Upload(store.UploadPendingMessage, "pending");
+        await Upload(store.UploadFailedMessage, "removed");
+        await store.RemoveMessage(Id("removed"), "removed", endpointId);
+        await Upload(store.UploadFailedMessage, "oldest");
+        await Upload(store.UploadDeadletteredMessage, "dead");
+        await Upload(store.UploadFailedMessage, "newest");
+
+        var counts = await store.DownloadEndpointStateCount(endpointId);
+
+        AssertUtcNear(await StoredUpdatedAt(store, endpointId, Id("oldest")), counts.OldestFailureAt);
+
+        // Dead-lettered messages are failures too: they alone set the value.
+        var deadOnly = Id("ep-oldest-dead-only");
+        await store.UploadDeadletteredMessage(Id("dead-only"), "s1", deadOnly, SampleEvent(deadOnly, Id("dead-only"), "s1"));
+        AssertUtcNear(
+            await StoredUpdatedAt(store, deadOnly, Id("dead-only")),
+            (await store.DownloadEndpointStateCount(deadOnly)).OldestFailureAt);
+
+        var pendingOnly = Id("ep-oldest-pending-only");
+        await store.UploadPendingMessage(Id("p-only"), "s1", pendingOnly, SampleEvent(pendingOnly, Id("p-only"), "s1"));
+        Assert.IsNull((await store.DownloadEndpointStateCount(pendingOnly)).OldestFailureAt);
+        Assert.IsNull((await store.DownloadEndpointStateCount(Id("ep-oldest-empty"))).OldestFailureAt);
+    }
+
+    private static async Task<DateTime> StoredUpdatedAt(IMessageTrackingStore store, string endpointId, string eventId)
+    {
+        var page = await store.DownloadEndpointStatePaging(endpointId, 100, string.Empty);
+        return page.EnrichedUnresolvedEvents.Single(e => e.EventId == eventId).UpdatedAt;
+    }
+
+    // The uploads are >= 50 ms apart, so a 5 ms tolerance still identifies the row while
+    // absorbing provider rounding (SqlClient may bind DateTime as legacy DATETIME).
+    private static void AssertUtcNear(DateTime expected, DateTime? actual)
+    {
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(DateTimeKind.Utc, actual.Value.Kind);
+        Assert.IsTrue(
+            Math.Abs((actual.Value - DateTime.SpecifyKind(expected, DateTimeKind.Utc)).TotalMilliseconds) < 5,
+            $"Expected ~{expected:O}, got {actual.Value:O}.");
+    }
+
+    [TestMethod]
     public async Task Endpoint_counts_preserve_all_unfinished_statuses_and_exclude_terminal_history()
     {
         var store = CreateStore();

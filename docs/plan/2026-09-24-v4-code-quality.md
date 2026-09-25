@@ -266,3 +266,10 @@ dotnet test src/NimBus.sln -c Release --no-build
   `CloudEvent.SpecVersion`.
 - Build: CS0618 and CS8625 are Release errors.
 - The Resolver namespace `NimBus.Broker.Services` is now `NimBus.Resolver.Services`.
+- `INimBusMessageStore` now includes `IEndpointAcknowledgementStore` (shared Monitor
+  ACKs): custom aggregate implementations must add `GetEndpointAcknowledgements`,
+  `SetEndpointAcknowledgement` and `RemoveEndpointAcknowledgement`. SQL Server adds
+  migration `0020_EndpointAcknowledgements`; Cosmos creates the
+  `endpointacknowledgements` container on first use, so `endpointacknowledgements` is
+  now a reserved endpoint id. See
+  [the Monitor plan](2026-09-25-monitor-oldest-failure-and-shared-acks.md).

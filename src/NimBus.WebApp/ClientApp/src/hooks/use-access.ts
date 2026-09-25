@@ -42,6 +42,35 @@ const fetchAccess = (): Promise<api.CurrentUserAccessInfo | null> => {
 export const isOwnerRole = (role?: string): boolean =>
   (role ?? "").toLowerCase() === "owner";
 
+const ROLE_RANK: Record<string, number> = {
+  reader: 1,
+  contributor: 2,
+  owner: 3,
+};
+
+const roleRank = (role?: string): number =>
+  ROLE_RANK[(role ?? "").toLowerCase()] ?? 0;
+
+/**
+ * True when the user holds at least Contributor on the endpoint — the bar the
+ * server applies to operator actions (resubmit, skip, Monitor ACK). The
+ * effective role is the higher of the site role and the endpoint grant; ids
+ * compare case-insensitively like the server's ACL lookup.
+ */
+export const canContributeTo = (
+  access: api.CurrentUserAccessInfo | null,
+  endpointId: string,
+): boolean => {
+  if (!access) return false;
+  if (roleRank(access.siteRole) >= ROLE_RANK.contributor) return true;
+  const id = endpointId.toLowerCase();
+  return (access.endpointRoles ?? []).some(
+    (grant) =>
+      grant.endpointId?.toLowerCase() === id &&
+      roleRank(grant.role) >= ROLE_RANK.contributor,
+  );
+};
+
 /** The current user's resolved access, or null while loading / on error. */
 export const useAccess = (): { access: api.CurrentUserAccessInfo | null } => {
   const [access, setAccess] = useState<api.CurrentUserAccessInfo | null>(

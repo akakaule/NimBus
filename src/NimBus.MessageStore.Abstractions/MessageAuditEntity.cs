@@ -147,4 +147,10 @@ public enum MessageAuditType
 
     /// <summary>A site Owner replaced the traffic simulator's publisher and failure-mode config (recorded as Data).</summary>
     UpdateSimulationConfig,
+
+    /// <summary>Operator acknowledged an endpoint's failures on the Monitor (the reason is recorded as Data).</summary>
+    AcknowledgeEndpoint,
+
+    /// <summary>Operator cleared an endpoint's Monitor acknowledgement.</summary>
+    ClearEndpointAcknowledgement,
 }

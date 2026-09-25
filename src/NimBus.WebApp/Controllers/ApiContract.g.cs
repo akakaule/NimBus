@@ -2348,6 +2348,104 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IMonitorApiController
+    {
+
+        /// <summary>
+        /// List the Monitor acknowledgements the caller can see
+        /// </summary>
+
+        /// <remarks>
+        /// Shared across every Monitor client. Acknowledgements that have expired, or whose endpoint has recovered (no failed or dead-lettered messages) since they were placed, are removed before the list is returned. Filtered to endpoints the caller can read.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<MonitorAcknowledgement>>> GetMonitorAcknowledgementsAsync();
+
+        /// <summary>
+        /// Acknowledge an endpoint's current failures
+        /// </summary>
+
+        /// <remarks>
+        /// Silences the endpoint on every Monitor for 4 hours, or until it recovers. Replaces any existing acknowledgement. Requires Contributor on the endpoint.
+        /// </remarks>
+
+
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorAcknowledgement>> PutMonitorAcknowledgementAsync(MonitorAcknowledgementRequest body, string endpointId);
+
+        /// <summary>
+        /// Clear an endpoint's acknowledgement
+        /// </summary>
+
+        /// <remarks>
+        /// Requires Contributor on the endpoint. Succeeds when nothing is acknowledged.
+        /// </remarks>
+
+        /// <returns>Cleared</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> DeleteMonitorAcknowledgementAsync(string endpointId);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IMonitorApiController _implementation;
+
+        public MonitorApiController(IMonitorApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// List the Monitor acknowledgements the caller can see
+        /// </summary>
+        /// <remarks>
+        /// Shared across every Monitor client. Acknowledgements that have expired, or whose endpoint has recovered (no failed or dead-lettered messages) since they were placed, are removed before the list is returned. Filtered to endpoints the caller can read.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/monitor/acknowledgements")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<System.Collections.Generic.IEnumerable<MonitorAcknowledgement>>> GetMonitorAcknowledgements()
+        {
+
+            return _implementation.GetMonitorAcknowledgementsAsync();
+        }
+
+        /// <summary>
+        /// Acknowledge an endpoint's current failures
+        /// </summary>
+        /// <remarks>
+        /// Silences the endpoint on every Monitor for 4 hours, or until it recovers. Replaces any existing acknowledgement. Requires Contributor on the endpoint.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/monitor/acknowledgements/{endpointId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MonitorAcknowledgement>> PutMonitorAcknowledgement([Microsoft.AspNetCore.Mvc.FromBody] MonitorAcknowledgementRequest body, string endpointId)
+        {
+
+            return _implementation.PutMonitorAcknowledgementAsync(body, endpointId);
+        }
+
+        /// <summary>
+        /// Clear an endpoint's acknowledgement
+        /// </summary>
+        /// <remarks>
+        /// Requires Contributor on the endpoint. Succeeds when nothing is acknowledged.
+        /// </remarks>
+        /// <returns>Cleared</returns>
+        [Microsoft.AspNetCore.Mvc.HttpDelete, Microsoft.AspNetCore.Mvc.Route("api/monitor/acknowledgements/{endpointId}")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> DeleteMonitorAcknowledgement(string endpointId)
+        {
+
+            return _implementation.DeleteMonitorAcknowledgementAsync(endpointId);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public interface IAgentApiController
     {
 
@@ -5947,6 +6045,7 @@ namespace NimBus.WebApp.ManagementApi
         private string _subscriptionStatus;
         private string _storageStatus;
         private System.DateTime _eventTime;
+        private System.DateTime? _oldestFailureAt;
         private double _failedCount;
         private double _deferredCount;
         private double _pendingCount;
@@ -6004,6 +6103,23 @@ namespace NimBus.WebApp.ManagementApi
                 if (_eventTime != value)
                 {
                     _eventTime = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When the longest-standing open failure was recorded: the earliest last-updated time of a message currently Failed or DeadLettered. Null when the endpoint has no open failures or storage is unavailable.
+        /// <br/>
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("oldestFailureAt", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? OldestFailureAt    {
+            get { return _oldestFailureAt; }
+            set
+            {
+                if (_oldestFailureAt != value)
+                {
+                    _oldestFailureAt = value;
                     RaisePropertyChanged();
                 }
             }
@@ -6093,6 +6209,204 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return Newtonsoft.Json.JsonConvert.DeserializeObject<EndpointStatusCount>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// An operator's shared acknowledgement of an endpoint's failures on the Monitor.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorAcknowledgement : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _endpointId;
+        private string _acknowledgementId;
+        private string _reason;
+        private string _acknowledgedBy;
+        private System.DateTime _acknowledgedAt;
+        private System.DateTime _expiresAt;
+        private int _failedCountAtAcknowledgement;
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Identifies this acknowledgement; changes whenever the endpoint is acknowledged again.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("acknowledgementId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AcknowledgementId    {
+            get { return _acknowledgementId; }
+            set
+            {
+                if (_acknowledgementId != value)
+                {
+                    _acknowledgementId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Operator-supplied reason; empty when none was given.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("acknowledgedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string AcknowledgedBy    {
+            get { return _acknowledgedBy; }
+            set
+            {
+                if (_acknowledgedBy != value)
+                {
+                    _acknowledgedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("acknowledgedAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime AcknowledgedAt    {
+            get { return _acknowledgedAt; }
+            set
+            {
+                if (_acknowledgedAt != value)
+                {
+                    _acknowledgedAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("expiresAt", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime ExpiresAt    {
+            get { return _expiresAt; }
+            set
+            {
+                if (_expiresAt != value)
+                {
+                    _expiresAt = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Failed plus dead-lettered messages when acknowledged.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("failedCountAtAcknowledgement", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int FailedCountAtAcknowledgement    {
+            get { return _failedCountAtAcknowledgement; }
+            set
+            {
+                if (_failedCountAtAcknowledgement != value)
+                {
+                    _failedCountAtAcknowledgement = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorAcknowledgement FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorAcknowledgement>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class MonitorAcknowledgementRequest : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _reason;
+
+        /// <summary>
+        /// Optional free-text reason, at most 500 characters.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [System.ComponentModel.DataAnnotations.StringLength(500)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static MonitorAcknowledgementRequest FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<MonitorAcknowledgementRequest>(data, new Newtonsoft.Json.JsonSerializerSettings());
 
         }
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
@@ -16150,6 +16464,12 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"updateSimulationConfig")]
         UpdateSimulationConfig = 30,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"acknowledgeEndpoint")]
+        AcknowledgeEndpoint = 31,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"clearEndpointAcknowledgement")]
+        ClearEndpointAcknowledgement = 32,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -16414,6 +16734,12 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"updateSimulationConfig")]
         UpdateSimulationConfig = 30,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"acknowledgeEndpoint")]
+        AcknowledgeEndpoint = 31,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"clearEndpointAcknowledgement")]
+        ClearEndpointAcknowledgement = 32,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -16614,6 +16940,12 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"updateSimulationConfig")]
         UpdateSimulationConfig = 30,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"acknowledgeEndpoint")]
+        AcknowledgeEndpoint = 31,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"clearEndpointAcknowledgement")]
+        ClearEndpointAcknowledgement = 32,
 
     }
 

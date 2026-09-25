@@ -45,6 +45,22 @@ public sealed class StoreDecoratorTests
     }
 
     [TestMethod]
+    public async Task Decorator_forwards_endpoint_state_count_with_oldest_failure()
+    {
+        var inner = new InMemoryMessageStore();
+        var sut = NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(inner, "test");
+        var ev = new UnresolvedEvent { EventId = "event-1", SessionId = "session-1", EndpointId = "ep-1" };
+        await inner.UploadFailedMessage("event-1", "session-1", "ep-1", ev);
+        var expected = (await inner.DownloadEndpointStateCount("ep-1")).OldestFailureAt;
+
+        var counts = await sut.DownloadEndpointStateCount("ep-1");
+
+        Assert.AreEqual(1, counts.FailedCount);
+        Assert.IsNotNull(counts.OldestFailureAt);
+        Assert.AreEqual(expected, counts.OldestFailureAt);
+    }
+
+    [TestMethod]
     public async Task Decorator_records_failure_with_error_type()
     {
         var metrics = new List<Metric>();

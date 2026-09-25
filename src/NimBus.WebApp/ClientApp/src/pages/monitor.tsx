@@ -701,7 +701,8 @@ const FailingCard = ({ endpoint, now, onAck, onUnack }: FailingCardProps) => {
       const reason = endpoint.ack.reason
         ? ` · "${truncate(endpoint.ack.reason, 24)}"`
         : "";
-      return `Acked ${formatDuration(now - endpoint.ack.ackedAt)} ago${reason} · clears on recovery or after 4 h`;
+      // Expiry rules live in the ACK button's tooltip; keep this to one line.
+      return `Acked ${formatDuration(now - endpoint.ack.ackedAt)} ago${reason}`;
     }
     // The API has no failure start time — `firstFailureAt` is when this page
     // first saw the endpoint failing, so say "seen" rather than "since".

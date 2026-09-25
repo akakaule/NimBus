@@ -2,6 +2,7 @@ using NimBus.WebApp.Hubs;
 using Microsoft.Net.Http.Headers;
 using NimBus.WebApp.Middleware;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Mcp;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace NimBus.WebApp;
@@ -95,6 +96,9 @@ public partial class Startup
             app.UseSwaggerUi();
         }
 
+        // Origin and loopback checks for /mcp, ahead of authentication. No-op when MCP is off.
+        app.UseNimBusOperatorMcpGuard();
+
         if (app.ApplicationServices.GetService<IntegrationIntelligenceActivation>()?.Enabled == true)
             app.UseMiddleware<NimBus.Extensions.IntegrationIntelligence.IntegrationIntelligenceAuditMiddleware>();
 
@@ -123,6 +127,7 @@ public partial class Startup
                 Predicate = r => r.Tags.Contains("ready")
             });
             endpoints.MapHub<GridEventsHub>(Constants.AppEndpoints.GridEventHub);
+            endpoints.MapNimBusOperatorMcp();
             endpoints.MapControllers();
             var loginPath = app.ApplicationServices.GetService(
                 Type.GetType("NimBus.Extensions.Identity.INimBusIdentityMarker, NimBus.Extensions.Identity")

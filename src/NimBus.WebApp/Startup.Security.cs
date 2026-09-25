@@ -66,8 +66,8 @@ public partial class Startup
         {
             System.Console.WriteLine("WARNING: Local development authentication bypass is ENABLED. This should NEVER be used in production!");
 
-            services.AddAuthentication("LocalDev")
-                .AddScheme<AuthenticationSchemeOptions, LocalDevAuthHandler>("LocalDev", null);
+            services.AddAuthentication(LocalDevAuthHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, LocalDevAuthHandler>(LocalDevAuthHandler.SchemeName, null);
 
             services.AddControllersWithViews().AddMicrosoftIdentityUI();
         }

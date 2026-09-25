@@ -1,6 +1,6 @@
 # Rate Limiting
 
-The NimBus management WebApp applies request-rate policies to its four
+The NimBus management WebApp applies request-rate policies to its
 highest-cost surfaces. Everything else — the SignalR grid-events hub, the
 health probes, the SPA's static assets, and every other `/api/*` route — carries
 no rate-limiting metadata at all. There is no global limiter, so "not listed
@@ -8,7 +8,7 @@ here" means "not throttled".
 
 Exceeding a limit returns **HTTP 429**.
 
-## The four policies
+## The policies
 
 | Policy | Endpoint(s) | Limiter | Default | Partitioned by |
 |---|---|---|---|---|
@@ -16,6 +16,7 @@ Exceeding a limit returns **HTTP 429**.
 | `nimbus-admin` | `/api/admin/*` (21 routes) | Fixed window | 60 per 60 s | user id |
 | `nimbus-search` | `POST /api/messages/search`, `POST /api/audits/search` | Fixed window | 120 per 60 s | user id |
 | `nimbus-login` | `POST /account/login` | Fixed window | 50 per 300 s | client IP |
+| `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
 
 `GET /account/login` — the sign-in *page* — is deliberately not throttled;
 only the credential POST is.
@@ -38,6 +39,7 @@ quote:
 | `nimbus-admin` | ≤ 60 per user | ≤ 120 | 3,600/hour per user |
 | `nimbus-search` | ≤ 120 per user | ≤ 240 | 7,200/hour per user |
 | `nimbus-login` | ≤ 50 per address | ≤ 100 | 600/hour per address |
+| `nimbus-mcp` | ≤ 60 per caller and client | ≤ 120 | 3,600/hour per caller and client |
 
 **A caller pacing at or below the sustained rate is never rejected**, and
 therefore never logged. These policies are rate ceilings, not intrusion
@@ -152,6 +154,8 @@ a restart, which an App Service application-setting change triggers anyway.
 | `RateLimiting:Login:PermitLimit` | `50` |
 | `RateLimiting:Login:WindowSeconds` | `300` |
 | `RateLimiting:Login:IPv6PrefixBits` | `128` |
+| `RateLimiting:Mcp:PermitLimit` | `60` |
+| `RateLimiting:Mcp:WindowSeconds` | `60` |
 
 In App Service these are environment-variable style keys:
 `RateLimiting__Login__PermitLimit`, and so on.

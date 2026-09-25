@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.DataProtection;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Mcp;
 using NimBus.WebApp.Services.IntegrationIntelligence;
 
 namespace NimBus.WebApp;
@@ -50,5 +51,8 @@ public partial class Startup
         // adapter.
         services.AddNimBusIntegrationIntelligence(Configuration);
         AddApiControllers(services);
+        // Spec 035: opt-in operator MCP endpoint. After the authentication stack so the
+        // local-dev scheme it reuses under Aspire is already registered.
+        services.AddNimBusOperatorMcp(Configuration, Env);
     }
 }

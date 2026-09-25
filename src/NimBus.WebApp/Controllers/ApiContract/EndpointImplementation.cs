@@ -234,17 +234,7 @@ public class EndpointImplementation : IEndpointApiController
     }
 
     private bool ShowEndpoint(string endpointId)
-    {
-        if (!configuration.GetValue<string>("Environment").Equals("dev", StringComparison.OrdinalIgnoreCase) &&
-            !configuration.GetValue<string>("Environment").Equals("sbdev", StringComparison.OrdinalIgnoreCase))
-        {
-            var filterList = new List<string> { "Alice", "Bob", "Charlie" };
-
-            return !filterList.Contains(endpointId, StringComparer.OrdinalIgnoreCase);
-        }
-
-        return true;
-    }
+        => EndpointVisibility.IsListed(endpointId, configuration.GetValue<string>("Environment"));
 
 
     public async Task<ActionResult<IEnumerable<EndpointStatusCount>>> GetEndpointStatusCountAllAsync()

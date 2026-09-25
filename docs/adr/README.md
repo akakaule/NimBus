@@ -20,3 +20,4 @@ This directory contains Architecture Decision Records (ADRs) for the NimBus plat
 | [013](013-cloudevents-interoperability.md) | CloudEvents 1.0 interoperability layer | Accepted | 2026-07 |
 | [014](014-commands-single-consumer.md) | Commands are events with an enforced single consumer | Accepted | 2026-07 |
 | [015](015-customer-deployment-distribution.md) | Customer deployments: starter repo now, packaged deployables next | Accepted | 2026-08 |
+| [016](016-private-networking-mode.md) | Private networking is an opt-in, bring-your-own-network deployment mode | Accepted | 2026-09 |

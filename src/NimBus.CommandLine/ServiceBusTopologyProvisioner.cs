@@ -67,9 +67,20 @@ internal sealed class ServiceBusTopologyProvisioner
 
     private static async Task<string> ReadConnectionStringAsync(AzureCliRunner az, TopologyOptions options, CancellationToken cancellationToken)
     {
-        var names = NamingConventions.Build(options.SolutionId, options.Environment);
-
         await az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
+
+        var names = await ResolveNamesAsync(az, options, cancellationToken).ConfigureAwait(false);
+
+        // Topology goes through the Service Bus data plane, which a private deployment only
+        // exposes through its private endpoint (spec 034 §5.7).
+        await PrivateNetworkPreflight.RunIfPrivateAsync(
+            az,
+            new PrivateEndpointDnsCheck(az),
+            options.ResourceGroupName,
+            new[] { PrivateEndpointNames.ServiceBus(names.ServiceBusNamespace) },
+            options.DnsWait,
+            "provisioning the Service Bus topology",
+            cancellationToken).ConfigureAwait(false);
 
         return await az.CaptureValueAsync(
             new[]
@@ -83,5 +94,33 @@ internal sealed class ServiceBusTopologyProvisioner
             },
             cancellationToken,
             $"Failed to read the Service Bus connection string for '{names.ServiceBusNamespace}'.").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Without --service-bus-namespace-name, follows the override 'nb infra apply' recorded on
+    /// the resource group (spec 034 §5.13), so both commands address the same namespace.
+    /// </summary>
+    internal static async Task<DeploymentNames> ResolveNamesAsync(IAzureCliRunner az, TopologyOptions options, CancellationToken cancellationToken)
+    {
+        var namespaceName = options.ServiceBusNamespaceName;
+        if (string.IsNullOrWhiteSpace(namespaceName))
+        {
+            var recorded = await az.TryRunAsync(
+                new[]
+                {
+                    "group", "show",
+                    "--name", options.ResourceGroupName,
+                    "--query", $"tags.\"{NetworkIntent.ServiceBusNamespaceTag}\"",
+                    "--output", "tsv",
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (recorded.Succeeded && !string.IsNullOrWhiteSpace(recorded.StandardOutput))
+            {
+                namespaceName = recorded.StandardOutput.Trim();
+                CliOutput.WriteLine($"Using the Service Bus namespace '{namespaceName}' recorded on '{options.ResourceGroupName}'.");
+            }
+        }
+
+        return NamingConventions.Build(options.SolutionId, options.Environment, namespaceName);
     }
 }

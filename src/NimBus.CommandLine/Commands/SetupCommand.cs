@@ -48,15 +48,20 @@ internal static class SetupCommand
             var setupPlatform = setupCommand.Option("--platform <TYPE>",
                 "IPlatform type name when the assembly or package exposes more than one",
                 CommandOptionType.SingleValue);
+            var setupNetworkOptions = NetworkCommandOptions.Register(setupCommand);
 
             setupCommand.OnExecuteAsync(async cancellationToken =>
             {
                 var context = CommandContext.Create(repoRoot.Value());
                 var az = new AzureCliRunner();
-                // Parse the capacity options before the platform package download so a
-                // malformed value fails before any network work.
+                // Parse the capacity and network options before the platform package
+                // download so a malformed value fails before any network work.
                 var setupResolverMaxSessionsValue = PlanSelection.ParseResolverMaxSessionsOption(setupResolverMaxSessions.Value());
                 var setupResolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(setupResolverMaxInstances.Value());
+                var setupNetwork = setupNetworkOptions.Build();
+                var setupServiceBusCapacity = setupNetworkOptions.ServiceBusCapacity;
+                var setupDnsWait = setupNetworkOptions.DnsWait;
+                NetworkSelection.ValidateSyntax(setupNetwork);
                 var setupPlatformPackage = setupPackage.HasValue()
                     ? await PlatformPackage.ResolveAsync(PlatformHttpClient, setupPackage.Value()!, setupFeed.Value(), setupPlatform.Value(), cancellationToken).ConfigureAwait(false)
                     : null;
@@ -108,14 +113,19 @@ internal static class SetupCommand
                     secrets.IdentityAdminPassword,
                     setupManagementPlanSku.Value(),
                     ResolverMaxConcurrentSessions: setupResolverMaxSessionsValue,
-                    ResolverMaxInstances: setupResolverMaxInstancesValue);
+                    ResolverMaxInstances: setupResolverMaxInstancesValue,
+                    Network: setupNetwork,
+                    ServiceBusCapacity: setupServiceBusCapacity,
+                    ServiceBusNamespaceName: setupNetworkOptions.ServiceBusNamespaceName,
+                    DnsWait: setupDnsWait);
 
-                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value());
+                var topologyOptions = new TopologyOptions(solutionId.Value(), environment.Value(), resourceGroup.Value(), setupNetworkOptions.ServiceBusNamespaceName, setupDnsWait);
                 var appOptions = new AppDeploymentOptions(
                     solutionId.Value(),
                     environment.Value(),
                     resourceGroup.Value(),
-                    configuration.HasValue() ? configuration.Value()! : "Release");
+                    configuration.HasValue() ? configuration.Value()! : "Release",
+                    DnsWait: setupDnsWait);
 
                 await infra.ApplyAsync(infraOptions, cancellationToken).ConfigureAwait(false);
                 await topology.ApplyAsync(topologyOptions, cancellationToken).ConfigureAwait(false);

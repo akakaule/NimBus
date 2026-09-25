@@ -17,6 +17,13 @@ param administratorPassword string
 ])
 param skuName string = 'S0'
 
+// 'Disabled' only in the private network state (spec 034 §5.13).
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
 resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
   name: serverName
   location: location
@@ -24,14 +31,15 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
     administratorLogin: administratorLogin
     administratorLoginPassword: administratorPassword
     minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: publicNetworkAccess
   }
 }
 
-// Allow Azure services (App Service, Functions) to reach the server. Production
-// deployments should replace this with private endpoints; left open here for the
-// default operator experience to match the Cosmos parity.
-resource allowAzureRule 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+// Allow Azure services (App Service, Functions) to reach the server. The rule admits
+// every Azure tenant, so it exists only while public access does. An incremental
+// deployment does not delete it when it drops out of the template; the nb CLI deletes
+// it explicitly when a server switches to private.
+resource allowAzureRule 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = if (publicNetworkAccess == 'Enabled') {
   parent: sqlServer
   name: 'AllowAllWindowsAzureIps'
   properties: {
@@ -49,5 +57,6 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   }
 }
 
+output id string = sqlServer.id
 output serverFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output databaseName string = sqlDatabase.name

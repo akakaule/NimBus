@@ -110,6 +110,30 @@ before they are released.
 | `--resolver-max-sessions` | No | Resolver Service Bus session concurrency per instance (1–200). Defaults to the template value (16). Applied as a template-owned host override (`AzureFunctionsJobHost__extensions__serviceBus__maxConcurrentSessions`), so it wins over the Resolver's `host.json`. |
 | `--resolver-max-instances` | No | Resolver Function App instance ceiling. Elastic Premium: `0` (no cap, default) to `10`, applied as `functionAppScaleLimit`; passing `0` clears a cap set by an earlier deployment. Flex Consumption: `1`–`1000`, applied as `maximumInstanceCount` (default 100). |
 | `--management-plan-sku` | No | SKU for the management App Service Plan hosting the WebApp. Default for new deployments: `B1` for `dev`/`development`, `S1` otherwise. Existing deployments keep their current SKU unless this flag is passed. |
+| `--network-mode` | No | `public` or `private`. `private` puts every NimBus endpoint behind a private endpoint in your subnets and turns public network access off ([Private networking](private-networking.md)). Defaults to the mode recorded on the resource group, otherwise `public`. |
+| `--allow-public-access` | No | With private mode: the transition pass for an existing deployment. Private endpoints, DNS and VNet integration are added while public access stays on. |
+| `--skip-transition` | No | Switch an existing public deployment straight to private, accepting downtime while the apps join the VNet. |
+| `--private-endpoint-subnet-id` | Private mode | Subnet the private endpoints take their addresses from. Must not be delegated. |
+| `--resolver-subnet-id` | Private mode | Resolver VNet integration subnet: delegated to `Microsoft.App/environments` (Flex Consumption) or `Microsoft.Web/serverFarms` (Elastic Premium), in the Resolver's region. |
+| `--webapp-subnet-id` | Private mode | WebApp VNet integration subnet, delegated to `Microsoft.Web/serverFarms`, in the WebApp's region. |
+| `--private-dns` | Private mode | `create` (NimBus creates and links the privatelink zones; for VNets dedicated to NimBus), `existing` (zones in a hub resource group) or `external` (your policy or DNS servers write the records). |
+| `--private-dns-zone-scope` | With `existing` | Resource group id holding the privatelink zones. |
+| `--private-dns-link-vnet-id` | No | With `create`: VNet to link the zones to. Repeatable. Defaults to the private-endpoint subnet's VNet. |
+| `--monitor-private-link` | Private mode | `none` in this release: telemetry leaves through your firewall to the public Azure Monitor endpoints. |
+| `--service-bus-capacity` | No | Premium messaging units: `1`, `2`, `4`, `8` or `16`. Defaults to the existing namespace's capacity, otherwise 1. |
+| `--service-bus-namespace-name` | No | Override the namespace name (default `sb-{solution-id}-{environment}`), e.g. a new Premium namespace next to the Standard one it replaces. Recorded, so `nb topology apply` follows it. |
+| `--dns-wait` | No | Minutes to wait for this machine to resolve the private endpoints before locking at the end of a transition (default 10; `0` checks once). |
+
+**Private networking.** Private mode deploys Service Bus Premium and creates every data
+service and both apps with public network access disabled. `nb` checks the subnets'
+delegation and region before deploying, refuses private mode on an existing Standard
+namespace, and refuses a direct public → private switch of an existing deployment
+without `--skip-transition`. Before deploying, it records the full network setup as tags on
+the resource group, so a rerun without network options reproduces it. `--network-mode public`
+on a deployment with a record reopens public access, then removes the apps' VNet
+integration and deletes the private endpoints and DNS resources tagged
+`nimbus-deployment={solution-id}-{environment}`. Details and the migration runbook:
+[Private networking](private-networking.md).
 
 Deployment secrets are intentionally not accepted as command-line options because process arguments can be inspected by other tools. Set the required environment variable before invoking `nb`:
 
@@ -165,6 +189,12 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 | `--platform-feed` | No | Feed serving that package |
 | `-a`, `--assembly` | No | Local assembly exposing a public parameterless `IPlatform` — the same thing from a build output instead of a feed |
 | `--platform` | No | `IPlatform` type name when the assembly or package exposes more than one |
+| `--service-bus-namespace-name` | No | Namespace name override. Defaults to the name `nb infra apply` recorded on the resource group, otherwise `sb-{solution-id}-{environment}`. |
+| `--dns-wait` | No | Private deployments: minutes to wait for this machine to resolve the Service Bus private endpoint (default 10; `0` checks once). |
+
+On a private deployment the command first checks that this machine resolves the Service Bus
+private endpoint, and stops with the failing host names if it does not
+([Pre-flight check](private-networking.md#pre-flight-check)).
 
 The topology is generated from a compiled `PlatformConfiguration`. In a pipeline, resolve
 it from the feed you already publish your contracts to — no clone and no build of your
@@ -219,6 +249,7 @@ nb deploy apps --solution-id nimbus --environment dev --resource-group rg-nimbus
 | `--repo-root` | No | Repository root for a source build. Implies `--from-source`. |
 | `--configuration` | No | Build configuration (default: `Release`). Source builds only. |
 | `--only` | No | Deploy a single application: `resolver` \| `webapp`. Defaults to both. |
+| `--dns-wait` | No | Private deployments: minutes to wait for this machine to resolve the apps' private endpoints before deploying (default 10; `0` checks once). The deployment goes through each app's Kudu/scm site, which private mode exposes only through its private endpoint. |
 
 **Deploying your own catalog.** The management UI renders Endpoints, Event Types and PII
 masking from an `IPlatform`, and the released WebApp artifact carries only NimBus's
@@ -264,7 +295,7 @@ Run infrastructure, topology, and app deployment in sequence.
 nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, `--assembly`, and `--from-source`. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
+Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
 
 Like the individual commands, this needs no repository clone. Deploying your own event
 catalog means passing `--assembly` so the topology step provisions your endpoints rather

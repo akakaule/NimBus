@@ -7,26 +7,59 @@ param location string = resourceGroup().location
 param createDeploymentContainer bool = false
 param deploymentContainerName string = 'app-package-resolver'
 
-resource storageaccount 'Microsoft.Storage/storageAccounts@2021-09-01' = {
+// 'Disabled' only in the private network state (spec 034 §5.13). In the public and
+// private-transition states the firewall default stays Allow: Deny alone would cut
+// off every client that does not yet have a private path.
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
+// Elastic Premium keeps its code on an Azure Files content share. Once the account is
+// private the platform can no longer create that share, so the template declares it.
+param contentShareName string = ''
+
+var isLocked = publicNetworkAccess == 'Disabled'
+
+resource storageaccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
   kind: 'StorageV2'
   sku: {
     name: 'Standard_LRS'
   }
-  properties: {
+  properties: union({
     supportsHttpsTrafficOnly: true
-  }
+    publicNetworkAccess: publicNetworkAccess
+    networkAcls: {
+      defaultAction: isLocked ? 'Deny' : 'Allow'
+      bypass: isLocked ? 'None' : 'AzureServices'
+    }
+  }, isLocked ? {
+    allowBlobPublicAccess: false
+    minimumTlsVersion: 'TLS1_2'
+  } : {})
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2021-09-01' = if (createDeploymentContainer) {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = if (createDeploymentContainer) {
   parent: storageaccount
   name: 'default'
 }
 
-resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2021-09-01' = if (createDeploymentContainer) {
+resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (createDeploymentContainer) {
   parent: blobService
   name: deploymentContainerName
+}
+
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01' = if (!empty(contentShareName)) {
+  parent: storageaccount
+  name: 'default'
+}
+
+resource contentShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = if (!empty(contentShareName)) {
+  parent: fileService
+  name: contentShareName
 }
 
 @secure()

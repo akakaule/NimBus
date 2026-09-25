@@ -92,7 +92,8 @@ public partial class EventImplementation
         try
         {
             var unresolvedEvent = await messageStore.GetEvent(endpoint, id);
-            if (unresolvedEvent == null) return new BadRequestResult();
+            if (unresolvedEvent is null)
+                return new NotFoundObjectResult("Event not found");
             var result = Mapper.EventFromMessageStoreEvent(unresolvedEvent);
 
             // The Payload shown on the detail page must be the inbound *event

@@ -46,6 +46,18 @@ public sealed class EventImplementationMissingEventTests
     }
 
     [TestMethod]
+    public async Task Unknown_event_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.GetEventIdAsync("missing", "Crm");
+
+        var notFound = result.Result as NotFoundObjectResult;
+        Assert.IsNotNull(notFound);
+        Assert.AreEqual("Event not found", notFound.Value);
+    }
+
+    [TestMethod]
     public async Task Resubmit_of_unknown_message_is_not_found()
     {
         var sut = Create();

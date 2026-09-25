@@ -407,8 +407,9 @@ Link), two WebApp constraints apply:
 - These portal tools stop working from outside the network and need an in-network browser: Cosmos
   Data Explorer, Service Bus Explorer, Log Analytics queries (with query public access off), and
   Functions "Code + Test".
-- Every other WebApp client must be in-network too: the REST agent SDK (`NimBus.Agents`), the MCP
-  server (`NimBus.Mcp`) and the Resolver's optional storage-hook notifier.
+- Every other WebApp client must be in-network too: the REST agent SDK (`NimBus.Agents`), MCP
+  clients of the operator endpoint (`/mcp`, Spec 035) and the Resolver's optional storage-hook
+  notifier.
 
 ### 5.9 Customer adapters
 

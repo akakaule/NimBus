@@ -369,4 +369,5 @@ preview refreshes. No per-row action on the endpoint page in v1 (Admin is the si
 3. `maxRows` default 500 / cap 2000 for the synchronous preview; raise or add paging if a backlog larger
    than that must be previewed at once.
 4. Whether to expose the preview through the MCP server (`NimBus.Mcp` today exposes agent tools only,
-   no admin actions); the plan does not.
+   no admin actions); the plan does not. (Later: Spec 035 replaced `NimBus.Mcp` with the operator
+   endpoint `/mcp`, which excludes administrative actions.)

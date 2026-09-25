@@ -46,4 +46,29 @@ public sealed class SqlServerMessageTrackingStoreTests : MessageTrackingStoreCon
         var inspected = await store.GetEvent("endpoint", "precision-event");
         Assert.IsTrue(await store.TrySkipDeferredMessage("precision-event", "session", "endpoint", "deferral", inspected.UpdatedAt));
     }
+
+    [TestMethod]
+    public async Task Status_writes_stamp_UpdatedAt_with_datetime2_precision()
+    {
+        // A DateTime parameter without DbType.DateTime2 is sent as legacy datetime, which
+        // rounds to 1/300 s, so every stored stamp lands on that grid (sub-millisecond ticks of
+        // 0, 3333 or 6667). Writes less than ~3 ms apart then tie on UpdatedAtUtc and "latest
+        // row" queries such as GetEvent pick arbitrarily. A datetime2 stamp lands on the grid
+        // with ~5e-4 probability per row, so across several rows at least one must be off it.
+        var store = CreateStore();
+        var offGrid = 0;
+        for (var i = 0; i < 5; i++)
+        {
+            var eventId = $"stamp-precision-{i}";
+            await store.UploadPendingMessage(eventId, "session", "endpoint", new UnresolvedEvent
+            {
+                EventId = eventId, SessionId = "session", EndpointId = "endpoint", EnqueuedTimeUtc = DateTime.UtcNow,
+            });
+            var stored = await store.GetEvent("endpoint", eventId);
+            var subMillisecond = stored.UpdatedAt.Ticks % TimeSpan.TicksPerMillisecond;
+            if (subMillisecond is not (0 or 3333 or 3334 or 6666 or 6667)) offGrid++;
+        }
+
+        Assert.AreNotEqual(0, offGrid, "UpdatedAtUtc was rounded to SQL datetime precision.");
+    }
 }

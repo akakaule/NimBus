@@ -22,4 +22,7 @@ public static class RateLimitPolicyNames
 
     /// <summary>Fixed-window limiter guarding provider-backed intelligence requests.</summary>
     public const string Intelligence = "nimbus-intelligence";
+
+    /// <summary>Fixed-window limiter guarding the operator MCP endpoint, per tenant, client and user.</summary>
+    public const string Mcp = "nimbus-mcp";
 }

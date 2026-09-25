@@ -15,6 +15,9 @@ namespace NimBus.WebApp;
 /// </summary>
 public class LocalDevAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
+    /// <summary>The authentication scheme name this handler is registered under.</summary>
+    public const string SchemeName = "LocalDev";
+
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<LocalDevAuthHandler> _authLogger;

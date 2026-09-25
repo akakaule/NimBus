@@ -80,6 +80,12 @@ public static class RateLimitingServiceCollectionExtensions
             limiter.AddPolicy(RateLimitPolicyNames.Intelligence, context =>
                 FixedWindow(UserPartitionKey(context, options), options.Intelligence));
 
+            // Tenant and client application are part of the key, so one agent client
+            // cannot exhaust the same operator's budget in another client. Attached to
+            // /mcp by MapNimBusOperatorMcp, not by the MVC convention.
+            limiter.AddPolicy(RateLimitPolicyNames.Mcp, context =>
+                FixedWindow(McpPartitionKey(context, options), options.Mcp));
+
             // GlobalLimiter stays null on purpose: everything not explicitly
             // listed above — the SignalR hub, health probes, static files, the
             // SPA fallback, every other /api route — carries no rate-limiting
@@ -103,6 +109,15 @@ public static class RateLimitingServiceCollectionExtensions
         => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
            ?? context.User.Identity?.Name
            ?? "ip:" + ClientIpPartitionKey.Resolve(context, options);
+
+    // MCP tokens keep raw claim names (MapInboundClaims = false).
+    private static string McpPartitionKey(HttpContext context, RateLimitOptions options)
+    {
+        var user = context.User;
+        var caller = user.FindFirstValue("oid") ?? user.FindFirstValue("sub") ?? UserPartitionKey(context, options);
+        var client = user.FindFirstValue("azp") ?? user.FindFirstValue("appid");
+        return $"mcp:{user.FindFirstValue("tid")}:{client}:{caller}";
+    }
 
     private static ValueTask OnRejectedAsync(OnRejectedContext context, CancellationToken cancellationToken)
     {

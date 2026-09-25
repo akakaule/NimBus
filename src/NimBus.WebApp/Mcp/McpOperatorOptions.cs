@@ -16,6 +16,13 @@ public sealed class McpOperatorOptions
     public bool Enabled { get; set; }
 
     /// <summary>
+    /// Maps the MCP endpoint only when the local-dev bypass is active (Development and
+    /// <c>EnableLocalDevAuthentication=true</c>); otherwise leaves it off without failing
+    /// startup. The Aspire AppHost sets this, since only the WebApp knows whether the bypass is on.
+    /// </summary>
+    public bool EnableForLocalDevelopment { get; set; }
+
+    /// <summary>
     /// Browser origins allowed to call the endpoint. A request carrying any other
     /// <c>Origin</c> header is refused; requests without one (non-browser clients) are unaffected.
     /// In local development, localhost origins are also allowed.

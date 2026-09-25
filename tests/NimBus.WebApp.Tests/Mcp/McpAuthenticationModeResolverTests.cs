@@ -70,6 +70,41 @@ public class McpAuthenticationModeResolverTests
         StringAssert.Contains(ex.Message, "NimBus:Mcp:Entra:ClientId");
     }
 
+    [TestMethod]
+    public void Enable_for_local_development_turns_mcp_on_when_the_bypass_is_active()
+    {
+        var options = new McpOperatorOptions { EnableForLocalDevelopment = true };
+
+        var mode = McpAuthenticationModeResolver.Resolve(options, isDevelopment: true, localDevAuthenticationEnabled: true);
+
+        Assert.AreEqual(McpAuthenticationMode.LocalDevelopment, mode);
+    }
+
+    [TestMethod]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(false, false)]
+    public void Enable_for_local_development_leaves_mcp_off_without_the_bypass(bool isDevelopment, bool localDevAuthenticationEnabled)
+    {
+        var options = new McpOperatorOptions { EnableForLocalDevelopment = true };
+
+        var mode = McpAuthenticationModeResolver.Resolve(options, isDevelopment, localDevAuthenticationEnabled);
+
+        Assert.AreEqual(McpAuthenticationMode.Disabled, mode);
+    }
+
+    [TestMethod]
+    public void Enable_for_local_development_does_not_enable_entra()
+    {
+        var options = EntraOptions();
+        options.Enabled = false;
+        options.EnableForLocalDevelopment = true;
+
+        var mode = McpAuthenticationModeResolver.Resolve(options, isDevelopment: false, localDevAuthenticationEnabled: false);
+
+        Assert.AreEqual(McpAuthenticationMode.Disabled, mode);
+    }
+
     private static McpOperatorOptions EntraOptions()
     {
         var options = new McpOperatorOptions { Enabled = true };

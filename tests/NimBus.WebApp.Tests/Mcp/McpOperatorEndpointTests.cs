@@ -28,6 +28,27 @@ public class McpOperatorEndpointTests
     }
 
     [TestMethod]
+    public async Task Aspire_setting_serves_the_endpoint_when_the_local_dev_bypass_is_on()
+    {
+        await using var host = await McpTestHost.StartAspireAsync(localDevBypass: true);
+        await using var client = await host.CreateClientAsync();
+
+        var tools = await client.ListToolsAsync();
+
+        CollectionAssert.AreEquivalent(OperatorTools, tools.Select(t => t.Name).ToArray());
+    }
+
+    [TestMethod]
+    public async Task Aspire_setting_leaves_the_endpoint_unmapped_without_the_local_dev_bypass()
+    {
+        await using var host = await McpTestHost.StartAspireAsync(localDevBypass: false);
+
+        using var response = await host.PostToolsListAsync();
+
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Local_development_lists_exactly_the_operator_tools_without_sign_in()
     {
         await using var host = await McpTestHost.StartLocalDevelopmentAsync();

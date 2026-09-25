@@ -33,12 +33,14 @@ Configuration section `NimBus:Mcp`:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `Enabled` | `false` | Maps `/mcp`. Off means no route (404). |
+| `EnableForLocalDevelopment` | `false` | Maps `/mcp` only when the local-dev bypass is on; otherwise a no-op. The Aspire AppHost sets it. |
 | `AzureAd:Instance`, `TenantId`, `ClientId`, `Audience` | none | The MCP resource's own app registration (Entra mode). |
 | `AllowedOrigins` | empty | Browser origins allowed to call `/mcp`; other `Origin` values get 403. |
 
 Mode resolution (`McpAuthenticationMode`), evaluated once at startup:
 
-1. `Enabled=false` → **Disabled**: nothing registered or mapped.
+1. Neither `Enabled` nor `EnableForLocalDevelopment` → **Disabled**: nothing registered or mapped.
+   `EnableForLocalDevelopment` alone enables only step 2 and is otherwise **Disabled**.
 2. Development and `EnableLocalDevAuthentication=true` → **LocalDevelopment**: `/mcp` authorizes
    with the existing `LocalDev` scheme; non-loopback callers get 403.
 3. `AzureAd:ClientId` and `TenantId` set → **Entra**: named JWT scheme `NimBusMcp` via

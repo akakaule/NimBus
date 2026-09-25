@@ -80,6 +80,24 @@ public sealed class SqlServerSchemaInitializerTests
     }
 
     [TestMethod]
+    public async Task AutoApply_adds_nullable_handoff_columns_to_messages_and_unresolved_events()
+    {
+        var schema = NewSchemaName();
+        var initializer = CreateInitializer(schema, SchemaProvisioningMode.AutoApply);
+
+        await initializer.StartAsync(CancellationToken.None);
+
+        foreach (var table in new[] { "Messages", "UnresolvedEvents" })
+        {
+            foreach (var column in new[] { "PendingSubStatus", "HandoffReason", "ExternalJobId", "ExpectedBy" })
+            {
+                Assert.IsTrue(await NullableColumnExists(schema, table, column),
+                    $"[{schema}].[{table}].[{column}] should exist and remain nullable for non-handoff rows.");
+            }
+        }
+    }
+
+    [TestMethod]
     public async Task AutoApply_recreates_the_platform_heartbeat_objects_dropped_by_0010()
     {
         var schema = NewSchemaName();

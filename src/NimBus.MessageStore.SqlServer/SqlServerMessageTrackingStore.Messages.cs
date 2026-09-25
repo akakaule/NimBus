@@ -16,12 +16,14 @@ INSERT INTO {T("Messages")} (
     OriginatingMessageId, ParentMessageId, FromAddress, ToAddress, OriginatingFrom, OriginalSessionId,
     MessageType, EndpointRole, EnqueuedTimeUtc, RetryCount, RetryLimit, DeferralSequence,
     QueueTimeMs, ProcessingTimeMs, CloudEventId, CloudEventSource, CloudEventType, CloudEventSubject,
+    PendingSubStatus, HandoffReason, ExternalJobId, ExpectedBy,
     DeadLetterReason, DeadLetterErrorDescription, MessageContentJson)
 VALUES (
     @EventId, @MessageId, @EndpointId, @SessionId, @CorrelationId, @EventTypeId,
     @OriginatingMessageId, @ParentMessageId, @FromAddress, @ToAddress, @OriginatingFrom, @OriginalSessionId,
     @MessageType, @EndpointRole, @EnqueuedTimeUtc, @RetryCount, @RetryLimit, @DeferralSequence,
     @QueueTimeMs, @ProcessingTimeMs, @CloudEventId, @CloudEventSource, @CloudEventType, @CloudEventSubject,
+    @PendingSubStatus, @HandoffReason, @ExternalJobId, @ExpectedBy,
     @DeadLetterReason, @DeadLetterErrorDescription, @MessageContentJson);";
 
         await using var conn = await OpenAsync();
@@ -51,6 +53,10 @@ VALUES (
             message.CloudEventSource,
             message.CloudEventType,
             message.CloudEventSubject,
+            message.PendingSubStatus,
+            message.HandoffReason,
+            message.ExternalJobId,
+            message.ExpectedBy,
             message.DeadLetterReason,
             message.DeadLetterErrorDescription,
             MessageContentJson = JsonConvert.SerializeObject(message.MessageContent),
@@ -172,6 +178,10 @@ VALUES (
             CloudEventSource = TryReadString(row, "CloudEventSource"),
             CloudEventType = TryReadString(row, "CloudEventType"),
             CloudEventSubject = TryReadString(row, "CloudEventSubject"),
+            PendingSubStatus = TryReadString(row, "PendingSubStatus"),
+            HandoffReason = TryReadString(row, "HandoffReason"),
+            ExternalJobId = TryReadString(row, "ExternalJobId"),
+            ExpectedBy = TryReadDateTime(row, "ExpectedBy"),
             DeadLetterReason = row.DeadLetterReason,
             DeadLetterErrorDescription = row.DeadLetterErrorDescription,
             MessageContent = JsonConvert.DeserializeObject<MessageContent>((string)row.MessageContentJson) ?? new MessageContent(),

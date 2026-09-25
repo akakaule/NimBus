@@ -1,6 +1,59 @@
 # Failed messages page (WebApp)
 
-Status: proposed (2026-09-25), not started.
+Status: implemented (2026-09-25) on branch `claude/failed-messages-interface-e171f0`.
+
+## Implementation notes
+
+What shipped differs from the plan below in these places:
+
+- **By error is server-side and expandable.** At the user's request, "By error" matches the
+  Insights page. It uses a new `POST /api/failed/error-groups`, which groups every matching
+  failure (up to 5,000, `truncated` beyond that) by category, then by normalized pattern
+  (`ErrorPatternNormalizer`). Each pattern carries its failures. The view expands category →
+  pattern → failures, 20 at a time, with Resubmit/Skip at each level. This replaces the
+  "loaded rows only" grouping in Decision 9.
+- **Grouping text.** Failures are grouped and shown by the handler's `ErrorContent.ErrorText`.
+  When that is empty, they fall back to the dead-letter description or reason, then to
+  `Reason`. Unsupported events with no text group as "Unsupported: no handler for this event
+  type". The `ErrorText` filter still matches `ErrorContent.ErrorText` only.
+- **Cosmos paging is a stream merge, not a keyset cursor** (Decision 4). Cosmos stores
+  `UpdatedAt` as ISO strings with trailing fractional zeros trimmed, so its `ORDER BY` and
+  `<=` compare them lexically. That order is not chronological within a second, so a keyset
+  predicate could drop rows. Each container is instead resumed from its own Cosmos
+  continuation token, plus the number of rows of that page already handed out
+  (`FailedEventPageCursor`). A k-way merge of those streams never skips or repeats a row.
+- **Controller.** A new `Failed` tag and `FailedImplementation` instead of an
+  `EventImplementation` partial. The histogram is `POST` with the shared filter body.
+  Resubmit-count and report enrichment moved to `Services/EventRowEnrichment`.
+- **Backlog badge.** The status-count API's `failedCount` already includes DeadLettered
+  (`Mapper.EndpointStatusCountFromEndpointStateCount`), so the backlog is
+  `failedCount + unsupportedCount`.
+- **UI.**
+  - The default range is `7d`. When the page is unfiltered, it says how many failures fall
+    outside the range.
+  - The list folds the last error under the event type.
+  - The list has the Columns chooser, with Added hidden by default.
+  - `DataTable` honours numeric column widths only.
+- **In-memory `GetEventsByFilter`** now also honours event types, the UpdatedAt range and
+  To/From, through the shared predicate. It previously ignored them.
+
+Verification:
+- `dotnet build -c Release`: 0 errors.
+- `dotnet test -c Release`, with the live SQL Server container and Cosmos emulator: every
+  project passed, including SQL Server 162, Cosmos DB 307, in-memory 275 and WebApp 610.
+  The one exception was `ProcessRunnerTests.RunAsync_CancellationPreservesOperationCanceledWhenTerminationFails`
+  in `NimBus.CommandLine.Tests`, a timing test on code this change does not touch. It
+  passed 3 times out of 3 when run on its own.
+- Vitest: 446 passed. `eslint` is clean for the new files. The only 2 lint errors are in
+  `endpoint-details.test.tsx`, which this change does not touch.
+- Manual check with 150 seeded failures on SQL Server:
+  - the chart totals match the tiles
+  - clicking a bar lists exactly that bucket (37 rows, matching its tooltip)
+  - By error expands category → pattern → failures
+  - the backlog badge matches
+
+
+Guide: [Failed messages page](../webapp-failed-messages.md).
 
 Mockup: [Failed Messages Mockup](https://claude.ai/artifact/Hzao9DvhYDUTjmBg359kHo). It has
 one interactive board with a time-range switch, a stacked failure histogram, filters shaped

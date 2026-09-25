@@ -65,12 +65,12 @@ internal sealed class McpTestHost : IAsyncDisposable
     public static Task<McpTestHost> StartDisabledAsync()
         => StartAsync("Production", new Dictionary<string, string?> { ["NimBus:Mcp:Enabled"] = "false" });
 
-    public static Task<McpTestHost> StartLocalDevelopmentAsync()
+    public static Task<McpTestHost> StartLocalDevelopmentAsync(Action<IServiceCollection>? configureServices = null)
         => StartAsync("Development", new Dictionary<string, string?>
         {
             ["NimBus:Mcp:Enabled"] = "true",
             ["EnableLocalDevAuthentication"] = "true",
-        });
+        }, configureServices);
 
     public static Task<McpTestHost> StartEntraAsync()
         => StartAsync("Production", new Dictionary<string, string?>
@@ -89,7 +89,7 @@ internal sealed class McpTestHost : IAsyncDisposable
             ["EnableLocalDevAuthentication"] = localDevBypass ? "true" : "false",
         });
 
-    private static async Task<McpTestHost> StartAsync(string environment, Dictionary<string, string?> settings)
+    private static async Task<McpTestHost> StartAsync(string environment, Dictionary<string, string?> settings, Action<IServiceCollection>? configureServices = null)
     {
         settings["Environment"] = "test";
 
@@ -106,6 +106,12 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IPlatform>(new TestCatalog());
                     services.AddScoped<IEndpointAuthorizationService, StubAuthorization>();
+
+                    // The REST implementations the read tools delegate to. Unconfigured
+                    // fakes by default; tests replace them through configureServices.
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IEndpointApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IEventApiController>.Create().Instance);
+                    services.AddSingleton(InterfaceFake<NimBus.WebApp.ManagementApi.IMonitorApiController>.Create().Instance);
 
                     // Mirrors the local-dev branch of Startup.AddAuthenticationStack.
                     var authentication = services.AddAuthentication();
@@ -126,6 +132,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                             new OpenIdConnectConfiguration { Issuer = Issuer });
                         options.TokenValidationParameters.IssuerSigningKey = SigningKey;
                     });
+
+                    configureServices?.Invoke(services);
                 });
                 web.Configure(app =>
                 {

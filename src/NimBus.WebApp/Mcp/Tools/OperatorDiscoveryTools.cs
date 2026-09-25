@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using NimBus.Core;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Services;
 
@@ -18,7 +19,7 @@ public sealed class OperatorDiscoveryTools
 {
     private readonly IPlatform _platform;
     private readonly IEndpointAuthorizationService _authorization;
-    private readonly IConfiguration _configuration;
+    private readonly OperatorEndpointCatalog _catalog;
     private readonly McpOperatorRuntime _runtime;
     private readonly RateLimitOptions _rateLimits;
     private readonly bool _classificationEnabled;
@@ -27,14 +28,14 @@ public sealed class OperatorDiscoveryTools
     public OperatorDiscoveryTools(
         IPlatform platform,
         IEndpointAuthorizationService authorization,
-        IConfiguration configuration,
+        OperatorEndpointCatalog catalog,
         McpOperatorRuntime runtime,
         IOptions<RateLimitOptions> rateLimits,
         IEnumerable<IntegrationIntelligenceActivation> intelligence)
     {
         _platform = platform;
         _authorization = authorization;
-        _configuration = configuration;
+        _catalog = catalog;
         _runtime = runtime;
         _rateLimits = rateLimits.Value;
         _classificationEnabled = intelligence.Any(activation => activation.Enabled);
@@ -51,11 +52,11 @@ public sealed class OperatorDiscoveryTools
             : null;
 
         return new CapabilitiesResult(
-            Environment,
+            _catalog.Environment,
             DateTimeOffset.UtcNow,
             new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), access.IsPiiReader),
             _runtime.Mode.ToString(),
-            await ReadableEndpointIdsAsync().ConfigureAwait(false),
+            await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false),
             [],
             limits,
             new FeatureInfo(_classificationEnabled));
@@ -66,7 +67,7 @@ public sealed class OperatorDiscoveryTools
     [Description("Lists the NimBus endpoints you can read, with their description and the event type ids each endpoint produces and consumes. Endpoint ids are the identifiers other NimBus tools take.")]
     public async Task<EndpointListResult> ListEndpointsAsync()
     {
-        var readable = (await ReadableEndpointIdsAsync().ConfigureAwait(false)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var readable = (await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var endpoints = _platform.Endpoints
             .Where(endpoint => readable.Contains(endpoint.Id))
@@ -79,24 +80,7 @@ public sealed class OperatorDiscoveryTools
                 endpoint.EventTypesConsumed.Select(eventType => eventType.Id).Order(StringComparer.Ordinal).ToList()))
             .ToList();
 
-        return new EndpointListResult(Environment, DateTimeOffset.UtcNow, endpoints);
-    }
-
-    private string? Environment => _configuration.GetValue<string>("Environment");
-
-    private async Task<IReadOnlyList<string>> ReadableEndpointIdsAsync()
-    {
-        var readable = new List<string>();
-        foreach (var endpoint in _platform.Endpoints)
-        {
-            if (EndpointVisibility.IsListed(endpoint.Id, Environment)
-                && await _authorization.HasRoleAsync(AccessRole.Reader, endpoint.Id).ConfigureAwait(false))
-            {
-                readable.Add(endpoint.Id);
-            }
-        }
-
-        return readable;
+        return new EndpointListResult(_catalog.Environment, DateTimeOffset.UtcNow, endpoints);
     }
 }
 

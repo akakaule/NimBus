@@ -120,8 +120,10 @@ public partial class EventImplementation
         eventTypeId = errorResponse.EventTypeId;
         if (string.IsNullOrEmpty(eventTypeId))
         {
-            MessageEntity origMessage = await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId);
-            eventTypeId = origMessage.EventTypeId;
+            // The originating request can be gone; skip routes on To and does not
+            // need the event type, so proceed without it rather than failing.
+            MessageEntity? origMessage = await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId);
+            eventTypeId = origMessage?.EventTypeId!;
         }
 
         if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))

@@ -21,7 +21,7 @@ public static class NimBusServiceCollectionExtensions
     /// });
     /// </code>
     /// </example>
-    public static IServiceCollection AddNimBus(this IServiceCollection services, Action<INimBusBuilder> configure = null)
+    public static IServiceCollection AddNimBus(this IServiceCollection services, Action<INimBusBuilder>? configure = null)
     {
         var builder = new NimBusBuilder(services);
         configure?.Invoke(builder);

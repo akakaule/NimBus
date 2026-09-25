@@ -152,7 +152,7 @@ public class RetryPolicyProviderTests
         provider.AddExceptionRule("timeout", exceptionPolicy);
         provider.SetDefaultPolicy(defaultPolicy);
 
-        var result = provider.GetRetryPolicy("OrderPlaced", null);
+        var result = provider.GetRetryPolicy("OrderPlaced", null!);
         Assert.AreSame(defaultPolicy, result);
     }
 
@@ -175,20 +175,20 @@ public class RetryPolicyProviderTests
     public void AddEventTypePolicy_NullPolicy_Throws()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new DefaultRetryPolicyProvider().AddEventTypePolicy("OrderPlaced", null));
+            new DefaultRetryPolicyProvider().AddEventTypePolicy("OrderPlaced", null!));
     }
 
     [TestMethod]
     public void AddExceptionRule_NullContains_Throws()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new DefaultRetryPolicyProvider().AddExceptionRule(null, MakePolicy()));
+            new DefaultRetryPolicyProvider().AddExceptionRule(null!, MakePolicy()));
     }
 
     [TestMethod]
     public void AddExceptionRule_NullPolicy_Throws()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new DefaultRetryPolicyProvider().AddExceptionRule("timeout", null));
+            new DefaultRetryPolicyProvider().AddExceptionRule("timeout", null!));
     }
 }

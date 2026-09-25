@@ -353,9 +353,9 @@ public class PublisherClientFailureModeTests
         public Task Publish(IEvent @event) => throw new NotSupportedException();
         public Task Publish(IMessage message, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task Publish(IEvent @event, string sessionId, string correlationId) => throw new NotSupportedException();
-        public Task Publish(IEvent @event, string sessionId, string correlationId, string messageId) => throw new NotSupportedException();
+        public Task Publish(IEvent @event, string sessionId, string correlationId, string? messageId) => throw new NotSupportedException();
 
-        public Task PublishBatch(IEnumerable<IEvent> events, string correlationId = null!)
+        public Task PublishBatch(IEnumerable<IEvent> events, string? correlationId = null)
         {
             PublishedBatchSizes.Add(events.Count());
             CorrelationIds.Add(correlationId);

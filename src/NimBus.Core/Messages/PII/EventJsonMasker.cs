@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -150,7 +151,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
     }
 
-    public bool TryCollectSensitiveValues(string eventTypeId, string eventJson, out IReadOnlyCollection<string> values)
+    public bool TryCollectSensitiveValues(string eventTypeId, string eventJson, [NotNullWhen(true)] out IReadOnlyCollection<string>? values)
     {
         if (string.IsNullOrEmpty(eventJson))
         {
@@ -182,7 +183,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         return true;
     }
 
-    private void CollectSensitiveValues(JObject obj, Type clrType, SensitiveAttribute inheritedSensitive, List<string> collected)
+    private void CollectSensitiveValues(JObject obj, Type clrType, SensitiveAttribute? inheritedSensitive, List<string> collected)
     {
         if (obj == null || clrType == null) return;
 
@@ -265,7 +266,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
     }
 
-    private bool ScanForRedactToken(JObject obj, Type clrType, SensitiveAttribute inheritedSensitive)
+    private bool ScanForRedactToken(JObject obj, Type clrType, SensitiveAttribute? inheritedSensitive)
     {
         if (obj == null || clrType == null) return false;
         var classAttr = inheritedSensitive ?? clrType.GetCustomAttribute<SensitiveAttribute>(inherit: true);
@@ -396,7 +397,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
     }
 
-    private void MaskObject(JObject obj, Type clrType, SensitiveAttribute inheritedSensitive, ref bool maskedAny)
+    private void MaskObject(JObject obj, Type clrType, SensitiveAttribute? inheritedSensitive, ref bool maskedAny)
     {
         if (obj == null || clrType == null)
         {
@@ -461,7 +462,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
         }
     }
 
-    private void RedactObject(JObject obj, Type clrType, SensitiveAttribute inheritedSensitive, ref bool redactedAny)
+    private void RedactObject(JObject obj, Type clrType, SensitiveAttribute? inheritedSensitive, ref bool redactedAny)
     {
         if (obj == null || clrType == null)
         {

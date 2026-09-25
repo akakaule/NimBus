@@ -79,10 +79,10 @@ public class ResolverService : IMessageHandler
     /// </param>
     public ResolverService(
         IMessageTrackingStore store,
-        IMessageStateChangeNotifier notifier = null,
-        ILogger<ResolverService> logger = null,
-        IEndpointMetadataStore metadataStore = null,
-        IServiceHealthStore serviceHealthStore = null)
+        IMessageStateChangeNotifier? notifier = null,
+        ILogger<ResolverService>? logger = null,
+        IEndpointMetadataStore? metadataStore = null,
+        IServiceHealthStore? serviceHealthStore = null)
     {
         _store = store;
         _notifier = notifier ?? new NoopMessageStateChangeNotifier();

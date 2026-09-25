@@ -22,7 +22,7 @@ public class WebhookChannel : INotificationChannel
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
 
-    public WebhookChannel(WebhookChannelOptions options, HttpClient httpClient, ILogger<WebhookChannel> logger = null)
+    public WebhookChannel(WebhookChannelOptions options, HttpClient httpClient, ILogger<WebhookChannel>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));

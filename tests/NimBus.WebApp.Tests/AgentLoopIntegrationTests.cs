@@ -153,8 +153,8 @@ public class AgentLoopIntegrationTests
             handoffs,
             settlement,
             registry,
-            config: null,              // -> AgentZone.DefaultAgentZoneEndpointId
-            httpContextAccessor: null, // -> CurrentAgentId() falls back to "demo-agent"
+            config: null!,              // -> AgentZone.DefaultAgentZoneEndpointId
+            httpContextAccessor: null!, // -> CurrentAgentId() falls back to "demo-agent"
             NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
     }
@@ -271,7 +271,7 @@ public class AgentLoopIntegrationTests
             correlationId: corrId,
             originatingMessageId: origId);
 
-        var receiveResult = await impl.GetAgentReceiveAsync(eventTypeId: null, waitSeconds: 0);
+        var receiveResult = await impl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
         var receiveOk = receiveResult.Result as OkObjectResult;
         Assert.IsNotNull(receiveOk,
             "Step 3 (Receive): must return 200 OkObjectResult for a parked handoff");
@@ -350,7 +350,7 @@ public class AgentLoopIntegrationTests
             "Registry must record the beta subscription for the current agent");
 
         // Receive (no explicit eventTypeId param) → must return the beta row only.
-        var receiveResult = await impl.GetAgentReceiveAsync(eventTypeId: null, waitSeconds: 0);
+        var receiveResult = await impl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
         var receiveOk = receiveResult.Result as OkObjectResult;
         Assert.IsNotNull(receiveOk,
             "Receive must return 200 when a subscribed type is parked");

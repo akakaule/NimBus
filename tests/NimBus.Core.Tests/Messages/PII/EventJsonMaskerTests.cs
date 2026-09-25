@@ -263,14 +263,14 @@ public class EventJsonMaskerTests
     {
         var m = NewMasker();
 
-        Assert.IsNull(m.Mask(nameof(SimpleEvent), null));
+        Assert.IsNull(m.Mask(nameof(SimpleEvent), null!));
         Assert.AreEqual("", m.Mask(nameof(SimpleEvent), ""));
     }
 
     [TestMethod]
     public void Null_Sensitive_Value_Stays_Null()
     {
-        var json = JsonConvert.SerializeObject(new SimpleEvent { Cpr = null, EmployeeNumber = "E1" });
+        var json = JsonConvert.SerializeObject(new SimpleEvent { Cpr = null!, EmployeeNumber = "E1" });
 
         var masked = NewMasker().Mask(nameof(SimpleEvent), json);
         var parsed = JObject.Parse(masked);
@@ -565,7 +565,7 @@ public class EventJsonMaskerTests
     {
         var masker = NewMasker();
 
-        Assert.IsTrue(masker.TryCollectSensitiveValues(nameof(SimpleEvent), null, out var nullValues));
+        Assert.IsTrue(masker.TryCollectSensitiveValues(nameof(SimpleEvent), null!, out var nullValues));
         Assert.IsTrue(masker.TryCollectSensitiveValues(nameof(SimpleEvent), "", out var emptyValues));
 
         Assert.AreEqual(0, nullValues.Count);

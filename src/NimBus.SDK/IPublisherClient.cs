@@ -20,7 +20,7 @@ public interface IPublisherClient
 
     Task Publish(IEvent @event, string sessionId, string correlationId);
 
-    Task Publish(IEvent @event, string sessionId, string correlationId, string messageId);
+    Task Publish(IEvent @event, string sessionId, string correlationId, string? messageId);
 
     /// <summary>
     /// Publishes an event like <see cref="Publish(IEvent, string, string, string)"/>, and
@@ -79,7 +79,7 @@ public interface IPublisherClient
     /// <param name="events">List of events you want to publish. Make sure to make them before publishing</param>
     /// <param name="correlationId"></param>
     /// <returns></returns>
-    Task PublishBatch(IEnumerable<IEvent> events, string correlationId = null);
+    Task PublishBatch(IEnumerable<IEvent> events, string? correlationId = null);
     /// <summary>
     /// Use to get batch of maximum possible size supported by Azure Service Bus
     /// </summary>
@@ -97,7 +97,7 @@ public interface IPublisherClient
     /// </summary>
     /// <param name="events">Events to publish, in order.</param>
     /// <param name="correlationId">Correlation id applied to every message; a new GUID when null.</param>
-    async Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null)
+    async Task PublishBatches(IEnumerable<IEvent> events, string? correlationId = null)
     {
         foreach (var batch in GetBatches(new List<IEvent>(events)))
         {

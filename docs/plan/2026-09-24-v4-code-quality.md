@@ -173,6 +173,17 @@ Commits: `refactor(core)!: remove dead Service Bus defer API`,
 3. Remove `CS8625` from `WarningsNotAsErrors` so the drift cannot come back.
    The other nullable codes stay non-fatal; they belong to a separate backlog.
 
+*As implemented:* 82 `src` sites were `= null` defaults, annotated mechanically.
+The remaining 52 needed the target member annotated instead: model properties
+(`EventContent.EventJson`, `ErrorContent.ExceptionStackTrace`,
+`EndpointMetadata` owner fields, `ServiceHealth.LastProbeMessageId`,
+`SessionState.BlockedByEventId`, `CloudEvent.SpecVersion`), constructor chains,
+`[NotNullWhen(true)]` out parameters, and three public interface parameters
+(`IPublisherClient.Publish` messageId, `IServiceBusManagement.CreateCustomRule`
+action and `UpdateSubscription` forwardTo). In `tests/`, deliberate nulls
+(argument-guard tests and the like) are marked `null!`. The full Release build
+then shows 2,048 unique warnings (baseline 2,229), none of them CS8625 or CS0618.
+
 Commit: `fix: annotate nullable parameters and make CS8625 an error`.
 
 ### WS-E: split the large files (moves only, no behavior change)

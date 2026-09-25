@@ -33,7 +33,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     /// null the context is pure native NimBus (default), so native decoding and
     /// property access are unchanged.
     /// </summary>
-    public MessageContext(IServiceBusMessage sbMessage, IServiceBusSession sbSession, bool isDeferred, CloudEventReadOptions cloudEventReadOptions)
+    public MessageContext(IServiceBusMessage sbMessage, IServiceBusSession sbSession, bool isDeferred, CloudEventReadOptions? cloudEventReadOptions)
     {
         _sbMessage = sbMessage ?? throw new ArgumentNullException(nameof(sbMessage));
         _sbSession = sbSession ?? throw new ArgumentNullException(nameof(sbSession));
@@ -304,7 +304,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
         return fullText.Substring(0, availableLength) + TruncationIndicator;
     }
 
-    public async Task DeadLetter(string reason, Exception exception = null, CancellationToken cancellationToken = default)
+    public async Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default)
     {
         try
         {

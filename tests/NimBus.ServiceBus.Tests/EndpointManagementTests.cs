@@ -60,7 +60,7 @@ public sealed class EndpointManagementTests
             string subscriptionName,
             string ruleName,
             string filter,
-            string action)
+            string? action)
             => Record($"CreateCustomRule|{topicName}|{subscriptionName}|{ruleName}|{filter}|{action ?? "<null>"}");
 
         public Task CreateSubscription(string topicName, string subscriptionName)
@@ -102,7 +102,7 @@ public sealed class EndpointManagementTests
 
         // Read/inspect surface used by the WebApp's subscription admin, not by ClearEndpoint.
         public Task UpdateSubscription(
-            string topicName, string subscriptionName, EntityStatus status, string forwardTo, bool changeForwardTo)
+            string topicName, string subscriptionName, EntityStatus status, string? forwardTo, bool changeForwardTo)
             => throw new NotSupportedException();
 
         public Task<SubscriptionProperties> GetSubscription(string topicName, string subscriptionName)

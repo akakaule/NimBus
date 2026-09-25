@@ -230,7 +230,7 @@ public class ResponseServiceTests
         var ctx = CreateContext();
         ctx.FromIsMissing = true;
 
-        await sut.SendDeadLetterResponse(ctx, reason: "Failed to handle message.", exception: null);
+        await sut.SendDeadLetterResponse(ctx, reason: "Failed to handle message.", exception: null!);
 
         var msg = sender.SentMessages.Single();
         Assert.AreEqual(MessageType.ErrorResponse, msg.MessageType);
@@ -244,7 +244,7 @@ public class ResponseServiceTests
         var sender = new RecordingSender();
         var sut = new ResponseService(sender);
 
-        await sut.SendDeadLetterResponse(CreateContext(), reason: "Validation failed: EventId is required", exception: null);
+        await sut.SendDeadLetterResponse(CreateContext(), reason: "Validation failed: EventId is required", exception: null!);
 
         var msg = sender.SentMessages.Single();
         Assert.AreEqual("Validation failed: EventId is required", msg.DeadLetterReason);
@@ -602,7 +602,7 @@ public class ResponseServiceTests
         string originatingMessageId = "originating-1",
         int? retryCount = null,
         MessageType messageType = MessageType.EventRequest,
-        MessageContent messageContent = null)
+        MessageContent? messageContent = null)
     {
         return new FakeMessageContext
         {
@@ -709,7 +709,7 @@ public class ResponseServiceTests
 
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;
-        public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) => Task.CompletedTask;
         public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
         public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);

@@ -19,7 +19,7 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
     private readonly string _deferredSubscriptionName;
     private const int BatchSize = 100;
 
-    public DeferredMessageProcessor(ServiceBusClient serviceBusClient, string deferredSubscriptionName = null)
+    public DeferredMessageProcessor(ServiceBusClient serviceBusClient, string? deferredSubscriptionName = null)
     {
         _serviceBusClient = serviceBusClient ?? throw new ArgumentNullException(nameof(serviceBusClient));
         _deferredSubscriptionName = deferredSubscriptionName ?? Constants.DeferredSubscriptionName;

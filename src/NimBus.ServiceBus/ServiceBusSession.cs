@@ -27,7 +27,7 @@ public class ServiceBusSession : IServiceBusSession
     private readonly ServiceBusClient _serviceBusClient;
     private readonly string _entityPath;
 
-    public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient serviceBusClient = null, string entityPath = null, string sessionId = null)
+    public ServiceBusSession(ServiceBusSessionMessageActions sessionActions, ServiceBusClient? serviceBusClient = null, string? entityPath = null, string? sessionId = null)
     {
         _sessionActions = sessionActions ?? throw new ArgumentNullException(nameof(sessionActions));
         _serviceBusClient = serviceBusClient;
@@ -47,7 +47,7 @@ public class ServiceBusSession : IServiceBusSession
         _sessionReceiver = sessionReceiver ?? throw new ArgumentNullException(nameof(sessionReceiver));
     }
 
-    public ServiceBusSession(ProcessSessionMessageEventArgs processSessionArgs, ServiceBusClient serviceBusClient = null, string entityPath = null)
+    public ServiceBusSession(ProcessSessionMessageEventArgs processSessionArgs, ServiceBusClient? serviceBusClient = null, string? entityPath = null)
     {
         _processSessionArgs = processSessionArgs ?? throw new ArgumentNullException(nameof(processSessionArgs));
         _serviceBusClient = serviceBusClient;

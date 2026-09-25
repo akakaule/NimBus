@@ -89,7 +89,7 @@ internal sealed class SessionBlockingHandler : MessageHandler
     private readonly string _blockedByEventId;
 
     public SessionBlockingHandler(NimBus.Core.Extensions.MessageLifecycleNotifier notifier, string blockedByEventId)
-        : base(null, null, notifier)
+        : base(null!, null, notifier)
     {
         _blockedByEventId = blockedByEventId;
     }
@@ -132,7 +132,7 @@ internal sealed class FakeMessageContext : IMessageContext
 
     public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
     public Task Abandon(TransientException ex) => Task.CompletedTask;
-    public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) => Task.CompletedTask;
+    public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) => Task.CompletedTask;
     public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
@@ -159,7 +159,7 @@ internal static class TestNotifications
         string eventTypeId = "TestEvent",
         string messageId = "msg-1",
         string correlationId = "corr-1",
-        string errorDetails = null) => new()
+        string? errorDetails = null) => new()
         {
             Severity = severity,
             Title = title,

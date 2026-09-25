@@ -24,14 +24,14 @@ public class MessageContextTests
     public void Constructor_NullMessage_ThrowsArgumentNull()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new MessageContext(null, new FakeServiceBusSession()));
+            new MessageContext(null!, new FakeServiceBusSession()));
     }
 
     [TestMethod]
     public void Constructor_NullSession_ThrowsArgumentNull()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
-            new MessageContext(new FakeServiceBusMessage(), null));
+            new MessageContext(new FakeServiceBusMessage(), null!));
     }
 
     [TestMethod]
@@ -240,7 +240,7 @@ public class MessageContextTests
     [TestMethod]
     public void MessageId_Null_ThrowsInvalidMessage()
     {
-        var msg = new FakeServiceBusMessage { MessageId = null };
+        var msg = new FakeServiceBusMessage { MessageId = null! };
         SetDefaultProperties(msg);
         var ctx = new MessageContext(msg, new FakeServiceBusSession());
 
@@ -260,7 +260,7 @@ public class MessageContextTests
     [TestMethod]
     public void SessionId_Null_ThrowsInvalidMessage()
     {
-        var msg = new FakeServiceBusMessage { SessionId = null };
+        var msg = new FakeServiceBusMessage { SessionId = null! };
         SetDefaultProperties(msg);
         var ctx = new MessageContext(msg, new FakeServiceBusSession());
 
@@ -813,11 +813,11 @@ public class MessageContextTests
     }
 
     private static TestableMessageContext CreateMessageContext(
-        FakeServiceBusSession session = null,
+        FakeServiceBusSession? session = null,
         string from = "StorefrontEndpoint",
         string eventId = "evt-1",
         MessageType messageType = MessageType.EventRequest,
-        MessageContent content = null,
+        MessageContent? content = null,
         bool isDeferred = false)
     {
         session ??= new FakeServiceBusSession();
@@ -830,7 +830,7 @@ public class MessageContextTests
         string from = "StorefrontEndpoint",
         string eventId = "evt-1",
         MessageType messageType = MessageType.EventRequest,
-        MessageContent content = null)
+        MessageContent? content = null)
     {
         content ??= new MessageContent
         {

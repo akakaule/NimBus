@@ -14,5 +14,5 @@ public interface IRetryPolicyProvider
     /// <param name="exceptionMessage">The exception message from the failure.</param>
     /// <param name="endpoint">The endpoint that failed (optional).</param>
     /// <returns>A retry policy, or null if no retry is configured.</returns>
-    RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string endpoint = null);
+    RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null);
 }

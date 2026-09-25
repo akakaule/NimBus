@@ -41,7 +41,7 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
         string topicName,
         string subscriptionName,
         bool requiresSession = false,
-        string forwardTo = null,
+        string? forwardTo = null,
         // EntityStatus is a struct, not an enum, so it can't be a default parameter value.
         EntityStatus? status = null,
         params (string Name, string Filter, string Action)[] rules)
@@ -144,7 +144,7 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
     // ───────────────────────── Writes ─────────────────────────
 
     public Task UpdateSubscription(
-        string topicName, string subscriptionName, EntityStatus status, string forwardTo, bool changeForwardTo)
+        string topicName, string subscriptionName, EntityStatus status, string? forwardTo, bool changeForwardTo)
     {
         Updates.Add((topicName, subscriptionName, status, forwardTo, changeForwardTo));
 
@@ -173,7 +173,7 @@ internal sealed class FakeServiceBusManagement : IServiceBusManagement
         return Task.CompletedTask;
     }
 
-    public Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string action)
+    public Task CreateCustomRule(string topicName, string subscriptionName, string ruleName, string filter, string? action)
     {
         CreatedRules.Add((topicName, subscriptionName, ruleName, filter, action));
         return Task.CompletedTask;

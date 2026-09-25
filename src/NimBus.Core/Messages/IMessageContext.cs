@@ -27,7 +27,7 @@ public interface IMessageContext : IReceivedMessage
 
     Task Abandon(TransientException exception);
 
-    Task DeadLetter(string reason, Exception exception = null, CancellationToken cancellationToken = default);
+    Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default);
 
     Task BlockSession(CancellationToken cancellationToken = default);
     Task UnblockSession(CancellationToken cancellationToken = default);

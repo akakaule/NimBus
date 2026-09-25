@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 
@@ -17,7 +18,7 @@ public sealed class NullEventJsonMasker : IEventJsonMasker
 
     public string StripMaskedMarker(string eventJson) => eventJson;
 
-    public bool TryCollectSensitiveValues(string eventTypeId, string eventJson, out IReadOnlyCollection<string> values)
+    public bool TryCollectSensitiveValues(string eventTypeId, string eventJson, [NotNullWhen(true)] out IReadOnlyCollection<string>? values)
     {
         values = Array.Empty<string>();
         return true;

@@ -53,7 +53,7 @@ public class MessageLifecycleNotifier
         }
     }
 
-    public async Task NotifyDeadLettered(IMessageContext context, string reason, Exception exception = null, CancellationToken cancellationToken = default)
+    public async Task NotifyDeadLettered(IMessageContext context, string reason, Exception? exception = null, CancellationToken cancellationToken = default)
     {
         if (!HasObservers) return;
         var lifecycleContext = MessageLifecycleContext.FromMessageContext(context);

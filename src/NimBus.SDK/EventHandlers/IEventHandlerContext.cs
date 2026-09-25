@@ -65,7 +65,7 @@ public interface IEventHandlerContext
     /// <param name="reason">Free-text reason describing why the handler is handing off (required).</param>
     /// <param name="externalJobId">Optional external-system identifier (e.g. a DMF job id).</param>
     /// <param name="expectedBy">Optional duration after which the work is expected to settle.</param>
-    void MarkPendingHandoff(string reason, string externalJobId = null, TimeSpan? expectedBy = null);
+    void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null);
 
     /// <summary>
     /// Returns the inbound CloudEvent when this message was received as a
@@ -115,7 +115,7 @@ public class EventHandlerContext : IEventHandlerContext
 
     public HandoffMetadata HandoffMetadata { get; private set; }
 
-    public void MarkPendingHandoff(string reason, string externalJobId = null, TimeSpan? expectedBy = null)
+    public void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null)
     {
         Outcome = HandlerOutcome.PendingHandoff;
         HandoffMetadata = new HandoffMetadata(reason, externalJobId, expectedBy);

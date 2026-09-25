@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 
 namespace NimBus.Core.Messages.PII;
@@ -40,5 +41,5 @@ public interface IEventJsonMasker
     /// must then fail closed and withhold the text. An empty payload yields true with an empty
     /// collection.
     /// </summary>
-    bool TryCollectSensitiveValues(string eventTypeId, string eventJson, out IReadOnlyCollection<string> values);
+    bool TryCollectSensitiveValues(string eventTypeId, string eventJson, [NotNullWhen(true)] out IReadOnlyCollection<string>? values);
 }

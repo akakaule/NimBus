@@ -52,7 +52,7 @@ file sealed class TestMessageContext : IMessageContext
 
     public Task Complete(CancellationToken ct = default) { CompleteCalls++; return Task.CompletedTask; }
     public Task Abandon(NimBus.Core.Messages.Exceptions.TransientException ex) => Task.CompletedTask;
-    public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
+    public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
     public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
@@ -179,7 +179,7 @@ public class ValidationMiddlewareTests
     public async Task Handle_NullEventId_DeadLettersAndThrows()
     {
         var middleware = CreateMiddleware();
-        var context = new TestMessageContext { EventId = null };
+        var context = new TestMessageContext { EventId = null! };
         var called = false;
 
         await Assert.ThrowsExactlyAsync<MessageAlreadyDeadLetteredException>(() =>

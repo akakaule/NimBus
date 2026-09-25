@@ -390,7 +390,7 @@ public abstract class MessageTrackingStoreConformanceTests
         string sessionId,
         MessageType messageType,
         string lastMessageId,
-        string parentMessageId = null)
+        string? parentMessageId = null)
     {
         var content = SampleEvent(endpointId, eventId, sessionId);
         content.MessageType = messageType;

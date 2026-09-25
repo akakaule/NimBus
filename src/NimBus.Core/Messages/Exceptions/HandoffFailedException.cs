@@ -11,7 +11,7 @@ namespace NimBus.Core.Messages.Exceptions;
 /// </summary>
 public class HandoffFailedException : Exception
 {
-    public HandoffFailedException(string message, string originalErrorType = null) : base(message)
+    public HandoffFailedException(string message, string? originalErrorType = null) : base(message)
     {
         OriginalErrorType = originalErrorType;
     }

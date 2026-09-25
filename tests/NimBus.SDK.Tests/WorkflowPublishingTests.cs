@@ -262,7 +262,7 @@ public class WorkflowPublishingTests
 
         public HandoffMetadata HandoffMetadata => null!;
 
-        public void MarkPendingHandoff(string reason, string externalJobId = null!, TimeSpan? expectedBy = null)
+        public void MarkPendingHandoff(string reason, string? externalJobId = null, TimeSpan? expectedBy = null)
         {
         }
     }

@@ -46,7 +46,7 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
         return this;
     }
 
-    public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string endpoint = null)
+    public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null)
     {
         // 1. Check exception-based rules first (most specific)
         foreach (var rule in _exceptionRules)

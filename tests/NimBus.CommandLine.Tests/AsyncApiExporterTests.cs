@@ -273,7 +273,7 @@ public sealed class AsyncApiExporterTests
 
     private sealed class FakeEndpoint : IEndpoint
     {
-        public FakeEndpoint(string id, Type[] produces = null, Type[] consumes = null)
+        public FakeEndpoint(string id, Type[]? produces = null, Type[]? consumes = null)
         {
             Id = id;
             Name = id;

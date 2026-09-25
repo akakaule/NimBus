@@ -73,7 +73,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     // expiry, which is the default and the behaviour before the option existed.
     private readonly int _unresolvedTtlSeconds;
 
-    public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger = null)
+    public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient>? logger = null)
         : this(cosmosClient, logger, new CosmosDbMessageStoreOptions())
     {
     }
@@ -82,7 +82,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     /// Creates the store with explicit options. The third parameter is non-optional so
     /// existing one- and two-argument calls keep binding the overload above.
     /// </summary>
-    public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient> logger, CosmosDbMessageStoreOptions options)
+    public CosmosDbClient(CosmosClient cosmosClient, ILogger<CosmosDbClient>? logger, CosmosDbMessageStoreOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -99,7 +99,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         _messageTracking = new CosmosDbMessageTrackingStore(GetEndpointContainer, GetMessagesContainer, GetAuditsContainer, GetEventReportsContainer, endpointId => _containerCache.TryRemove(endpointId, out _), _logger, _unresolvedTtlSeconds);
     }
 
-    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient> logger = null)
+    public CosmosDbClient(ICosmosClientAdapter cosmosClient, ILogger<CosmosDbClient>? logger = null)
         : this(cosmosClient, logger, new CosmosDbMessageStoreOptions())
     {
     }

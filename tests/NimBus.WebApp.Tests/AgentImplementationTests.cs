@@ -178,7 +178,7 @@ public class AgentImplementationTests
             handoffs,
             settlement,
             registry,
-            config: null,                 // -> AgentZone default zone id
+            config: null!,                 // -> AgentZone default zone id
             httpContextAccessor,          // null -> CurrentAgentId() falls back to "demo-agent"
             NullLogger<AgentImplementation>.Instance);
         return (impl, store, publisher, handoffs, registry);
@@ -521,8 +521,8 @@ public class AgentImplementationTests
             new CapturingHandoffClientFactory(),
             new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
             new AgentSubscriptionRegistry(),
-            config: null,
-            httpContextAccessor: null,
+            config: null!,
+            httpContextAccessor: null!,
             NullLogger<AgentImplementation>.Instance);
 
         var result = await impl.GetAgentReceiveAsync("crm.lead.v1", waitSeconds: 0);
@@ -554,13 +554,13 @@ public class AgentImplementationTests
 
         // Subscribed only to a different type -> the parked event must NOT match.
         await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "other.type.v1" });
-        var miss = await impl.GetAgentReceiveAsync(eventTypeId: null, waitSeconds: 0);
+        var miss = await impl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
         Assert.IsInstanceOfType(miss.Result, typeof(NoContentResult),
             "With a non-matching subscription and no query param, nothing matches -> 204");
 
         // Now subscribe to the parked type -> it matches.
         await impl.PostAgentSubscribeAsync(new AgentSubscribeRequest { EventTypeId = "crm.lead.v1" });
-        var hit = await impl.GetAgentReceiveAsync(eventTypeId: null, waitSeconds: 0);
+        var hit = await impl.GetAgentReceiveAsync(eventTypeId: null!, waitSeconds: 0);
         Assert.IsInstanceOfType(hit.Result, typeof(OkObjectResult),
             "Once subscribed to the parked type, the event matches -> 200");
     }
@@ -736,7 +736,7 @@ public class AgentImplementationTests
         var impl = new AgentImplementation(
             store, new FakePlatform(), new CapturingPublisher(), store, handoffs,
             new HandoffSettlementService(store, audit, NullLogger<HandoffSettlementService>.Instance),
-            new AgentSubscriptionRegistry(), config: null, httpContextAccessor: null,
+            new AgentSubscriptionRegistry(), config: null!, httpContextAccessor: null!,
             NullLogger<AgentImplementation>.Instance);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(

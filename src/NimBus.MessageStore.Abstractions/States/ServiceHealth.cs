@@ -33,7 +33,7 @@ public class ServiceHealth
     public string Version { get; set; }
 
     /// <summary>Correlation id of the in-flight probe; null once it has settled.</summary>
-    public string LastProbeMessageId { get; set; }
+    public string? LastProbeMessageId { get; set; }
 
     /// <summary>When the most recent probe was sent, regardless of outcome. Drives both the send claim and the timeout sweep.</summary>
     public DateTime? LastProbeSentUtc { get; set; }

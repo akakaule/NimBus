@@ -42,7 +42,7 @@ public class SubscriberClient : ISubscriberClient
     public static Task<SubscriberClient> CreateAsync(
         ServiceBusClient client,
         string endpoint,
-        string entityPath = null,
+        string? entityPath = null,
         CancellationToken cancellationToken = default)
     {
         if (client == null) throw new ArgumentNullException(nameof(client));

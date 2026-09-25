@@ -332,7 +332,7 @@ public class StrictMessageHandlerHeartbeatTests
 
         public Task Complete(CancellationToken ct = default) { Trace?.Add("complete"); CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
-        public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
+        public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
         public Task BlockSession(CancellationToken ct = default) { Trace?.Add("block"); BlockSessionCalls++; return Task.CompletedTask; }
         public Task UnblockSession(CancellationToken ct = default) { Trace?.Add("unblock"); UnblockSessionCalls++; return Task.CompletedTask; }
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));

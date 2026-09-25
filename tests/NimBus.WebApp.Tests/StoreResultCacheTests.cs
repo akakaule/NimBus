@@ -218,10 +218,10 @@ public sealed class StoreResultCacheTests
             store,
             store,
             store,
-            serviceBusManagement: null,
+            serviceBusManagement: null!,
             new AllowAllAuthorizationService(),
             NullLogger<EndpointImplementation>.Instance,
-            auditLogService: null,
+            auditLogService: null!,
             NewCache(),
             PayloadRedactionTests.NewRedaction());
     }

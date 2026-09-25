@@ -32,13 +32,13 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         To = i % 2 == 0 ? $"endpoint-{i}" : null,
         EventTypeId = $"type-{i}",
         SessionId = $"session-{i}",
-        CorrelationId = null,
+        CorrelationId = null!,
         Payload = $"{{\"n\":{i}}}",
         EnqueueDelayMinutes = 0,
         ScheduledEnqueueTimeUtc = null,
         CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(i),
-        TraceParent = null,
-        TraceState = null,
+        TraceParent = null!,
+        TraceState = null!,
     };
 
     [TestMethod]
@@ -48,7 +48,7 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         var messages = Enumerable.Range(0, 5).Select(NewMessage).ToList();
 
         using var connection = new SqlConnection();
-        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null, messages, offset: 0, count: 5);
+        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null!, messages, offset: 0, count: 5);
 
         Assert.AreEqual(5 * 12, command.Parameters.Count);
         Assert.AreEqual(5, Regex.Matches(command.CommandText, Regex.Escape("(@Id")).Count,
@@ -65,7 +65,7 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         var messages = Enumerable.Range(0, 2).Select(NewMessage).ToList();
 
         using var connection = new SqlConnection();
-        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null, messages, offset: 0, count: 2);
+        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null!, messages, offset: 0, count: 2);
 
         Assert.AreEqual("id-0", command.Parameters["@Id0"].Value);
         Assert.AreEqual("id-1", command.Parameters["@Id1"].Value);
@@ -83,7 +83,7 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         var messages = Enumerable.Range(0, 150).Select(NewMessage).ToList();
 
         using var connection = new SqlConnection();
-        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null, messages, offset: 100, count: 50);
+        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null!, messages, offset: 100, count: 50);
 
         Assert.AreEqual(50 * 12, command.Parameters.Count);
         Assert.AreEqual("id-100", command.Parameters["@Id0"].Value,
@@ -98,7 +98,7 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         var messages = Enumerable.Range(0, SqlServerOutbox.InsertBatchSize).Select(NewMessage).ToList();
 
         using var connection = new SqlConnection();
-        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null, messages, offset: 0, count: messages.Count);
+        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null!, messages, offset: 0, count: messages.Count);
 
         Assert.AreEqual(1200, command.Parameters.Count, "12 params x 100 rows.");
         Assert.IsTrue(command.Parameters.Count < 2100, "Must stay under SQL Server's 2,100-parameter limit.");

@@ -22,7 +22,7 @@ public class OutboxDispatcherHostedService : BackgroundService
         OutboxDispatcher dispatcher,
         TimeSpan pollingInterval,
         int batchSize,
-        ILogger<OutboxDispatcherHostedService> logger = null)
+        ILogger<OutboxDispatcherHostedService>? logger = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _pollingInterval = pollingInterval;

@@ -10,7 +10,7 @@ public class SsrResult : IActionResult
     private readonly string _url;
     private readonly object _props;
 
-    public SsrResult(string url, object props = null)
+    public SsrResult(string url, object? props = null)
     {
         _url = url;
         _props = props;

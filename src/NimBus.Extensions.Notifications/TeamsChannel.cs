@@ -25,7 +25,7 @@ public class TeamsChannel : INotificationChannel
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
 
-    public TeamsChannel(TeamsChannelOptions options, HttpClient httpClient, ILogger<TeamsChannel> logger = null)
+    public TeamsChannel(TeamsChannelOptions options, HttpClient httpClient, ILogger<TeamsChannel>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));

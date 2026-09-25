@@ -33,7 +33,7 @@ public interface IMessageLifecycleObserver
     /// <summary>
     /// Called when a message is sent to the dead-letter queue.
     /// </summary>
-    Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception exception = null, CancellationToken cancellationToken = default) =>
+    Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception? exception = null, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 
     /// <summary>

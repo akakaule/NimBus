@@ -20,7 +20,7 @@ namespace NimBus.ServiceBus.Tests;
 [TestClass]
 public class CloudEventsConsumeTests
 {
-    private static MessageContext Consume(FakeCloudEventMessage message, CloudEventReadOptions options = null) =>
+    private static MessageContext Consume(FakeCloudEventMessage message, CloudEventReadOptions? options = null) =>
         new(message, new InertServiceBusSession(), isDeferred: false, options ?? new CloudEventReadOptions());
 
     [TestMethod]

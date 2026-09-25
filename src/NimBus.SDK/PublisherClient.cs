@@ -58,7 +58,7 @@ public class PublisherClient : IPublisherClient
     /// emitted as a CloudEvent in the configured content mode; when null (the
     /// default) the native NimBus wire format is used.
     /// </param>
-    public PublisherClient(ISender sender, string publisherEndpoint = null, CloudEventPublisherOptions cloudEvents = null)
+    public PublisherClient(ISender sender, string? publisherEndpoint = null, CloudEventPublisherOptions? cloudEvents = null)
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _publisherEndpoint = publisherEndpoint;
@@ -104,7 +104,7 @@ public class PublisherClient : IPublisherClient
         await Publish(@event, sessionId, correlationId, null);
     }
 
-    public async Task Publish(IEvent @event, string sessionId, string correlationId, string messageId)
+    public async Task Publish(IEvent @event, string sessionId, string correlationId, string? messageId)
     {
         // The publisher span is emitted by the InstrumentingSenderDecorator that
         // wraps ISender (registered via AddNimBusInstrumentation). PublisherClient
@@ -167,7 +167,7 @@ public class PublisherClient : IPublisherClient
     /// <param name="events">List of events you want to publish. Make sure to make them before publishing</param>
     /// <param name="correlationId"></param>
     /// <returns></returns>
-    public async Task PublishBatch(IEnumerable<IEvent> events, string correlationId = null)
+    public async Task PublishBatch(IEnumerable<IEvent> events, string? correlationId = null)
     {
         // Span emission happens in InstrumentingSenderDecorator (see Publish above).
         if (correlationId == null)
@@ -188,7 +188,7 @@ public class PublisherClient : IPublisherClient
     /// </summary>
     /// <param name="events">Events to publish, in order.</param>
     /// <param name="correlationId">Correlation id applied to every message; a new GUID when null.</param>
-    public async Task PublishBatches(IEnumerable<IEvent> events, string correlationId = null)
+    public async Task PublishBatches(IEnumerable<IEvent> events, string? correlationId = null)
     {
         correlationId ??= Guid.NewGuid().ToString();
 
@@ -378,7 +378,7 @@ public class PublisherClient : IPublisherClient
         return System.Text.Encoding.UTF8.GetByteCount(JsonConvert.SerializeObject(message.MessageContent));
     }
 
-    private IMessage GetMessage(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
+    private IMessage GetMessage(IEvent @event, string? correlationId = null, string? messageId = null, string? sessionId = null)
     {
         var message = (Message)GetMessageStatic(@event, correlationId, messageId, sessionId);
         if (!string.IsNullOrEmpty(_publisherEndpoint))
@@ -427,7 +427,7 @@ public class PublisherClient : IPublisherClient
         return new CloudEventPublishContext(cloudEvent, _cloudEvents.ContentMode);
     }
 
-    private static IMessage GetMessageStatic(IEvent @event, string correlationId = null, string messageId = null, string sessionId = null)
+    private static IMessage GetMessageStatic(IEvent @event, string? correlationId = null, string? messageId = null, string? sessionId = null)
     {
         @event.Validate();
 

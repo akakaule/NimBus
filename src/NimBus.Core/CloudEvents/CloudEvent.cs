@@ -24,7 +24,7 @@ public sealed class CloudEvent
     public const string CloudEventsSpecVersion = "1.0";
 
     /// <summary>CloudEvents <c>specversion</c> attribute (required, must be "1.0").</summary>
-    public string SpecVersion { get; set; } = CloudEventsSpecVersion;
+    public string? SpecVersion { get; set; } = CloudEventsSpecVersion;
 
     /// <summary>CloudEvents <c>id</c> attribute (required).</summary>
     public string Id { get; set; }

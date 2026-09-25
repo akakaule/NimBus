@@ -96,7 +96,7 @@ public class SessionKeyAttributeTests
     [TestMethod]
     public void GetSessionId_AttributePropertyIsNull_ReturnsGuid()
     {
-        var evt = new OrderWithNullableField { NullableField = null };
+        var evt = new OrderWithNullableField { NullableField = null! };
         var sessionId = evt.GetSessionId();
 
         Assert.IsTrue(Guid.TryParse(sessionId, out _), "Null property value should fall back to GUID");

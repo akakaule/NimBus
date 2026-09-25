@@ -18,14 +18,14 @@ public class NotificationLifecycleObserver : IMessageLifecycleObserver
 {
     private readonly IEnumerable<INotificationChannel> _channels;
     private readonly NotificationOptions _options;
-    private readonly INotificationRouter _router;
+    private readonly INotificationRouter? _router;
 
     public NotificationLifecycleObserver(IEnumerable<INotificationChannel> channels, NotificationOptions options)
         : this(channels, options, null)
     {
     }
 
-    public NotificationLifecycleObserver(IEnumerable<INotificationChannel> channels, NotificationOptions options, INotificationRouter router)
+    public NotificationLifecycleObserver(IEnumerable<INotificationChannel> channels, NotificationOptions options, INotificationRouter? router)
     {
         _channels = channels ?? throw new ArgumentNullException(nameof(channels));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -87,7 +87,7 @@ public class NotificationLifecycleObserver : IMessageLifecycleObserver
         await Dispatch(notification, cancellationToken);
     }
 
-    public async Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception exception = null, CancellationToken cancellationToken = default)
+    public async Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception? exception = null, CancellationToken cancellationToken = default)
     {
         if (!_options.NotifyOnDeadLetter) return;
 

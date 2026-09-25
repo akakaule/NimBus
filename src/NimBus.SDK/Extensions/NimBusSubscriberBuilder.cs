@@ -497,7 +497,7 @@ public class NimBusSubscriberBuilder
 
     internal class HandlerRegistration
     {
-        public string EventTypeId { get; set; }
+        public string? EventTypeId { get; set; }
 
         /// <summary>
         /// The CLR event type for a typed handler, or <c>null</c> for a

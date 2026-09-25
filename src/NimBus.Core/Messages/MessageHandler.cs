@@ -12,21 +12,21 @@ namespace NimBus.Core.Messages;
 public class MessageHandler : IMessageHandler
 {
     private readonly ILogger _logger;
-    private readonly MessagePipeline _pipeline;
-    private readonly MessageLifecycleNotifier _lifecycleNotifier;
-    private readonly IResponseService _responseService;
+    private readonly MessagePipeline? _pipeline;
+    private readonly MessageLifecycleNotifier? _lifecycleNotifier;
+    private readonly IResponseService? _responseService;
 
     public MessageHandler(ILogger logger)
         : this(logger, null, null, null)
     {
     }
 
-    public MessageHandler(ILogger logger, MessagePipeline pipeline, MessageLifecycleNotifier lifecycleNotifier)
+    public MessageHandler(ILogger logger, MessagePipeline? pipeline, MessageLifecycleNotifier? lifecycleNotifier)
         : this(logger, pipeline, lifecycleNotifier, null)
     {
     }
 
-    public MessageHandler(ILogger logger, MessagePipeline pipeline, MessageLifecycleNotifier lifecycleNotifier, IResponseService responseService)
+    public MessageHandler(ILogger logger, MessagePipeline? pipeline, MessageLifecycleNotifier? lifecycleNotifier, IResponseService? responseService)
     {
         _logger = logger ?? NullLogger.Instance;
         _pipeline = pipeline;

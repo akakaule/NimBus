@@ -79,7 +79,7 @@ public class SensitiveTypeInspectorTests
     [TestMethod]
     public void Null_Type_Is_Not_Sensitive()
     {
-        Assert.IsFalse(SensitiveTypeInspector.ContainsSensitiveData(null));
+        Assert.IsFalse(SensitiveTypeInspector.ContainsSensitiveData(null!));
     }
 
     [TestMethod]

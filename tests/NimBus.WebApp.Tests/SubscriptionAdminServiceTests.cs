@@ -312,13 +312,13 @@ public sealed class SubscriptionAdminServiceTests
 
     private static SubscriptionAdminService CreateService(
         FakeServiceBusManagement management,
-        FakeTopologyRebuilder rebuilder = null,
+        FakeTopologyRebuilder? rebuilder = null,
         IResolverDeadLetterClient? replayClient = null) =>
         new(
             new TestPlatform(new TestEndpoint(Topic)),
             management,
             rebuilder ?? new FakeTopologyRebuilder(),
-            sbClient: null,
+            sbClient: null!,
             NullLogger<SubscriptionAdminService>.Instance,
             resolverDeadLetterClient: replayClient);
 

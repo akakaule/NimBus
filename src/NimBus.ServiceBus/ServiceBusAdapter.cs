@@ -34,7 +34,7 @@ public class ServiceBusAdapter : IServiceBusAdapter
     /// <param name="entityPath">Optional entity path (queue name or topic/subscription path) used to schedule retries.</param>
     /// <param name="cloudEventReadOptions">Optional CloudEvents consume options. When set, inbound
     /// CloudEvents are detected and normalized; when null (default) the adapter is pure native NimBus.</param>
-    public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient serviceBusClient = null, string entityPath = null, CloudEventReadOptions cloudEventReadOptions = null)
+    public ServiceBusAdapter(IMessageHandler messageHandler, ServiceBusClient? serviceBusClient = null, string? entityPath = null, CloudEventReadOptions? cloudEventReadOptions = null)
     {
         _messageHandler = messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
         _serviceBusClient = serviceBusClient;

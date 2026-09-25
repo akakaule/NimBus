@@ -26,7 +26,7 @@ public class EmailChannel : INotificationChannel
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
 
-    public EmailChannel(EmailChannelOptions options, HttpClient httpClient, ILogger<EmailChannel> logger = null)
+    public EmailChannel(EmailChannelOptions options, HttpClient httpClient, ILogger<EmailChannel>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));

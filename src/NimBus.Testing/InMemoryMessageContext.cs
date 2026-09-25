@@ -73,7 +73,7 @@ public class InMemoryMessageContext : IMessageContext
         return Task.CompletedTask;
     }
 
-    public Task DeadLetter(string reason, Exception exception = null, CancellationToken cancellationToken = default)
+    public Task DeadLetter(string reason, Exception? exception = null, CancellationToken cancellationToken = default)
     {
         IsDeadLettered = true;
         DeadLetterReasonRecorded = reason;

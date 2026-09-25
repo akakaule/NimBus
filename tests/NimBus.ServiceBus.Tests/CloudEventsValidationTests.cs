@@ -76,9 +76,9 @@ public class CloudEventsValidationTests
         var ce = new CloudEvent { Id = "1", Source = "urn:x", Type = "OrderPlaced", SpecVersion = "1.0" };
         switch (missing)
         {
-            case "id": ce.Id = null; break;
-            case "source": ce.Source = null; break;
-            case "type": ce.Type = null; break;
+            case "id": ce.Id = null!; break;
+            case "source": ce.Source = null!; break;
+            case "type": ce.Type = null!; break;
             case "specversion": ce.SpecVersion = null; break;
         }
 
@@ -189,7 +189,7 @@ public class CloudEventsValidationTests
         var readOptions = new CloudEventReadOptions { Mode = CompatibilityMode.AutoDetect };
         var ceMsg = new FakeCloudEventMessage
         {
-            MessageId = null, // producer omitted the native Service Bus MessageId
+            MessageId = null!, // producer omitted the native Service Bus MessageId
             ContentType = "application/json",
             Body = Encoding.UTF8.GetBytes("{}"),
         };

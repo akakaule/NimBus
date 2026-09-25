@@ -48,7 +48,7 @@ public sealed class HandoffClientFactory : IHandoffClientFactory
     // single-flight.
     private readonly ConcurrentDictionary<string, Lazy<IHandoffClient>> _clients = new(StringComparer.Ordinal);
 
-    public HandoffClientFactory(ServiceBusClient client, ILoggerFactory loggerFactory = null)
+    public HandoffClientFactory(ServiceBusClient client, ILoggerFactory? loggerFactory = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _loggerFactory = loggerFactory;

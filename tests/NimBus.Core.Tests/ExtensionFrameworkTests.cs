@@ -166,7 +166,7 @@ public class MessagePipelineTests
 
         public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
         public Task Abandon(TransientException ex) => Task.CompletedTask;
-        public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) => Task.CompletedTask;
         public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
         public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);
@@ -284,7 +284,7 @@ public class MessageLifecycleNotifierTests
             return Task.CompletedTask;
         }
 
-        public Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception exception = null, CancellationToken ct = default)
+        public Task OnMessageDeadLettered(MessageLifecycleContext context, string reason, Exception? exception = null, CancellationToken ct = default)
         {
             DeadLetteredEvents.Add((context, reason));
             return Task.CompletedTask;

@@ -399,7 +399,7 @@ public class StrictMessageHandlerTests
             OnHandle = c =>
             {
                 c.HandlerOutcome = HandlerOutcome.PendingHandoff;
-                c.HandoffMetadata = new HandoffMetadata("about to fail", null, null);
+                c.HandoffMetadata = new HandoffMetadata("about to fail", null!, null);
             },
             ThrowOnHandle = new InvalidOperationException("boom"),
         };
@@ -481,7 +481,7 @@ public class StrictMessageHandlerTests
             OnHandle = c =>
             {
                 c.HandlerOutcome = HandlerOutcome.PendingHandoff;
-                c.HandoffMetadata = new HandoffMetadata("r", null, null);
+                c.HandoffMetadata = new HandoffMetadata("r", null!, null);
             },
         };
         var response = new FakeResponseService();
@@ -510,7 +510,7 @@ public class StrictMessageHandlerTests
             OnHandle = c =>
             {
                 c.HandlerOutcome = HandlerOutcome.PendingHandoff;
-                c.HandoffMetadata = new HandoffMetadata("r", null, null);
+                c.HandoffMetadata = new HandoffMetadata("r", null!, null);
             },
         };
         var response = new FakeResponseService(trace);
@@ -655,7 +655,7 @@ public class StrictMessageHandlerTests
         // Session isn't blocked at all (already resolved / wrong session).
         var ctx = CreateContext(messageType: MessageType.HandoffCompletedRequest, from: "Manager");
         ctx.IsSessionBlockedByThisResult = false;
-        ctx.BlockedByEventId = null;
+        ctx.BlockedByEventId = null!;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
         var sut = CreateHandler(handler, response);
@@ -736,7 +736,7 @@ public class StrictMessageHandlerTests
     {
         var ctx = CreateContext(messageType: MessageType.HandoffFailedRequest, from: "Manager");
         ctx.IsSessionBlockedByThisResult = false;
-        ctx.BlockedByEventId = null;
+        ctx.BlockedByEventId = null!;
         ctx.MessageContent = new MessageContent
         {
             EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
@@ -1332,7 +1332,7 @@ public class StrictMessageHandlerTests
         // completing it without draining would park deferred siblings indefinitely.
         var ctx = CreateContext(messageType: MessageType.RetryRequest);
         ctx.IsSessionBlockedByThisResult = false;
-        ctx.BlockedByEventId = null;
+        ctx.BlockedByEventId = null!;
         ctx.DeferredCountResult = 2;
         var handler = new FakeEventContextHandler();
         var response = new FakeResponseService();
@@ -1396,9 +1396,9 @@ public class StrictMessageHandlerTests
     private static StrictMessageHandler CreateHandler(
         FakeEventContextHandler handler,
         FakeResponseService response,
-        FakeDeferredMessageProcessor processor = null,
-        string topicName = null,
-        NimBus.Core.Inbox.IInboxStore inboxStore = null)
+        FakeDeferredMessageProcessor? processor = null,
+        string? topicName = null,
+        NimBus.Core.Inbox.IInboxStore? inboxStore = null)
     {
         if (inboxStore is null)
             return new StrictMessageHandler(handler, response, NullLogger.Instance);
@@ -1618,7 +1618,7 @@ public class StrictMessageHandlerTests
         public string LastEventTypeId { get; private set; }
         public RetryPolicy PolicyToReturn { get; set; }
 
-        public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string endpoint = null)
+        public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null)
         {
             GetRetryPolicyCalls++;
             LastEventTypeId = eventTypeId;
@@ -1739,7 +1739,7 @@ public class StrictMessageHandlerTests
 
         public Task Complete(CancellationToken ct = default) { Trace?.Record($"{TraceName}.complete"); CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { Trace?.Record($"{TraceName}.abandon"); AbandonCalls++; return Task.CompletedTask; }
-        public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) { Trace?.Record($"{TraceName}.dead-letter"); DeadLetterCalls++; return Task.CompletedTask; }
+        public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) { Trace?.Record($"{TraceName}.dead-letter"); DeadLetterCalls++; return Task.CompletedTask; }
         public Task BlockSession(CancellationToken ct = default) { Trace?.Record($"{TraceName}.block"); BlockSessionCalls++; return Task.CompletedTask; }
         public Task UnblockSession(CancellationToken ct = default) { Trace?.Record($"{TraceName}.unblock"); UnblockSessionCalls++; return Task.CompletedTask; }
         public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(!string.IsNullOrEmpty(BlockedByEventId));

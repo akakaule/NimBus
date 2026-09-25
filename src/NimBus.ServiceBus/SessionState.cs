@@ -19,7 +19,7 @@ public class SessionState
         set => _legacyDeferredSequenceNumbers = value ?? new List<long>();
     }
 
-    public string BlockedByEventId { get; set; }
+    public string? BlockedByEventId { get; set; }
 
     /// <summary>
     /// Count of messages deferred to the separate deferred subscription.

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -115,7 +116,7 @@ public static class CloudEventsServiceBusBinding
     /// dead-letter an invalid CloudEvent with a clear reason rather than
     /// mis-parsing it as native.
     /// </summary>
-    public static bool TryParse(IServiceBusMessage message, CloudEventReadOptions options, out CloudEvent cloudEvent)
+    public static bool TryParse(IServiceBusMessage message, CloudEventReadOptions options, [NotNullWhen(true)] out CloudEvent? cloudEvent)
     {
         cloudEvent = null;
         if (message is null || options is null) return false;

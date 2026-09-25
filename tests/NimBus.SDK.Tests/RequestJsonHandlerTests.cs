@@ -92,7 +92,7 @@ public class RequestJsonHandlerTests
     {
         var dispatcher = new InMemoryReplyDispatcher();
         var handler = new RequestJsonHandler<PingRequest, PongResponse>(new EchoRequestHandler(), dispatcher);
-        var context = ContextFor(JsonConvert.SerializeObject(new PingRequest { Text = "plain" }), replyTo: null, replySessionId: null);
+        var context = ContextFor(JsonConvert.SerializeObject(new PingRequest { Text = "plain" }), replyTo: null!, replySessionId: null!);
 
         await handler.Handle(context);
 
@@ -166,7 +166,7 @@ internal sealed class RequestTestMessageContext : IMessageContext
 
     public Task Complete(CancellationToken ct = default) => Task.CompletedTask;
     public Task Abandon(NimBus.Core.Messages.Exceptions.TransientException ex) => Task.CompletedTask;
-    public Task DeadLetter(string reason, Exception ex = null, CancellationToken ct = default) => Task.CompletedTask;
+    public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) => Task.CompletedTask;
     public Task BlockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task UnblockSession(CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> IsSessionBlocked(CancellationToken ct = default) => Task.FromResult(false);

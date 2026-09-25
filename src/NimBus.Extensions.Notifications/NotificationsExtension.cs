@@ -9,15 +9,15 @@ namespace NimBus.Extensions.Notifications;
 /// </summary>
 public class NotificationsExtension : INimBusExtension
 {
-    private readonly Action<NotificationOptions> _configureOptions;
-    private readonly Action<IServiceCollection> _configureChannels;
+    private readonly Action<NotificationOptions>? _configureOptions;
+    private readonly Action<IServiceCollection>? _configureChannels;
 
     public NotificationsExtension()
         : this(null, null)
     {
     }
 
-    public NotificationsExtension(Action<NotificationOptions> configureOptions, Action<IServiceCollection> configureChannels)
+    public NotificationsExtension(Action<NotificationOptions>? configureOptions, Action<IServiceCollection>? configureChannels)
     {
         _configureOptions = configureOptions;
         _configureChannels = configureChannels;
@@ -65,8 +65,8 @@ public static class NotificationsBuilderExtensions
     /// <param name="configureChannels">Register custom notification channels (email, Teams, Slack, etc.).</param>
     public static INimBusBuilder AddNotifications(
         this INimBusBuilder builder,
-        Action<NotificationOptions> configureOptions = null,
-        Action<IServiceCollection> configureChannels = null)
+        Action<NotificationOptions>? configureOptions = null,
+        Action<IServiceCollection>? configureChannels = null)
     {
         return builder.AddExtension(new NotificationsExtension(configureOptions, configureChannels));
     }
@@ -84,7 +84,7 @@ public static class NotificationsBuilderExtensions
     public static INimBusBuilder AddNotifications(
         this INimBusBuilder builder,
         Action<NotificationChannelBuilder> configureChannels,
-        Action<NotificationOptions> configureOptions = null)
+        Action<NotificationOptions>? configureOptions = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configureChannels);
@@ -103,7 +103,7 @@ public static class NotificationsBuilderExtensions
     public static IServiceCollection AddNimBusNotifications(
         this IServiceCollection services,
         Action<NotificationChannelBuilder> configureChannels,
-        Action<NotificationOptions> configureOptions = null)
+        Action<NotificationOptions>? configureOptions = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureChannels);

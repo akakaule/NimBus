@@ -5,14 +5,19 @@ import Monitor, {
   BACKLOG_HIGH,
   backlogLevel,
   backlogTotal,
+  endpointState,
+  failedPerMinuteSeries,
+  firstOpenFailureAt,
 } from "./monitor";
 import type {
+  FleetSample,
   MonitorEndpoint,
   UseMonitorDataResult,
 } from "hooks/use-monitor-data";
 
 const mocks = vi.hoisted(() => ({
   endpoints: [] as MonitorEndpoint[],
+  telemetry: [] as FleetSample[],
 }));
 
 vi.mock("hooks/use-monitor-data", () => ({
@@ -23,6 +28,7 @@ vi.mock("hooks/use-monitor-data", () => ({
     error: undefined,
     isStale: false,
     ticker: [],
+    telemetry: mocks.telemetry,
     ack: vi.fn(),
     unack: vi.fn(),
     refresh: vi.fn(),
@@ -39,6 +45,9 @@ interface EndpointOptions {
   pending?: number;
   deferred?: number;
   failed?: number;
+  deadletter?: number;
+  firstFailureAt?: number;
+  acked?: boolean;
   /** Backlog at the oldest sample — lower than current means "growing". */
   pendingWas?: number;
 }
@@ -48,6 +57,9 @@ function endpoint({
   pending = 0,
   deferred = 0,
   failed = 0,
+  deadletter = 0,
+  firstFailureAt,
+  acked = false,
   pendingWas,
 }: EndpointOptions): MonitorEndpoint {
   const now = Date.now();
@@ -65,14 +77,18 @@ function endpoint({
       failedCount: failed,
       pendingCount: pending,
       deferredCount: deferred,
+      deadletterCount: deadletter,
     } as MonitorEndpoint["status"],
     samples,
+    firstFailureAt,
     isFreshFailure: false,
+    ack: acked ? { reason: "", ackedAt: now, failedAtAck: failed } : undefined,
   };
 }
 
 afterEach(() => {
   mocks.endpoints = [];
+  mocks.telemetry = [];
   cleanup();
 });
 
@@ -125,8 +141,8 @@ describe("Monitor backlog highlight", () => {
 
     render(<Monitor />);
 
-    expect(screen.getByText("high backlog")).toBeDefined();
-    expect(screen.queryAllByText("backlog")).toHaveLength(0);
+    expect(screen.getByText("high")).toBeDefined();
+    expect(screen.queryAllByText("elevated")).toHaveLength(0);
     expect(
       screen.getByText(`1 endpoint at or above ${BACKLOG_ELEVATED} pending`),
     ).toBeDefined();
@@ -140,5 +156,106 @@ describe("Monitor backlog highlight", () => {
     expect(
       screen.getByText(`all below ${BACKLOG_ELEVATED} pending`),
     ).toBeDefined();
+  });
+});
+
+describe("endpointState", () => {
+  it("classifies failing, acknowledged, backlog and healthy endpoints", () => {
+    expect(endpointState(endpoint({ failed: 3 }))).toBe("nogo");
+    expect(endpointState(endpoint({ failed: 3, acked: true }))).toBe("acked");
+    expect(endpointState(endpoint({ pending: 4 }))).toBe("hold");
+    expect(endpointState(endpoint({ deferred: 2 }))).toBe("hold");
+    expect(endpointState(endpoint({}))).toBe("go");
+  });
+});
+
+describe("firstOpenFailureAt", () => {
+  it("returns the earliest unacknowledged failure and ignores acked ones", () => {
+    expect(
+      firstOpenFailureAt([
+        endpoint({ id: "a", failed: 1, firstFailureAt: 3_000 }),
+        endpoint({ id: "b", failed: 1, firstFailureAt: 1_000, acked: true }),
+        endpoint({ id: "c", failed: 1, firstFailureAt: 2_000 }),
+        endpoint({ id: "d", pending: 9 }),
+      ]),
+    ).toBe(2_000);
+  });
+
+  it("is undefined when nothing is failing unacknowledged", () => {
+    expect(
+      firstOpenFailureAt([
+        endpoint({ failed: 1, firstFailureAt: 1_000, acked: true }),
+      ]),
+    ).toBeUndefined();
+  });
+});
+
+describe("failedPerMinuteSeries", () => {
+  const sample = (t: number, failed: number): FleetSample => ({
+    t,
+    failed,
+    backlog: 0,
+  });
+
+  it("turns cumulative failed totals into failures per minute", () => {
+    const telemetry = [0, 1, 2, 3].map((i) => sample(i * 5_000, i * 10));
+    expect(failedPerMinuteSeries(telemetry)).toEqual([0, 120, 120, 120]);
+  });
+
+  it("never goes negative when failures are resubmitted or skipped", () => {
+    const telemetry = [sample(0, 50), sample(5_000, 20)];
+    expect(failedPerMinuteSeries(telemetry)).toEqual([0, 0]);
+  });
+});
+
+describe("Monitor wall", () => {
+  it("summarises the fleet in the GO ring", () => {
+    mocks.endpoints = [
+      endpoint({ id: "AEndpoint" }),
+      endpoint({ id: "BEndpoint", failed: 2, firstFailureAt: Date.now() }),
+      endpoint({ id: "CEndpoint" }),
+    ];
+
+    render(<Monitor />);
+
+    expect(screen.getByRole("img", { name: "2 of 3 endpoints GO" })).toBeDefined();
+  });
+
+  it("shows dead-lettered messages as part of the failed count", () => {
+    mocks.endpoints = [
+      endpoint({
+        id: "TracetoolEndpoint",
+        failed: 208,
+        deadletter: 16,
+        firstFailureAt: Date.now(),
+      }),
+    ];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("incl. DLQ")).toBeDefined();
+    expect(screen.getByText("16")).toBeDefined();
+  });
+
+  it("says so when nothing is failing", () => {
+    mocks.endpoints = [endpoint({ id: "AEndpoint" })];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("No failing endpoints")).toBeDefined();
+    expect(screen.getByText("No open failures")).toBeDefined();
+  });
+});
+
+describe("Monitor backlog drain ETA", () => {
+  it("does not call a flat queue growing", () => {
+    mocks.endpoints = [
+      endpoint({ id: "MitHrEndpoint", pending: 880, pendingWas: 879.8 }),
+    ];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("stable")).toBeDefined();
+    expect(screen.queryByText("growing")).toBeNull();
   });
 });

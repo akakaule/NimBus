@@ -5,6 +5,9 @@ const REFRESH_MS = 5_000;
 // How many samples to keep per endpoint — drives the sparkline and the
 // "rate / min" calculation. 12 samples at 5 s each = 60 s of history.
 const HISTORY_LEN = 12;
+// Fleet-wide totals kept for the telemetry chart: 120 samples at 5 s = the
+// last 10 minutes. In-memory only, so the chart refills after a reload.
+export const TELEMETRY_LEN = 120;
 // New-failure pulse window. A card that transitions from no-failures to
 // failing gets a pulsing ring for this long before settling into static red.
 export const NEW_FAILURE_MS = 60_000;
@@ -24,6 +27,15 @@ export type EndpointSample = {
   deferred: number;
 };
 
+/** Fleet-wide totals at one poll, for the telemetry chart. */
+export type FleetSample = {
+  t: number;
+  /** Sum of failed messages (dead-lettered included) across all endpoints. */
+  failed: number;
+  /** Sum of pending + deferred messages across all endpoints. */
+  backlog: number;
+};
+
 export type AckRecord = {
   /** Operator-supplied reason (free text). Empty string allowed. */
   reason: string;
@@ -41,7 +53,13 @@ export type MonitorEndpoint = {
   samples: EndpointSample[];
   /** Wall-clock ms when this endpoint *first* transitioned to failing. */
   firstFailureAt?: number;
-  /** Truthy only inside the NEW_FAILURE_MS window after a new failure. */
+  /**
+   * Set only when this page saw the endpoint go from no failures to failing.
+   * Failures already present on the first poll leave it undefined, so a
+   * reload doesn't make every failing card look new.
+   */
+  failureObservedAt?: number;
+  /** Truthy only inside the NEW_FAILURE_MS window after an observed new failure. */
   isFreshFailure: boolean;
   /** Ack record, if the operator has silenced this endpoint. */
   ack?: AckRecord;
@@ -87,6 +105,8 @@ export interface UseMonitorDataResult {
   error: string | undefined;
   isStale: boolean;
   ticker: TickerEvent[];
+  /** Fleet totals per poll, oldest → newest, capped at TELEMETRY_LEN. */
+  telemetry: FleetSample[];
   ack: (endpointId: string, reason?: string) => void;
   unack: (endpointId: string) => void;
   refresh: () => Promise<void>;
@@ -120,6 +140,7 @@ export function useMonitorData(): UseMonitorDataResult {
   const [error, setError] = useState<string | undefined>();
   const [now, setNow] = useState(Date.now());
   const [ticker, setTicker] = useState<TickerEvent[]>([]);
+  const [telemetry, setTelemetry] = useState<FleetSample[]>([]);
   // Wall-clock ms when the tab last became visible again; staleness is
   // measured from max(lastRefreshAt, resumedAt) so resume doesn't false-flag.
   const [resumedAt, setResumedAt] = useState(0);
@@ -130,6 +151,7 @@ export function useMonitorData(): UseMonitorDataResult {
   // would be wasteful.
   const samplesRef = useRef<Record<string, EndpointSample[]>>({});
   const firstFailureRef = useRef<Record<string, number>>({});
+  const observedFailureRef = useRef<Record<string, number>>({});
   const acksRef = useRef<Record<string, AckRecord>>(loadAcks());
   const clientRef = useRef<api.Client | null>(null);
   const endpointIdsRef = useRef<string[] | null>(null);
@@ -191,14 +213,16 @@ export function useMonitorData(): UseMonitorDataResult {
       if (prior) {
         if (prior.failed === 0 && failed > 0) {
           firstFailureRef.current[id] = t;
+          observedFailureRef.current[id] = t;
           pushTicker({
             t,
             endpoint: id,
             kind: "failure",
-            detail: `${failed.toLocaleString()} failed`,
+            detail: describeFailure(failed, status.deadletterCount ?? 0),
           });
         } else if (prior.failed > 0 && failed === 0) {
           delete firstFailureRef.current[id];
+          delete observedFailureRef.current[id];
           pushTicker({ t, endpoint: id, kind: "recovery" });
         }
       } else if (failed > 0 && firstFailureRef.current[id] === undefined) {
@@ -224,8 +248,8 @@ export function useMonitorData(): UseMonitorDataResult {
       }
 
       const firstFailureAt = firstFailureRef.current[id];
-      const isFreshFailure =
-        firstFailureAt !== undefined && t - firstFailureAt < NEW_FAILURE_MS;
+      const failureObservedAt = observedFailureRef.current[id];
+      const isFreshFailure = isFresh(failureObservedAt, t);
 
       // Rate per minute — use the oldest sample we still have to spread the
       // delta over the longest window available, then normalize to /min.
@@ -243,6 +267,7 @@ export function useMonitorData(): UseMonitorDataResult {
         status,
         samples,
         firstFailureAt,
+        failureObservedAt,
         isFreshFailure,
         ack,
         ratePerMin,
@@ -263,6 +288,14 @@ export function useMonitorData(): UseMonitorDataResult {
         });
       }
     }
+
+    const fleet: FleetSample = { t, failed: 0, backlog: 0 };
+    for (const e of decorated) {
+      fleet.failed += e.status.failedCount ?? 0;
+      fleet.backlog +=
+        (e.status.pendingCount ?? 0) + (e.status.deferredCount ?? 0);
+    }
+    setTelemetry((prev) => [...prev, fleet].slice(-TELEMETRY_LEN));
 
     setEndpoints(decorated);
     setLastRefreshAt(t);
@@ -321,8 +354,7 @@ export function useMonitorData(): UseMonitorDataResult {
 
   const decoratedEndpoints: MonitorEndpoint[] = endpoints.map((e) => ({
     ...e,
-    isFreshFailure:
-      e.firstFailureAt !== undefined && now - e.firstFailureAt < NEW_FAILURE_MS,
+    isFreshFailure: isFresh(e.failureObservedAt, now),
   }));
 
   const ack = useCallback(
@@ -384,8 +416,23 @@ export function useMonitorData(): UseMonitorDataResult {
     error,
     isStale,
     ticker,
+    telemetry,
     ack,
     unack,
     refresh,
   };
+}
+
+function isFresh(failureObservedAt: number | undefined, now: number): boolean {
+  return (
+    failureObservedAt !== undefined && now - failureObservedAt < NEW_FAILURE_MS
+  );
+}
+
+/** Ticker detail for a new failure; dead-letters are part of the failed count. */
+function describeFailure(failed: number, deadlettered: number): string {
+  const messages = `${failed.toLocaleString()} message${failed === 1 ? "" : "s"}`;
+  return deadlettered > 0
+    ? `${messages} · ${deadlettered.toLocaleString()} dead-lettered`
+    : messages;
 }

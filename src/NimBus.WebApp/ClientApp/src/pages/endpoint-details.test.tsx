@@ -40,25 +40,23 @@ vi.mock("components/endpoint-details/events-panel", () => ({
 }));
 vi.mock("components/endpoint-details/event-types-panel", async () => {
   const { useEffect } = await import("react");
-  return {
-    default: () => {
-      useEffect(() => {
-        eventTypes();
-      }, []);
-      return <input aria-label="Event type filter" />;
-    },
-  };
+  function EventTypesPanel() {
+    useEffect(() => {
+      eventTypes();
+    }, []);
+    return <input aria-label="Event type filter" />;
+  }
+  return { default: EventTypesPanel };
 });
 vi.mock("components/endpoint-details/tabs/audit-tab", async () => {
   const { useEffect } = await import("react");
-  return {
-    default: () => {
-      useEffect(() => {
-        audits();
-      }, []);
-      return <div>Audit content</div>;
-    },
-  };
+  function AuditTab() {
+    useEffect(() => {
+      audits();
+    }, []);
+    return <div>Audit content</div>;
+  }
+  return { default: AuditTab };
 });
 
 function Navigate() {

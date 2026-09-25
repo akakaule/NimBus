@@ -95,6 +95,7 @@ public partial class Startup
         services.AddTransient<IEventTypeApiController, EventTypeImplementation>();
         services.AddTransient<IApplicationApiController, ApplicationImplementation>();
         services.AddTransient<IMessageApiController, MessageImplementation>();
+        services.AddTransient<IFailedApiController, FailedImplementation>();
         services.AddScoped<IAdminService, AdminService>();
         // The emulator caps entity TTLs far below a real namespace, so a rebuild has to
         // ask the descriptor for emulator-safe values when that is what we're pointed at.
@@ -112,6 +113,8 @@ public partial class Startup
         services.AddTransient<IAdminApiController, AdminImplementation>();
         services.AddTransient<IMetricsApiController, MetricsImplementation>();
         services.AddTransient<IHeartbeatApiController, HeartbeatImplementation>();
+        services.AddTransient<IMonitorApiController, MonitorImplementation>();
+        services.AddScoped<IMonitorAcknowledgementService, MonitorAcknowledgementService>();
         services.AddTransient<IAuditApiController, AuditImplementation>();
         services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
         services.AddTransient<IAgentApiController, AgentImplementation>();

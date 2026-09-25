@@ -78,4 +78,15 @@ public class EventFilter
     public List<string>? ResolutionStatus { get; set; }
     public string? Payload { get; set; }
     public MessageType? MessageType { get; set; }
+
+    /// <summary>
+    /// Case-insensitive substring match on <c>MessageContent.ErrorContent.ErrorText</c>.
+    /// </summary>
+    public string? ErrorText { get; set; }
+
+    /// <summary>
+    /// Case-insensitive prefix match on <see cref="States.UnresolvedEvent.LastMessageId"/>,
+    /// the id of the message the event's current state was recorded for.
+    /// </summary>
+    public string? LastMessageId { get; set; }
 }

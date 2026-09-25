@@ -38,6 +38,7 @@ internal static class InfraCommands
                 var resolverMaxSessions = applyCommand.Option("--resolver-max-sessions <N>", "Resolver Service Bus session concurrency per instance (1-200). Defaults to the template value (16). Applied as a template-owned host override.", CommandOptionType.SingleValue);
                 var resolverMaxInstances = applyCommand.Option("--resolver-max-instances <N>", "Resolver Function App instance ceiling. Elastic Premium: 0 (no cap, default) to 10, applied as functionAppScaleLimit. Flex Consumption: 1-1000, applied as maximumInstanceCount (default 100).", CommandOptionType.SingleValue);
                 var managementPlanSku = applyCommand.Option("--management-plan-sku <SKU>", "SKU for the management App Service Plan hosting the WebApp. Defaults to the existing plan's SKU when one is deployed, otherwise 'B1' for dev/development and 'S1' for other environments.", CommandOptionType.SingleValue);
+                var networkOptions = NetworkCommandOptions.Register(applyCommand);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
@@ -50,6 +51,8 @@ internal static class InfraCommands
                     var resolverPlanChoice = PlanSelection.ParseResolverPlanOption(resolverPlan.Value());
                     var resolverMaxSessionsValue = PlanSelection.ParseResolverMaxSessionsOption(resolverMaxSessions.Value());
                     var resolverMaxInstancesValue = PlanSelection.ParseResolverMaxInstancesOption(resolverMaxInstances.Value());
+                    var network = networkOptions.Build();
+                    var serviceBusCapacity = networkOptions.ServiceBusCapacity;
                     var secrets = DeploymentSecrets.Load();
 
                     if (providerChoice == StorageProviderChoice.SqlServer)
@@ -77,7 +80,11 @@ internal static class InfraCommands
                         resolverPlanChoice,
                         ManagementPlanSku: managementPlanSku.Value(),
                         ResolverMaxConcurrentSessions: resolverMaxSessionsValue,
-                        ResolverMaxInstances: resolverMaxInstancesValue);
+                        ResolverMaxInstances: resolverMaxInstancesValue,
+                        Network: network,
+                        ServiceBusCapacity: serviceBusCapacity,
+                        ServiceBusNamespaceName: networkOptions.ServiceBusNamespaceName,
+                        DnsWait: networkOptions.DnsWait);
 
                     await deployer.ApplyAsync(options, cancellationToken).ConfigureAwait(false);
                     return 0;

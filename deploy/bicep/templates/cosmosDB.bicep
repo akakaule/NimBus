@@ -3,6 +3,14 @@ param location string = resourceGroup().location
 param dbname string
 param createIntelligenceContainer bool = false
 
+// 'Disabled' only in the private network state (spec 034 §5.13). Container management
+// goes through ARM, which data-plane network rules do not affect.
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
 resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
   name: name
   location: location
@@ -19,7 +27,9 @@ resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2022-05-15' = {
         failoverPriority: 0
       }
     ]
-    databaseAccountOfferType: 'Standard'  
+    databaseAccountOfferType: 'Standard'
+    publicNetworkAccess: publicNetworkAccess
+    networkAclBypass: 'None'
   }
 }
 
@@ -136,6 +146,7 @@ resource sharedContainerResources 'Microsoft.DocumentDB/databaseAccounts/sqlData
   }
 }]
 
-@secure()
-output connectionString string = cosmosDbAccount.listConnectionStrings().connectionStrings[0].connectionString
+// No connection-string output: nothing consumed it, and producing it read the
+// account keys on every deployment. The apps authenticate with Entra RBAC.
+output id string = cosmosDbAccount.id
 output accountEndpoint string = cosmosDbAccount.properties.documentEndpoint

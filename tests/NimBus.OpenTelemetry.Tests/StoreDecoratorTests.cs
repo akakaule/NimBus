@@ -45,6 +45,22 @@ public sealed class StoreDecoratorTests
     }
 
     [TestMethod]
+    public async Task Decorator_forwards_endpoint_state_count_with_oldest_failure()
+    {
+        var inner = new InMemoryMessageStore();
+        var sut = NimBusOpenTelemetryDecorators.InstrumentMessageTrackingStore(inner, "test");
+        var ev = new UnresolvedEvent { EventId = "event-1", SessionId = "session-1", EndpointId = "ep-1" };
+        await inner.UploadFailedMessage("event-1", "session-1", "ep-1", ev);
+        var expected = (await inner.DownloadEndpointStateCount("ep-1")).OldestFailureAt;
+
+        var counts = await sut.DownloadEndpointStateCount("ep-1");
+
+        Assert.AreEqual(1, counts.FailedCount);
+        Assert.IsNotNull(counts.OldestFailureAt);
+        Assert.AreEqual(expected, counts.OldestFailureAt);
+    }
+
+    [TestMethod]
     public async Task Decorator_records_failure_with_error_type()
     {
         var metrics = new List<Metric>();
@@ -226,6 +242,8 @@ internal sealed class ThrowingStore : IMessageTrackingStore
     public Task<List<UnresolvedEvent>> GetEventsByIds(string endpointId, IEnumerable<string> eventIds) => _passthrough.GetEventsByIds(endpointId, eventIds);
     public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId) => _passthrough.GetCompletedEventsOnEndpoint(endpointId);
     public Task<SearchResponse> GetEventsByFilter(NimBus.MessageStore.EventFilter filter, string continuationToken, int maxSearchItemsCount) => _passthrough.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount);
+    public Task<SearchResponse> GetFailedEventsAcrossEndpoints(NimBus.MessageStore.EventFilter filter, IReadOnlyCollection<string> endpointIds, string? continuationToken, int maxItemCount) => _passthrough.GetFailedEventsAcrossEndpoints(filter, endpointIds, continuationToken, maxItemCount);
+    public Task<FailedEventHistogram> GetFailedEventHistogram(NimBus.MessageStore.EventFilter filter, IReadOnlyCollection<string> endpointIds, DateTime fromUtc, DateTime toUtc, TimeSpan bucketSize) => _passthrough.GetFailedEventHistogram(filter, endpointIds, fromUtc, toUtc, bucketSize);
     public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => _passthrough.DownloadEndpointStateCount(endpointId);
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => _passthrough.DownloadEndpointSessionStateCount(endpointId, sessionId);
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => _passthrough.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds);

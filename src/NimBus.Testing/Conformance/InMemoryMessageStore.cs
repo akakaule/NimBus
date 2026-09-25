@@ -34,6 +34,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     private readonly ConcurrentDictionary<string, EndpointMetadata> _metadata = new();
     private readonly ConcurrentDictionary<string, EventSchema> _schemas = new();
     private readonly ConcurrentDictionary<string, AccessControlList> _accessControls = new();
+    private readonly ConcurrentDictionary<string, EndpointAcknowledgement> _acknowledgements = new(StringComparer.Ordinal);
     // Heartbeat state is read-modify-write across several records (rows, rollup,
     // claims), so it is guarded by one lock rather than by concurrent collections:
     // the claim methods are only atomic if the read and the write are one step.
@@ -189,12 +190,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     public virtual Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount)
     {
-        IEnumerable<UnresolvedEvent> q = _events.Values;
-        // ID-like fields use case-insensitive PREFIX matching, converging with
-        // the Cosmos (STARTSWITH) and SQL Server (LIKE 'value%') providers.
-        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => HasPrefix(e.EndpointId, filter.EndPointId));
-        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => HasPrefix(e.EventId, filter.EventId));
-        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => HasPrefix(e.SessionId, filter.SessionId));
+        var q = ApplyEventFilter(_events.Values, filter);
         if (filter.ResolutionStatus is { Count: > 0 })
         {
             var statuses = new HashSet<string>(filter.ResolutionStatus);
@@ -209,6 +205,77 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
             .Select(CloneWithoutEventJson)
             .ToList();
         return Task.FromResult(new SearchResponse { Events = results });
+    }
+
+    public virtual Task<SearchResponse> GetFailedEventsAcrossEndpoints(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        string? continuationToken,
+        int maxItemCount)
+    {
+        var pageSize = PaginationLimits.Resolve(maxItemCount);
+        var offset = int.TryParse(continuationToken, out var parsed) && parsed > 0 ? parsed : 0;
+        var page = FailedEventsQuery(filter, endpointIds)
+            .OrderByDescending(e => e.UpdatedAt)
+            .ThenByDescending(e => e.EndpointId, StringComparer.Ordinal)
+            .ThenByDescending(CompositeEventId, StringComparer.Ordinal)
+            .Skip(offset)
+            .Take(pageSize + 1)
+            .ToList();
+        var hasMore = page.Count > pageSize;
+        return Task.FromResult(new SearchResponse
+        {
+            Events = page.Take(pageSize).Select(CloneWithoutEventJson).ToList(),
+            ContinuationToken = hasMore ? (offset + pageSize).ToString(System.Globalization.CultureInfo.InvariantCulture) : null!,
+        });
+    }
+
+    public virtual Task<FailedEventHistogram> GetFailedEventHistogram(
+        EventFilter filter,
+        IReadOnlyCollection<string> endpointIds,
+        DateTime fromUtc,
+        DateTime toUtc,
+        TimeSpan bucketSize)
+    {
+        var observations = FailedEventsQuery(filter, endpointIds)
+            .Where(e => e.UpdatedAt >= fromUtc && e.UpdatedAt < toUtc)
+            .Select(e => (e.UpdatedAt, e.EndpointId, e.ResolutionStatus.ToString()))
+            .ToList();
+        return Task.FromResult(new FailedEventHistogram
+        {
+            Rows = FailedEventQuery.Bucket(observations, fromUtc, bucketSize),
+        });
+    }
+
+    private IEnumerable<UnresolvedEvent> FailedEventsQuery(EventFilter filter, IReadOnlyCollection<string> endpointIds)
+    {
+        var endpoints = new HashSet<string>(endpointIds, StringComparer.Ordinal);
+        var statuses = new HashSet<string>(FailedEventQuery.ResolveStatuses(filter.ResolutionStatus));
+        return ApplyEventFilter(_events.Values, filter)
+            .Where(e => endpoints.Contains(e.EndpointId) && statuses.Contains(e.ResolutionStatus.ToString()));
+    }
+
+    // Shared by every event search so the filters cannot drift apart. ID-like fields use
+    // case-insensitive PREFIX matching, converging with the Cosmos (STARTSWITH) and SQL Server
+    // (LIKE 'value%') providers; free-text fields use case-insensitive substring matching.
+    private static IEnumerable<UnresolvedEvent> ApplyEventFilter(IEnumerable<UnresolvedEvent> q, EventFilter filter)
+    {
+        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => HasPrefix(e.EndpointId, filter.EndPointId));
+        if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => HasPrefix(e.EventId, filter.EventId));
+        if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => HasPrefix(e.SessionId, filter.SessionId));
+        if (!string.IsNullOrEmpty(filter.LastMessageId)) q = q.Where(e => HasPrefix(e.LastMessageId, filter.LastMessageId));
+        if (!string.IsNullOrEmpty(filter.ErrorText))
+            q = q.Where(e => e.MessageContent?.ErrorContent?.ErrorText?.Contains(filter.ErrorText, StringComparison.OrdinalIgnoreCase) == true);
+        if (filter.EventTypeId is { Count: > 0 })
+        {
+            var types = new HashSet<string>(filter.EventTypeId);
+            q = q.Where(e => e.EventTypeId != null && types.Contains(e.EventTypeId));
+        }
+        if (filter.UpdatedAtFrom != null) q = q.Where(e => e.UpdatedAt >= filter.UpdatedAtFrom);
+        if (filter.UpdatedAtTo != null) q = q.Where(e => e.UpdatedAt <= filter.UpdatedAtTo);
+        if (!string.IsNullOrEmpty(filter.To)) q = q.Where(e => e.To?.Contains(filter.To, StringComparison.OrdinalIgnoreCase) == true);
+        if (!string.IsNullOrEmpty(filter.From)) q = q.Where(e => e.From?.Contains(filter.From, StringComparison.OrdinalIgnoreCase) == true);
+        return q;
     }
 
     /// <summary>Deep copy, so a stamped replacement cannot alias the caller's instance.</summary>
@@ -241,11 +308,16 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 
     public virtual Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId)
     {
-        var grouped = _events.Values.Where(e => e.EndpointId == endpointId).GroupBy(e => e.ResolutionStatus).ToDictionary(g => g.Key, g => g.Count());
+        var events = _events.Values.Where(e => e.EndpointId == endpointId).ToList();
+        var grouped = events.GroupBy(e => e.ResolutionStatus).ToDictionary(g => g.Key, g => g.Count());
+        var failures = events
+            .Where(e => e.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
+            .Select(e => (DateTime?)DateTime.SpecifyKind(e.UpdatedAt, DateTimeKind.Utc));
         return Task.FromResult(new EndpointStateCount
         {
             EndpointId = endpointId,
             EventTime = DateTime.UtcNow,
+            OldestFailureAt = failures.Min(),
             PendingCount = grouped.GetValueOrDefault(ResolutionStatus.Pending),
             DeferredCount = grouped.GetValueOrDefault(ResolutionStatus.Deferred),
             FailedCount = grouped.GetValueOrDefault(ResolutionStatus.Failed),
@@ -597,6 +669,39 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     // Copy on both write and read so callers can never mutate stored state in place.
     private static AccessControlList? Clone(AccessControlList? acl)
         => acl == null ? null : JsonConvert.DeserializeObject<AccessControlList>(JsonConvert.SerializeObject(acl));
+
+    public Task<IReadOnlyList<EndpointAcknowledgement>> GetEndpointAcknowledgements()
+        => Task.FromResult<IReadOnlyList<EndpointAcknowledgement>>(_acknowledgements.Values.Select(Clone).ToList());
+
+    public Task SetEndpointAcknowledgement(EndpointAcknowledgement acknowledgement)
+    {
+        var copy = Clone(acknowledgement);
+        _acknowledgements[copy.EndpointId] = copy;
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> RemoveEndpointAcknowledgement(string endpointId, string? expectedAcknowledgementId = null)
+    {
+        if (!_acknowledgements.TryGetValue(endpointId, out var stored)
+            || (expectedAcknowledgementId != null && stored.AcknowledgementId != expectedAcknowledgementId))
+        {
+            return Task.FromResult(false);
+        }
+
+        // Removes only the instance just checked, so a concurrent replace survives.
+        return Task.FromResult(_acknowledgements.TryRemove(new KeyValuePair<string, EndpointAcknowledgement>(endpointId, stored)));
+    }
+
+    private static EndpointAcknowledgement Clone(EndpointAcknowledgement source) => new()
+    {
+        EndpointId = source.EndpointId,
+        AcknowledgementId = source.AcknowledgementId,
+        Reason = source.Reason,
+        AcknowledgedBy = source.AcknowledgedBy,
+        AcknowledgedAtUtc = source.AcknowledgedAtUtc,
+        ExpiresAtUtc = source.ExpiresAtUtc,
+        FailedCountAtAcknowledgement = source.FailedCountAtAcknowledgement,
+    };
 
     public Task<EndpointMetadata?> GetEndpointMetadata(string endpointId)
         => Task.FromResult(_metadata.TryGetValue(endpointId, out var m) ? m : null);

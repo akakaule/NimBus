@@ -135,6 +135,19 @@ internal static class NamingConventions
             $"func-{normalizedSolutionId}-{normalizedEnvironment}-resolver",
             $"webapp-{normalizedSolutionId}-{normalizedEnvironment}-management");
     }
+
+    /// <summary>
+    /// Same as <see cref="Build(string, string)"/>, with an optional Service Bus namespace
+    /// name that replaces the derived one: a Premium namespace deployed next to the
+    /// Standard one it replaces (spec 034 §6, option A).
+    /// </summary>
+    public static DeploymentNames Build(string solutionId, string environment, string? serviceBusNamespaceName)
+    {
+        var names = Build(solutionId, environment);
+        return string.IsNullOrWhiteSpace(serviceBusNamespaceName)
+            ? names
+            : names with { ServiceBusNamespace = serviceBusNamespaceName.Trim() };
+    }
 }
 
 internal sealed record DeploymentNames(
@@ -168,7 +181,11 @@ internal sealed record InfrastructureOptions(
     string? IdentityAdminPassword = null,
     string? ManagementPlanSku = null,
     int? ResolverMaxConcurrentSessions = null,
-    int? ResolverMaxInstances = null);
+    int? ResolverMaxInstances = null,
+    NetworkOptions? Network = null,
+    int? ServiceBusCapacity = null,
+    string? ServiceBusNamespaceName = null,
+    TimeSpan? DnsWait = null);
 
 internal enum StorageProviderChoice
 {
@@ -191,14 +208,17 @@ internal enum ResolverPlanChoice
 internal sealed record TopologyOptions(
     string SolutionId,
     string Environment,
-    string ResourceGroupName);
+    string ResourceGroupName,
+    string? ServiceBusNamespaceName = null,
+    TimeSpan? DnsWait = null);
 
 internal sealed record AppDeploymentOptions(
     string SolutionId,
     string Environment,
     string ResourceGroupName,
     string Configuration,
-    AppDeploymentTarget Target = AppDeploymentTarget.All);
+    AppDeploymentTarget Target = AppDeploymentTarget.All,
+    TimeSpan? DnsWait = null);
 
 /// <summary>Which application(s) `nb deploy apps` builds and deploys.</summary>
 internal enum AppDeploymentTarget

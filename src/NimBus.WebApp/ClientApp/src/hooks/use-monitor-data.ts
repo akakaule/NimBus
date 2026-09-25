@@ -11,14 +11,17 @@ export const TELEMETRY_LEN = 120;
 // New-failure pulse window. A card that transitions from no-failures to
 // failing gets a pulsing ring for this long before settling into static red.
 export const NEW_FAILURE_MS = 60_000;
-// Acks auto-expire after this long. The operator can also un-ack manually.
+// Acks auto-expire after this long (the server enforces it; this only shapes
+// the optimistic record). The operator can also un-ack manually.
 export const ACK_TTL_MS = 4 * 60 * 60 * 1000;
 // If we haven't successfully refreshed for this long, dim the wall and
 // surface a "connection lost" banner — a frozen page that looks healthy is
 // the worst possible failure mode for a monitoring wall.
 export const STALE_AFTER_MS = 30_000;
 
-const ACK_STORAGE_KEY = "nb.monitor.acks.v1";
+// Acks used to live in each browser's localStorage under this key. They are
+// shared server-side now; the stale per-device copy is removed on load.
+const LEGACY_ACK_STORAGE_KEY = "nb.monitor.acks.v1";
 
 export type EndpointSample = {
   t: number;
@@ -41,8 +44,14 @@ export type AckRecord = {
   reason: string;
   /** Wall-clock ms when the ack happened. */
   ackedAt: number;
-  /** Failed count at the moment of ack — used to auto-expire on recovery. */
+  /** Failed count at the moment of ack — the server clears the ack on recovery. */
   failedAtAck: number;
+  /** Wall-clock ms when the server lets the ack lapse. */
+  expiresAt: number;
+  /** Who acked it, when the server knows. */
+  acknowledgedBy?: string;
+  /** Server token, new on every ack. Undefined while an optimistic ack is in flight. */
+  id?: string;
 };
 
 export type MonitorEndpoint = {
@@ -51,7 +60,11 @@ export type MonitorEndpoint = {
   status: api.EndpointStatusCount;
   /** Recent history (oldest → newest), capped at HISTORY_LEN. */
   samples: EndpointSample[];
-  /** Wall-clock ms when this endpoint *first* transitioned to failing. */
+  /**
+   * Wall-clock ms when the endpoint's longest-standing open failure was
+   * recorded (server `oldestFailureAt`). Falls back to when this page saw
+   * it start failing only if the server sends no timestamp.
+   */
   firstFailureAt?: number;
   /**
    * Set only when this page saw the endpoint go from no failures to failing.
@@ -77,25 +90,27 @@ export type TickerEvent = {
 
 const TICKER_MAX = 12;
 
-function loadAcks(): Record<string, AckRecord> {
-  if (typeof window === "undefined") return {};
+function removeLegacyAcks(): void {
   try {
-    const raw = window.localStorage.getItem(ACK_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, AckRecord>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    window.localStorage?.removeItem(LEGACY_ACK_STORAGE_KEY);
   } catch {
-    return {};
+    // localStorage can be unavailable (private mode, blocked storage); ignore.
   }
 }
 
-function saveAcks(acks: Record<string, AckRecord>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(ACK_STORAGE_KEY, JSON.stringify(acks));
-  } catch {
-    // localStorage can be unavailable (private mode, quota); ignore.
-  }
+function ackFromApi(ack: api.MonitorAcknowledgement): AckRecord {
+  return {
+    reason: ack.reason ?? "",
+    ackedAt: ack.acknowledgedAt?.valueOf() ?? Date.now(),
+    failedAtAck: ack.failedCountAtAcknowledgement ?? 0,
+    expiresAt: ack.expiresAt?.valueOf() ?? Date.now() + ACK_TTL_MS,
+    acknowledgedBy: ack.acknowledgedBy ?? undefined,
+    id: ack.acknowledgementId,
+  };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Request failed";
 }
 
 export interface UseMonitorDataResult {
@@ -103,23 +118,26 @@ export interface UseMonitorDataResult {
   lastRefreshAt: number | undefined;
   loading: boolean;
   error: string | undefined;
+  /** Last failed ACK / un-ACK request, cleared by the next successful one. */
+  actionError?: string;
   isStale: boolean;
   ticker: TickerEvent[];
   /** Fleet totals per poll, oldest → newest, capped at TELEMETRY_LEN. */
   telemetry: FleetSample[];
-  ack: (endpointId: string, reason?: string) => void;
-  unack: (endpointId: string) => void;
+  ack: (endpointId: string, reason?: string) => Promise<void>;
+  unack: (endpointId: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
 /**
- * Polls the endpoint-status-count API on a fixed cadence and decorates each
- * endpoint with the derived data the Monitor page needs:
+ * Polls the endpoint-status-count and acknowledgement APIs on a fixed cadence
+ * and decorates each endpoint with the derived data the Monitor page needs:
  *  - rolling sample history (drives sparklines + rate / min)
- *  - first-detected-failure timestamps (drives "Failing since…" and the
- *    new-failure pulse)
- *  - operator-supplied acks, persisted to localStorage so a refresh on the
- *    wall PC doesn't re-light demo/intentional failures
+ *  - the oldest open failure's timestamp from the server (drives "Failing
+ *    for…" and the header T+ clock), plus the page-observed transition that
+ *    drives the new-failure pulse
+ *  - operator acks, stored server-side so an ACK on a laptop also silences
+ *    the wall PC; changes made on other devices show up in the ticker
  *  - a small in-memory ticker fed by sample-diff transitions
  *
  * Designed to keep working on a fixed schedule even if individual fetches
@@ -141,6 +159,7 @@ export function useMonitorData(): UseMonitorDataResult {
   const [now, setNow] = useState(Date.now());
   const [ticker, setTicker] = useState<TickerEvent[]>([]);
   const [telemetry, setTelemetry] = useState<FleetSample[]>([]);
+  const [actionError, setActionError] = useState<string | undefined>();
   // Wall-clock ms when the tab last became visible again; staleness is
   // measured from max(lastRefreshAt, resumedAt) so resume doesn't false-flag.
   const [resumedAt, setResumedAt] = useState(0);
@@ -152,12 +171,28 @@ export function useMonitorData(): UseMonitorDataResult {
   const samplesRef = useRef<Record<string, EndpointSample[]>>({});
   const firstFailureRef = useRef<Record<string, number>>({});
   const observedFailureRef = useRef<Record<string, number>>({});
-  const acksRef = useRef<Record<string, AckRecord>>(loadAcks());
+  // Last known server acks, overlaid with this page's own in-flight changes.
+  const acksRef = useRef<Record<string, AckRecord>>({});
+  // False until the first ack list arrives: acks that already exist on load
+  // are not "news" and stay out of the ticker.
+  const acksLoadedRef = useRef(false);
+  // Local ack/un-ack bookkeeping so a poll whose GET raced a PUT/DELETE can't
+  // overwrite (and ticker-report) the change this page just made.
+  const mutationSeqRef = useRef(0);
+  const lastMutationSeqRef = useRef<Record<string, number>>({});
+  const inFlightRef = useRef<Set<string>>(new Set());
   const clientRef = useRef<api.Client | null>(null);
   const endpointIdsRef = useRef<string[] | null>(null);
 
-  const persistAcks = useCallback(() => {
-    saveAcks(acksRef.current);
+  const getClient = useCallback((): api.Client => {
+    if (!clientRef.current) {
+      clientRef.current = new api.Client(api.CookieAuth());
+    }
+    return clientRef.current;
+  }, []);
+
+  useEffect(() => {
+    removeLegacyAcks();
   }, []);
 
   const pushTicker = useCallback((event: Omit<TickerEvent, "id">) => {
@@ -170,11 +205,63 @@ export function useMonitorData(): UseMonitorDataResult {
     });
   }, []);
 
+  /**
+   * Replaces the known acks with the server's list, except for endpoints this
+   * page is mid-way through changing (`keepLocal`). Changes made elsewhere —
+   * another device's ack or un-ack, or the server clearing an ack on expiry
+   * or recovery — are reported in the ticker.
+   */
+  const mergeServerAcks = useCallback(
+    (
+      serverAcks: api.MonitorAcknowledgement[],
+      t: number,
+      failedById: Map<string, number>,
+      keepLocal: (id: string) => boolean,
+    ) => {
+      const previous = acksRef.current;
+      const next: Record<string, AckRecord> = {};
+      for (const serverAck of serverAcks) {
+        const id = serverAck.endpointId ?? "";
+        if (id && !keepLocal(id)) next[id] = ackFromApi(serverAck);
+      }
+      for (const [id, local] of Object.entries(previous)) {
+        if (keepLocal(id)) next[id] = local;
+      }
+
+      if (acksLoadedRef.current) {
+        for (const [id, before] of Object.entries(previous)) {
+          if (next[id] || keepLocal(id)) continue;
+          pushTicker({
+            t,
+            endpoint: id,
+            kind: "unack",
+            detail:
+              before.failedAtAck > 0 && failedById.get(id) === 0
+                ? "auto-cleared · recovered"
+                : t >= before.expiresAt
+                  ? "auto-cleared · 4h expiry"
+                  : undefined,
+          });
+        }
+        for (const [id, after] of Object.entries(next)) {
+          if (keepLocal(id) || previous[id]?.id === after.id) continue;
+          pushTicker({
+            t,
+            endpoint: id,
+            kind: "ack",
+            detail: describeAck(after),
+          });
+        }
+      }
+
+      acksRef.current = next;
+      acksLoadedRef.current = true;
+    },
+    [pushTicker],
+  );
+
   const fetchOnce = useCallback(async (): Promise<void> => {
-    if (!clientRef.current) {
-      clientRef.current = new api.Client(api.CookieAuth());
-    }
-    const client = clientRef.current;
+    const client = getClient();
 
     let ids = endpointIdsRef.current;
     if (!ids) {
@@ -190,9 +277,21 @@ export function useMonitorData(): UseMonitorDataResult {
       return;
     }
 
-    const snapshot = await client.postApiEndpointStatusCount(ids);
+    const seqAtStart = mutationSeqRef.current;
+    const inFlightAtStart = new Set(inFlightRef.current);
+    const [snapshot, serverAcks] = await Promise.all([
+      client.postApiEndpointStatusCount(ids),
+      client.getMonitorAcknowledgements(),
+    ]);
     const t = Date.now();
-    const ackChanges: { id: string; clearedReason: "recovery" | "ttl" }[] = [];
+    const failedById = new Map(
+      snapshot.map((s) => [s.endpointId ?? "", s.failedCount ?? 0]),
+    );
+    mergeServerAcks(serverAcks, t, failedById, (id) =>
+      inFlightAtStart.has(id) ||
+      inFlightRef.current.has(id) ||
+      (lastMutationSeqRef.current[id] ?? 0) > seqAtStart,
+    );
 
     const decorated: MonitorEndpoint[] = snapshot.map((status) => {
       const id = status.endpointId ?? "";
@@ -226,28 +325,21 @@ export function useMonitorData(): UseMonitorDataResult {
           pushTicker({ t, endpoint: id, kind: "recovery" });
         }
       } else if (failed > 0 && firstFailureRef.current[id] === undefined) {
-        // First time we've seen this endpoint AND it's already failing — we
-        // can't tell *when* it started, so use the API's eventTime if it
-        // gives us anything, otherwise fall back to "now".
-        const seedFromEventTime = status.eventTime?.valueOf();
-        firstFailureRef.current[id] = seedFromEventTime ?? t;
+        // Already failing on the first poll: the page can't know when it
+        // started, so this is only the fallback for a server that sends no
+        // oldestFailureAt (e.g. a storage-unavailable stub).
+        firstFailureRef.current[id] = t;
       }
 
-      // Resolve / auto-expire acks.
-      let ack: AckRecord | undefined = acksRef.current[id];
-      if (ack) {
-        if (failed === 0 && ack.failedAtAck > 0) {
-          delete acksRef.current[id];
-          ack = undefined;
-          ackChanges.push({ id, clearedReason: "recovery" });
-        } else if (t - ack.ackedAt > ACK_TTL_MS) {
-          delete acksRef.current[id];
-          ack = undefined;
-          ackChanges.push({ id, clearedReason: "ttl" });
-        }
-      }
+      const ack: AckRecord | undefined = acksRef.current[id];
 
-      const firstFailureAt = firstFailureRef.current[id];
+      // The server's oldest open failure survives reloads and is shared by
+      // every client; the page-observed transition is only a fallback.
+      const serverSince = status.oldestFailureAt?.valueOf();
+      const firstFailureAt =
+        failed > 0 && serverSince !== undefined
+          ? serverSince
+          : firstFailureRef.current[id];
       const failureObservedAt = observedFailureRef.current[id];
       const isFreshFailure = isFresh(failureObservedAt, t);
 
@@ -274,21 +366,6 @@ export function useMonitorData(): UseMonitorDataResult {
       };
     });
 
-    if (ackChanges.length) {
-      persistAcks();
-      for (const change of ackChanges) {
-        pushTicker({
-          t,
-          endpoint: change.id,
-          kind: "unack",
-          detail:
-            change.clearedReason === "recovery"
-              ? "auto-cleared · recovered"
-              : "auto-cleared · 4h expiry",
-        });
-      }
-    }
-
     const fleet: FleetSample = { t, failed: 0, backlog: 0 };
     for (const e of decorated) {
       fleet.failed += e.status.failedCount ?? 0;
@@ -301,7 +378,7 @@ export function useMonitorData(): UseMonitorDataResult {
     setLastRefreshAt(t);
     setError(undefined);
     setLoading(false);
-  }, [persistAcks, pushTicker]);
+  }, [getClient, mergeServerAcks, pushTicker]);
 
   // Initial load + polling loop. We intentionally swallow per-tick errors and
   // surface them on the page instead of throwing, so a transient API blip
@@ -357,46 +434,90 @@ export function useMonitorData(): UseMonitorDataResult {
     isFreshFailure: isFresh(e.failureObservedAt, now),
   }));
 
-  const ack = useCallback(
-    (endpointId: string, reason: string = "") => {
-      const target = endpoints.find((e) => e.id === endpointId);
-      const failed = target?.status.failedCount ?? 0;
-      acksRef.current[endpointId] = {
-        reason,
-        ackedAt: Date.now(),
-        failedAtAck: failed,
+  /**
+   * Applies a local ack change optimistically, sends it, then settles on the
+   * server's answer — or restores the previous state and reports the error.
+   * Only the latest change per endpoint may settle it.
+   */
+  const mutateAck = useCallback(
+    async (
+      endpointId: string,
+      optimistic: AckRecord | undefined,
+      send: (client: api.Client) => Promise<AckRecord | undefined>,
+    ) => {
+      const seq = ++mutationSeqRef.current;
+      lastMutationSeqRef.current[endpointId] = seq;
+      inFlightRef.current.add(endpointId);
+      const previous = acksRef.current[endpointId];
+
+      const apply = (record: AckRecord | undefined) => {
+        if (record) acksRef.current[endpointId] = record;
+        else delete acksRef.current[endpointId];
+        setEndpoints((prev) =>
+          prev.map((e) => (e.id === endpointId ? { ...e, ack: record } : e)),
+        );
       };
-      persistAcks();
+
+      apply(optimistic);
+      try {
+        const settled = await send(getClient());
+        if (lastMutationSeqRef.current[endpointId] === seq) apply(settled);
+        setActionError(undefined);
+      } catch (err) {
+        if (lastMutationSeqRef.current[endpointId] === seq) apply(previous);
+        setActionError(`${endpointId}: ${errorMessage(err)}`);
+      } finally {
+        if (lastMutationSeqRef.current[endpointId] === seq) {
+          inFlightRef.current.delete(endpointId);
+        }
+      }
+    },
+    [getClient],
+  );
+
+  const ack = useCallback(
+    async (endpointId: string, reason: string = "") => {
+      const target = endpoints.find((e) => e.id === endpointId);
+      const now = Date.now();
       pushTicker({
-        t: Date.now(),
+        t: now,
         endpoint: endpointId,
         kind: "ack",
         detail: reason || undefined,
       });
-      // Optimistically reflect the ack without waiting for the next poll.
-      setEndpoints((prev) =>
-        prev.map((e) =>
-          e.id === endpointId ? { ...e, ack: acksRef.current[endpointId] } : e,
-        ),
+      await mutateAck(
+        endpointId,
+        {
+          reason,
+          ackedAt: now,
+          failedAtAck: target?.status.failedCount ?? 0,
+          expiresAt: now + ACK_TTL_MS,
+        },
+        async (client) =>
+          ackFromApi(
+            await client.putMonitorAcknowledgement(
+              endpointId,
+              new api.MonitorAcknowledgementRequest({ reason }),
+            ),
+          ),
       );
     },
-    [endpoints, persistAcks, pushTicker],
+    [endpoints, mutateAck, pushTicker],
   );
 
   const unack = useCallback(
-    (endpointId: string) => {
-      delete acksRef.current[endpointId];
-      persistAcks();
+    async (endpointId: string) => {
       pushTicker({
         t: Date.now(),
         endpoint: endpointId,
         kind: "unack",
       });
-      setEndpoints((prev) =>
-        prev.map((e) => (e.id === endpointId ? { ...e, ack: undefined } : e)),
-      );
+      await mutateAck(endpointId, undefined, async (client) => {
+        await client.deleteMonitorAcknowledgement(endpointId);
+        return undefined;
+      });
     },
-    [persistAcks, pushTicker],
+    [mutateAck, pushTicker],
   );
 
   const refresh = useCallback(async () => {
@@ -414,6 +535,7 @@ export function useMonitorData(): UseMonitorDataResult {
     lastRefreshAt,
     loading,
     error,
+    actionError,
     isStale,
     ticker,
     telemetry,
@@ -427,6 +549,12 @@ function isFresh(failureObservedAt: number | undefined, now: number): boolean {
   return (
     failureObservedAt !== undefined && now - failureObservedAt < NEW_FAILURE_MS
   );
+}
+
+/** Ticker detail for an ack placed on another device. */
+function describeAck(ack: AckRecord): string | undefined {
+  const parts = [ack.reason, ack.acknowledgedBy && `by ${ack.acknowledgedBy}`];
+  return parts.filter(Boolean).join(" · ") || undefined;
 }
 
 /** Ticker detail for a new failure; dead-letters are part of the failed count. */

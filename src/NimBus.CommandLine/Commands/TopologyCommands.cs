@@ -70,9 +70,19 @@ internal static class TopologyCommands
                 var topologyPlatform = applyCommand.Option("--platform <TYPE>",
                     "IPlatform type name when the assembly or package exposes more than one",
                     CommandOptionType.SingleValue);
+                var topologyNamespaceName = applyCommand.Option("--service-bus-namespace-name <NAME>",
+                    "Override the Service Bus namespace name (default: 'sb-{solution-id}-{environment}'). Use the value passed to 'nb infra apply'.",
+                    CommandOptionType.SingleValue);
+                var topologyDnsWait = applyCommand.Option(NetworkSelection.DnsWaitOptionTemplate, NetworkSelection.DnsWaitOptionDescription, CommandOptionType.SingleValue);
 
                 applyCommand.OnExecuteAsync(async cancellationToken =>
                 {
+                    if (!string.IsNullOrWhiteSpace(topologyNamespaceName.Value()))
+                    {
+                        NetworkSelection.ValidateServiceBusNamespaceName(topologyNamespaceName.Value()!.Trim());
+                    }
+
+                    var dnsWait = NetworkSelection.ParseDnsWaitOption(topologyDnsWait.Value());
                     var az = new AzureCliRunner();
                     var platformFactory = await ResolvePlatformFactoryAsync(
                         topologyAssembly.Value(), topologyPackage.Value(), topologyFeed.Value(), topologyPlatform.Value(), cancellationToken).ConfigureAwait(false);
@@ -97,7 +107,7 @@ internal static class TopologyCommands
                         }
 
                         provisioner = new ServiceBusTopologyProvisioner(az, platformFactory);
-                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!);
+                        options = new TopologyOptions(solutionId.Value()!, environment.Value()!, resourceGroup.Value()!, topologyNamespaceName.Value(), dnsWait);
                     }
 
                     await provisioner.ApplyAsync(options, cancellationToken).ConfigureAwait(false);

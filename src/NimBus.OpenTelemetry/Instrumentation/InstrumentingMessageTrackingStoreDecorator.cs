@@ -173,6 +173,12 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) =>
         InstrumentAsync(nameof(GetEventsByFilter), () => _inner.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount));
 
+    public Task<SearchResponse> GetFailedEventsAcrossEndpoints(EventFilter filter, IReadOnlyCollection<string> endpointIds, string? continuationToken, int maxItemCount) =>
+        InstrumentAsync(nameof(GetFailedEventsAcrossEndpoints), () => _inner.GetFailedEventsAcrossEndpoints(filter, endpointIds, continuationToken, maxItemCount));
+
+    public Task<FailedEventHistogram> GetFailedEventHistogram(EventFilter filter, IReadOnlyCollection<string> endpointIds, DateTime fromUtc, DateTime toUtc, TimeSpan bucketSize) =>
+        InstrumentAsync(nameof(GetFailedEventHistogram), () => _inner.GetFailedEventHistogram(filter, endpointIds, fromUtc, toUtc, bucketSize));
+
     // ── State counts ────────────────────────────────────────────────────
 
     public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) =>

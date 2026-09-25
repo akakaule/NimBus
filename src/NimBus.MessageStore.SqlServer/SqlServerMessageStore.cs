@@ -40,6 +40,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     private readonly SqlServerSubscriptionStore _subscriptions;
     private readonly SqlServerHeartbeatHistoryStore _heartbeatHistory;
     private readonly SqlServerServiceHealthStore _serviceHealth;
+    private readonly SqlServerEndpointAcknowledgementStore _acknowledgements;
     private readonly SqlServerEndpointMetadataStore _endpointMetadata;
     private readonly SqlServerMessageTrackingStore _messageTracking;
 
@@ -61,6 +62,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
         _subscriptions = new SqlServerSubscriptionStore(context);
         _heartbeatHistory = new SqlServerHeartbeatHistoryStore(context);
         _serviceHealth = new SqlServerServiceHealthStore(context);
+        _acknowledgements = new SqlServerEndpointAcknowledgementStore(context);
         _endpointMetadata = new SqlServerEndpointMetadataStore(context);
         _messageTracking = new SqlServerMessageTrackingStore(context);
     }
@@ -121,6 +123,8 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => _messageTracking.GetNextPendingHandoffEvent(endpointId, eventTypeIds);
     public Task<IEnumerable<UnresolvedEvent>> GetCompletedEventsOnEndpoint(string endpointId) => _messageTracking.GetCompletedEventsOnEndpoint(endpointId);
     public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => _messageTracking.GetEventsByFilter(filter, continuationToken, maxSearchItemsCount);
+    public Task<SearchResponse> GetFailedEventsAcrossEndpoints(EventFilter filter, IReadOnlyCollection<string> endpointIds, string? continuationToken, int maxItemCount) => _messageTracking.GetFailedEventsAcrossEndpoints(filter, endpointIds, continuationToken, maxItemCount);
+    public Task<FailedEventHistogram> GetFailedEventHistogram(EventFilter filter, IReadOnlyCollection<string> endpointIds, DateTime fromUtc, DateTime toUtc, TimeSpan bucketSize) => _messageTracking.GetFailedEventHistogram(filter, endpointIds, fromUtc, toUtc, bucketSize);
     public Task<EndpointStateCount> DownloadEndpointStateCount(string endpointId) => _messageTracking.DownloadEndpointStateCount(endpointId);
     public Task<SessionStateCount> DownloadEndpointSessionStateCount(string endpointId, string sessionId) => _messageTracking.DownloadEndpointSessionStateCount(endpointId, sessionId);
     public Task<IEnumerable<SessionStateCount>> DownloadEndpointSessionStateCountBatch(string endpointId, IEnumerable<string> sessionIds) => _messageTracking.DownloadEndpointSessionStateCountBatch(endpointId, sessionIds);
@@ -228,4 +232,13 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<IReadOnlyList<AccessControlList>> GetEndpointAccessControls() => _accessControl.GetEndpointAccessControls();
 
     public Task SetEndpointAccessControl(string endpointId, AccessControlList accessControl) => _accessControl.SetEndpointAccessControl(endpointId, accessControl);
+
+    // ───────── Monitor acknowledgements — implementation in SqlServerEndpointAcknowledgementStore ─────────
+
+    public Task<IReadOnlyList<EndpointAcknowledgement>> GetEndpointAcknowledgements() => _acknowledgements.GetEndpointAcknowledgements();
+
+    public Task SetEndpointAcknowledgement(EndpointAcknowledgement acknowledgement) => _acknowledgements.SetEndpointAcknowledgement(acknowledgement);
+
+    public Task<bool> RemoveEndpointAcknowledgement(string endpointId, string? expectedAcknowledgementId = null)
+        => _acknowledgements.RemoveEndpointAcknowledgement(endpointId, expectedAcknowledgementId);
 }

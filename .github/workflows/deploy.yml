@@ -40,6 +40,28 @@ on:
         required: false
         type: string
         default: ""
+      runs-on:
+        description: "Runner label. Private deployments need a runner inside the network (self-hosted, or a larger runner with Azure private networking)"
+        required: false
+        type: string
+        default: "ubuntu-latest"
+      allow-public-access:
+        description: "Private mode only: pass 1 of moving an existing deployment (private endpoints added, public access kept on)"
+        required: false
+        type: boolean
+        default: false
+      skip-transition:
+        description: "Private mode only: switch an existing public deployment straight to private, accepting downtime"
+        required: false
+        type: boolean
+        default: false
+
+# Private networking (docs/private-networking.md) is configured per GitHub environment
+# with these variables, all optional: NB_NETWORK_MODE, NB_PRIVATE_ENDPOINT_SUBNET_ID,
+# NB_RESOLVER_SUBNET_ID, NB_WEBAPP_SUBNET_ID, NB_PRIVATE_DNS, NB_PRIVATE_DNS_ZONE_SCOPE,
+# NB_PRIVATE_DNS_LINK_VNET_IDS (space-separated), NB_MONITOR_PRIVATE_LINK,
+# NB_SERVICE_BUS_CAPACITY, NB_SERVICE_BUS_NAMESPACE_NAME and NB_DNS_WAIT. nb records the
+# setup on the resource group, so later runs work without them too.
 
 permissions:
   id-token: write
@@ -47,7 +69,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     environment: ${{ inputs.environment }}
 
     steps:
@@ -83,8 +105,34 @@ jobs:
           NB_RESOLVER_MAX_INSTANCES: ${{ inputs.resolver-max-instances }}
           NB_MANAGEMENT_PLAN_SKU: ${{ inputs.management-plan-sku }}
           NB_LOCATION: ${{ inputs.location }}
+          NB_ALLOW_PUBLIC_ACCESS: ${{ inputs.allow-public-access }}
+          NB_SKIP_TRANSITION: ${{ inputs.skip-transition }}
+          NB_NETWORK_MODE: ${{ vars.NB_NETWORK_MODE }}
+          NB_PRIVATE_ENDPOINT_SUBNET_ID: ${{ vars.NB_PRIVATE_ENDPOINT_SUBNET_ID }}
+          NB_RESOLVER_SUBNET_ID: ${{ vars.NB_RESOLVER_SUBNET_ID }}
+          NB_WEBAPP_SUBNET_ID: ${{ vars.NB_WEBAPP_SUBNET_ID }}
+          NB_PRIVATE_DNS: ${{ vars.NB_PRIVATE_DNS }}
+          NB_PRIVATE_DNS_ZONE_SCOPE: ${{ vars.NB_PRIVATE_DNS_ZONE_SCOPE }}
+          NB_PRIVATE_DNS_LINK_VNET_IDS: ${{ vars.NB_PRIVATE_DNS_LINK_VNET_IDS }}
+          NB_MONITOR_PRIVATE_LINK: ${{ vars.NB_MONITOR_PRIVATE_LINK }}
+          NB_SERVICE_BUS_CAPACITY: ${{ vars.NB_SERVICE_BUS_CAPACITY }}
+          NB_SERVICE_BUS_NAMESPACE_NAME: ${{ vars.NB_SERVICE_BUS_NAMESPACE_NAME }}
+          NB_DNS_WAIT: ${{ vars.NB_DNS_WAIT }}
         run: |
           EXTRA_ARGS=()
+          if [ -n "$NB_NETWORK_MODE" ]; then EXTRA_ARGS+=(--network-mode "$NB_NETWORK_MODE"); fi
+          if [ "$NB_ALLOW_PUBLIC_ACCESS" = "true" ]; then EXTRA_ARGS+=(--allow-public-access); fi
+          if [ "$NB_SKIP_TRANSITION" = "true" ]; then EXTRA_ARGS+=(--skip-transition); fi
+          if [ -n "$NB_PRIVATE_ENDPOINT_SUBNET_ID" ]; then EXTRA_ARGS+=(--private-endpoint-subnet-id "$NB_PRIVATE_ENDPOINT_SUBNET_ID"); fi
+          if [ -n "$NB_RESOLVER_SUBNET_ID" ]; then EXTRA_ARGS+=(--resolver-subnet-id "$NB_RESOLVER_SUBNET_ID"); fi
+          if [ -n "$NB_WEBAPP_SUBNET_ID" ]; then EXTRA_ARGS+=(--webapp-subnet-id "$NB_WEBAPP_SUBNET_ID"); fi
+          if [ -n "$NB_PRIVATE_DNS" ]; then EXTRA_ARGS+=(--private-dns "$NB_PRIVATE_DNS"); fi
+          if [ -n "$NB_PRIVATE_DNS_ZONE_SCOPE" ]; then EXTRA_ARGS+=(--private-dns-zone-scope "$NB_PRIVATE_DNS_ZONE_SCOPE"); fi
+          for VNET_ID in $NB_PRIVATE_DNS_LINK_VNET_IDS; do EXTRA_ARGS+=(--private-dns-link-vnet-id "$VNET_ID"); done
+          if [ -n "$NB_MONITOR_PRIVATE_LINK" ]; then EXTRA_ARGS+=(--monitor-private-link "$NB_MONITOR_PRIVATE_LINK"); fi
+          if [ -n "$NB_SERVICE_BUS_CAPACITY" ]; then EXTRA_ARGS+=(--service-bus-capacity "$NB_SERVICE_BUS_CAPACITY"); fi
+          if [ -n "$NB_SERVICE_BUS_NAMESPACE_NAME" ]; then EXTRA_ARGS+=(--service-bus-namespace-name "$NB_SERVICE_BUS_NAMESPACE_NAME"); fi
+          if [ -n "$NB_DNS_WAIT" ]; then EXTRA_ARGS+=(--dns-wait "$NB_DNS_WAIT"); fi
           if [ -n "$NB_RESOLVER_PLAN" ]; then EXTRA_ARGS+=(--resolver-plan "$NB_RESOLVER_PLAN"); fi
           if [ -n "$NB_RESOLVER_MAX_SESSIONS" ]; then EXTRA_ARGS+=(--resolver-max-sessions "$NB_RESOLVER_MAX_SESSIONS"); fi
           if [ -n "$NB_RESOLVER_MAX_INSTANCES" ]; then EXTRA_ARGS+=(--resolver-max-instances "$NB_RESOLVER_MAX_INSTANCES"); fi
@@ -97,26 +145,36 @@ jobs:
             --resource-group "$NB_RESOURCE_GROUP" \
             "${EXTRA_ARGS[@]}"
 
+      # Both steps read the namespace override recorded by 'infra apply' and, for a private
+      # deployment, first check that this runner resolves the private endpoints.
       - name: Provision Service Bus topology
         env:
           NB_SOLUTION_ID: ${{ inputs.solution-id }}
           NB_ENVIRONMENT: ${{ inputs.environment }}
           NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
-        run: >
-          dotnet run --project src/NimBus.CommandLine --no-build -c Release --
-          topology apply
-          --solution-id "$NB_SOLUTION_ID"
-          --environment "$NB_ENVIRONMENT"
-          --resource-group "$NB_RESOURCE_GROUP"
+          NB_DNS_WAIT: ${{ vars.NB_DNS_WAIT }}
+        run: |
+          EXTRA_ARGS=()
+          if [ -n "$NB_DNS_WAIT" ]; then EXTRA_ARGS+=(--dns-wait "$NB_DNS_WAIT"); fi
+          dotnet run --project src/NimBus.CommandLine --no-build -c Release -- \
+            topology apply \
+            --solution-id "$NB_SOLUTION_ID" \
+            --environment "$NB_ENVIRONMENT" \
+            --resource-group "$NB_RESOURCE_GROUP" \
+            "${EXTRA_ARGS[@]}"
 
       - name: Deploy applications
         env:
           NB_SOLUTION_ID: ${{ inputs.solution-id }}
           NB_ENVIRONMENT: ${{ inputs.environment }}
           NB_RESOURCE_GROUP: ${{ inputs.resource-group }}
-        run: >
-          dotnet run --project src/NimBus.CommandLine --no-build -c Release --
-          deploy apps
-          --solution-id "$NB_SOLUTION_ID"
-          --environment "$NB_ENVIRONMENT"
-          --resource-group "$NB_RESOURCE_GROUP"
+          NB_DNS_WAIT: ${{ vars.NB_DNS_WAIT }}
+        run: |
+          EXTRA_ARGS=()
+          if [ -n "$NB_DNS_WAIT" ]; then EXTRA_ARGS+=(--dns-wait "$NB_DNS_WAIT"); fi
+          dotnet run --project src/NimBus.CommandLine --no-build -c Release -- \
+            deploy apps \
+            --solution-id "$NB_SOLUTION_ID" \
+            --environment "$NB_ENVIRONMENT" \
+            --resource-group "$NB_RESOURCE_GROUP" \
+            "${EXTRA_ARGS[@]}"

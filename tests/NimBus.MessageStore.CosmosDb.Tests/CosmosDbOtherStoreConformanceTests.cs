@@ -48,6 +48,13 @@ public sealed class CosmosDbServiceHealthStoreConformanceTests : ServiceHealthSt
 }
 
 [TestClass]
+public sealed class CosmosDbEndpointAcknowledgementStoreConformanceTests : EndpointAcknowledgementStoreConformanceTests
+{
+    protected override IEndpointAcknowledgementStore CreateStore()
+        => CosmosDbStoreTestHarness.CreateStore();
+}
+
+[TestClass]
 public sealed class CosmosDbHeartbeatHistoryStoreConformanceTests : HeartbeatHistoryStoreConformanceTests
 {
     protected override IHeartbeatHistoryStore CreateStore()

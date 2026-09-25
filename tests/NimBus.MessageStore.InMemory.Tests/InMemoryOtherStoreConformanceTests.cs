@@ -42,6 +42,12 @@ public sealed class InMemoryServiceHealthStoreConformanceTests : ServiceHealthSt
 }
 
 [TestClass]
+public sealed class InMemoryEndpointAcknowledgementStoreConformanceTests : EndpointAcknowledgementStoreConformanceTests
+{
+    protected override IEndpointAcknowledgementStore CreateStore() => new InMemoryMessageStore();
+}
+
+[TestClass]
 public sealed class InMemoryHeartbeatHistoryStoreConformanceTests : HeartbeatHistoryStoreConformanceTests
 {
     protected override IHeartbeatHistoryStore CreateStore() => new InMemoryMessageStore();

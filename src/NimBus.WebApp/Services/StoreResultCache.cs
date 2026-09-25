@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
+using NimBus.MessageStore.Abstractions;
+using NimBus.MessageStore.States;
 
 namespace NimBus.WebApp.Services;
 
@@ -69,4 +71,29 @@ public sealed class StoreResultCache : IStoreResultCache
             throw;
         }
     }
+}
+
+/// <summary>
+/// The cached per-endpoint status count shared by the endpoint status API and the
+/// Monitor acknowledgement policy, so both read the same entry.
+/// </summary>
+public static class EndpointStateCountCache
+{
+    /// <summary>
+    /// The Monitor wall polls every few seconds per client; a 5 s TTL collapses that
+    /// fan-in to at most one store round-trip per endpoint per window without
+    /// visibly staling the UI.
+    /// </summary>
+    public static readonly TimeSpan Ttl = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Returns the endpoint's status count, cached for <see cref="Ttl"/>. The value's
+    /// <see cref="EndpointStateCount.EventTime"/> is when the store was actually queried.
+    /// </summary>
+    public static Task<EndpointStateCount> GetEndpointStateCountAsync(
+        this IStoreResultCache cache, IMessageTrackingStore store, string endpointId)
+        => cache.GetOrCreateAsync(
+            $"endpoint-state-count:{endpointId}",
+            Ttl,
+            () => store.DownloadEndpointStateCount(endpointId));
 }

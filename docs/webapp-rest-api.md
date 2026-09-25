@@ -277,6 +277,23 @@ privileges.
 
 Search the message history (`/api/messages/search`). Cursor-paginated.
 
+### Failed
+
+Unresolved failures (`Failed`, `DeadLettered`, `Unsupported`) across the endpoints the caller
+holds Reader on. Three operations, each taking a `FailedSearchFilter` (endpoints, statuses,
+event types, IDs, From/To, error text, UpdatedAt range):
+
+- `POST /api/failed/search` — newest first, cursor-paginated (`maxSearchItemsCount` clamped
+  to 500).
+- `POST /api/failed/histogram` — counts per time bucket by status and endpoint, zero-filled.
+  The bucket follows `period` (5 minutes for `1h` … one day for `30d`), or a custom
+  `from`/`to` of up to 90 days with at most 60 buckets.
+- `POST /api/failed/error-groups` — the Insights grouping (category, then normalized
+  pattern) with each pattern's failures; up to 5,000 failures, `truncated` beyond that.
+
+Naming an endpoint the caller cannot read returns 403. See
+[Failed messages page](webapp-failed-messages.md).
+
 ### Audit
 
 Search the per-event audit trail (`/api/audits/search`). Same pagination

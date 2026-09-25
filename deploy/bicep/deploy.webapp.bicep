@@ -54,6 +54,32 @@ param alwaysOnEnabled bool = true
 // a site that has not been created yet.
 param webAppExists bool = false
 
+// Private networking (spec 034). Same meaning as in deploy.core.bicep, which runs
+// first and, with privateDnsMode 'create', has already created the privatelink zones.
+@allowed([
+  'public'
+  'private'
+])
+param networkMode string = 'public'
+param allowPublicAccess bool = false
+param privateEndpointSubnetId string = ''
+param privateEndpointLocation string = ''
+
+// The WebApp's outbound (VNet integration) subnet, delegated to Microsoft.Web/serverFarms.
+param managementSubnetId string = ''
+
+@allowed([
+  ''
+  'create'
+  'existing'
+  'external'
+])
+param privateDnsMode string = ''
+param privateDnsZoneScope string = ''
+
+// Must match the value passed to deploy.core.bicep. Empty means sb-{solutionId}-{environment}.
+param serviceBusNamespaceName string = ''
+
 //##############################################
 // Define names Azure resource names
 //##############################################
@@ -61,7 +87,27 @@ var location = locationParam
 var effectivePlanLocation = empty(managementAppServicePlanLocation) ? location : managementAppServicePlanLocation
 var effectiveWebAppLocation = empty(webAppLocation) ? effectivePlanLocation : webAppLocation
 
-var sbNamespace = 'sb-${toLower(solutionId)}-${toLower(environment)}'
+var sbNamespace = empty(serviceBusNamespaceName) ? 'sb-${toLower(solutionId)}-${toLower(environment)}' : serviceBusNamespaceName
+
+var isPrivate = networkMode == 'private'
+var publicAccess = isPrivate && !allowPublicAccess ? 'Disabled' : 'Enabled'
+var effectivePrivateEndpointLocation = empty(privateEndpointLocation) ? location : privateEndpointLocation
+var sitesDnsZoneId = privateDnsMode == 'create'
+  ? '${resourceGroup().id}/providers/Microsoft.Network/privateDnsZones/privatelink.azurewebsites.net'
+  : '${privateDnsZoneScope}/providers/Microsoft.Network/privateDnsZones/privatelink.azurewebsites.net'
+
+// Evaluated in the WebApp module name, so invalid input fails at template validation.
+var networkValidation = !isPrivate
+  ? ''
+  : empty(privateEndpointSubnetId)
+      ? fail('privateEndpointSubnetId is required when networkMode is private.')
+      : empty(managementSubnetId)
+          ? fail('managementSubnetId is required when networkMode is private.')
+          : empty(privateDnsMode)
+              ? fail('privateDnsMode (create, existing or external) is required when networkMode is private.')
+              : privateDnsMode == 'existing' && empty(privateDnsZoneScope)
+                  ? fail('privateDnsZoneScope is required when privateDnsMode is existing.')
+                  : ''
 
 var appServicePlanName = 'asp-${toLower(solutionId)}-${toLower(environment)}-management'
 
@@ -229,7 +275,7 @@ var preservedRateLimitAppSettings = map(
 var webappsettingsFinal = concat(webappsettings, preservedRateLimitAppSettings)
 
 module webAppModule 'templates/webApp.bicep' = {
-  name: 'webAppDeploy'
+  name: 'webAppDeploy${networkValidation}'
   params: {
     appName:managementWebAppName
     appServicePlanId:'/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Web/serverfarms/${appServicePlanName}'
@@ -237,6 +283,26 @@ module webAppModule 'templates/webApp.bicep' = {
     alwaysOn: alwaysOnEnabled
     settings:webappsettingsFinal
     secretSettings: webAppSecretSettings
+    virtualNetworkSubnetId: isPrivate ? managementSubnetId : ''
+    publicNetworkAccess: publicAccess
+  }
+}
+
+// Operators reach the WebApp (and the runner its scm site) through this endpoint once
+// public access is off. The data-service endpoints it depends on were created by
+// deploy.core.bicep, which runs first.
+module peWebApp 'templates/privateEndpoint.bicep' = if (isPrivate) {
+  name: 'peWebAppDeploy'
+  params: {
+    name: 'pe-${managementWebAppName}-sites'
+    location: effectivePrivateEndpointLocation
+    subnetId: privateEndpointSubnetId
+    privateLinkServiceId: webAppModule.outputs.id
+    groupId: 'sites'
+    privateDnsZoneIds: privateDnsMode == 'external' ? [] : [sitesDnsZoneId]
+    tags: {
+      'nimbus-deployment': '${toLower(solutionId)}-${toLower(environment)}'
+    }
   }
 }
 

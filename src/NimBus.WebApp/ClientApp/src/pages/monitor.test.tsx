@@ -8,6 +8,7 @@ import Monitor, {
   endpointState,
   failedPerMinuteSeries,
   firstOpenFailureAt,
+  formatElapsed,
 } from "./monitor";
 import type {
   FleetSample,
@@ -18,6 +19,7 @@ import type {
 const mocks = vi.hoisted(() => ({
   endpoints: [] as MonitorEndpoint[],
   telemetry: [] as FleetSample[],
+  access: null as unknown,
 }));
 
 vi.mock("hooks/use-monitor-data", () => ({
@@ -35,6 +37,11 @@ vi.mock("hooks/use-monitor-data", () => ({
   }),
 }));
 
+vi.mock("hooks/use-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("hooks/use-access")>()),
+  useAccess: () => ({ access: mocks.access }),
+}));
+
 vi.mock("hooks/app-status", () => ({
   useEnv: () => "dev",
   getApplicationStatus: () => Promise.resolve({ platformName: "Test" }),
@@ -48,6 +55,7 @@ interface EndpointOptions {
   deadletter?: number;
   firstFailureAt?: number;
   acked?: boolean;
+  acknowledgedBy?: string;
   /** Backlog at the oldest sample — lower than current means "growing". */
   pendingWas?: number;
 }
@@ -60,6 +68,7 @@ function endpoint({
   deadletter = 0,
   firstFailureAt,
   acked = false,
+  acknowledgedBy,
   pendingWas,
 }: EndpointOptions): MonitorEndpoint {
   const now = Date.now();
@@ -82,13 +91,22 @@ function endpoint({
     samples,
     firstFailureAt,
     isFreshFailure: false,
-    ack: acked ? { reason: "", ackedAt: now, failedAtAck: failed } : undefined,
+    ack: acked
+      ? {
+          reason: "",
+          ackedAt: now,
+          failedAtAck: failed,
+          expiresAt: now + 4 * 60 * 60 * 1000,
+          acknowledgedBy,
+        }
+      : undefined,
   };
 }
 
 afterEach(() => {
   mocks.endpoints = [];
   mocks.telemetry = [];
+  mocks.access = null;
   cleanup();
 });
 
@@ -190,6 +208,15 @@ describe("firstOpenFailureAt", () => {
   });
 });
 
+describe("formatElapsed", () => {
+  it("adds a day count once a failure is older than 24 hours", () => {
+    expect(formatElapsed((6 * 3600 + 24 * 60 + 23) * 1000)).toBe("06:24:23");
+    expect(formatElapsed(((64 * 24 + 6) * 3600 + 24 * 60 + 23) * 1000)).toBe(
+      "64d 06:24:23",
+    );
+  });
+});
+
 describe("failedPerMinuteSeries", () => {
   const sample = (t: number, failed: number): FleetSample => ({
     t,
@@ -235,6 +262,60 @@ describe("Monitor wall", () => {
 
     expect(screen.getByText("incl. DLQ")).toBeDefined();
     expect(screen.getByText("16")).toBeDefined();
+  });
+
+  it("counts failing time from the oldest open failure", () => {
+    mocks.endpoints = [
+      endpoint({
+        id: "BillingEndpoint",
+        failed: 4,
+        firstFailureAt: Date.now() - (3 * 60 + 20) * 60 * 1000,
+      }),
+    ];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("Failing for 3h 20m")).toBeDefined();
+    expect(screen.getByText("T+ since first failure")).toBeDefined();
+  });
+
+  it("names who acknowledged a failure", () => {
+    mocks.endpoints = [
+      endpoint({
+        id: "BillingEndpoint",
+        failed: 4,
+        firstFailureAt: Date.now(),
+        acked: true,
+        acknowledgedBy: "alice@example.com",
+      }),
+    ];
+
+    render(<Monitor />);
+
+    expect(screen.getByText("Acked 0s ago by alice")).toBeDefined();
+  });
+
+  it("shows readers the ACK state without letting them change it", () => {
+    mocks.access = {
+      siteRole: "reader",
+      endpointRoles: [{ endpointId: "billingendpoint", role: "contributor" }],
+    };
+    mocks.endpoints = [
+      endpoint({ id: "BillingEndpoint", failed: 4, firstFailureAt: Date.now() }),
+      endpoint({
+        id: "OrdersEndpoint",
+        failed: 2,
+        firstFailureAt: Date.now(),
+        acked: true,
+      }),
+    ];
+
+    render(<Monitor />);
+
+    const ack = screen.getByRole("button", { name: "ack" }) as HTMLButtonElement;
+    const acked = screen.getByRole("button", { name: "✓ acked" }) as HTMLButtonElement;
+    expect(ack.disabled).toBe(false);
+    expect(acked.disabled).toBe(true);
   });
 
   it("says so when nothing is failing", () => {

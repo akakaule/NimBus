@@ -1,0 +1,7 @@
+interface:
+  display_name: "Review change"
+  short_description: "Review a diff against its spec: Spec, Correctness, Standards"
+  default_prompt: "Use $review-change to review the current branch against its spec or plan."
+
+policy:
+  allow_implicit_invocation: false

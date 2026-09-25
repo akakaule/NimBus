@@ -97,6 +97,21 @@ public sealed class SqlServerServiceHealthStoreConformanceTests : ServiceHealthS
 }
 
 [TestClass]
+public sealed class SqlServerEndpointAcknowledgementStoreConformanceTests : EndpointAcknowledgementStoreConformanceTests
+{
+    [ClassInitialize]
+    public static Task ClassInit(TestContext context)
+        => SqlServerStoreTestHarness.InitializeAsync(typeof(SqlServerEndpointAcknowledgementStoreConformanceTests));
+
+    [TestInitialize]
+    public Task ResetSchema()
+        => SqlServerStoreTestHarness.ResetAsync(typeof(SqlServerEndpointAcknowledgementStoreConformanceTests));
+
+    protected override IEndpointAcknowledgementStore CreateStore()
+        => SqlServerStoreTestHarness.CreateStore(typeof(SqlServerEndpointAcknowledgementStoreConformanceTests));
+}
+
+[TestClass]
 public sealed class SqlServerHeartbeatHistoryStoreConformanceTests : HeartbeatHistoryStoreConformanceTests
 {
     [ClassInitialize]

@@ -844,6 +844,8 @@ public class ResolverServiceTests
         }
 
         public Task<SearchResponse> GetEventsByFilter(EventFilter filter, string continuationToken, int maxSearchItemsCount) => throw new NotSupportedException();
+        public Task<SearchResponse> GetFailedEventsAcrossEndpoints(EventFilter filter, IReadOnlyCollection<string> endpointIds, string? continuationToken, int maxItemCount) => throw new NotSupportedException();
+        public Task<FailedEventHistogram> GetFailedEventHistogram(EventFilter filter, IReadOnlyCollection<string> endpointIds, DateTime fromUtc, DateTime toUtc, TimeSpan bucketSize) => throw new NotSupportedException();
         public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) => throw new NotSupportedException();
         public Task<UnresolvedEvent?> GetPendingHandoffByExternalJobId(string endpointId, string externalJobId, System.Threading.CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<UnresolvedEvent?> GetNextPendingHandoffEvent(string endpointId, IReadOnlyCollection<string>? eventTypeIds) => throw new NotSupportedException();
@@ -959,6 +961,9 @@ public class ResolverServiceTests
         public Task<NimBus.MessageStore.States.AccessControlList?> GetEndpointAccessControl(string endpointId) => throw new NotSupportedException();
         public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.AccessControlList>> GetEndpointAccessControls() => throw new NotSupportedException();
         public Task SetEndpointAccessControl(string endpointId, NimBus.MessageStore.States.AccessControlList accessControl) => throw new NotSupportedException();
+        public Task<System.Collections.Generic.IReadOnlyList<NimBus.MessageStore.States.EndpointAcknowledgement>> GetEndpointAcknowledgements() => throw new NotSupportedException();
+        public Task SetEndpointAcknowledgement(NimBus.MessageStore.States.EndpointAcknowledgement acknowledgement) => throw new NotSupportedException();
+        public Task<bool> RemoveEndpointAcknowledgement(string endpointId, string? expectedAcknowledgementId = null) => throw new NotSupportedException();
     }
 
     internal sealed record UploadCall(string EventId, string SessionId, string EndpointId, UnresolvedEvent Content);

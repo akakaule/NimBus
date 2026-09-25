@@ -109,7 +109,7 @@ public class CliApplicationFactoryTests
         "nb container resubmit: <endpoint-name!> --db-connection-string --sb-connection-string --unresolved-retention-days",
         "nb container skip: <endpoint-name!> --before --db-connection-string --status!",
         "nb deploy:",
-        "nb deploy apps: --configuration --environment! --from-source --only --platform --platform-feed --platform-package --repo-root --resource-group! --solution-id!",
+        "nb deploy apps: --configuration --dns-wait --environment! --from-source --only --platform --platform-feed --platform-package --repo-root --resource-group! --solution-id!",
         "nb endpoint:",
         "nb endpoint purge: <endpoint-name!> --before --sb-connection-string --state --subscription",
         "nb endpoint session:",
@@ -117,10 +117,10 @@ public class CliApplicationFactoryTests
         "nb endpoint topics:",
         "nb endpoint topics removeDeprecated: <endpoint-name!> --sb-connection-string",
         "nb infra:",
-        "nb infra apply: --environment! --location --management-plan-sku --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resource-group! --resource-name-postfix --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-version",
-        "nb setup: --assembly --configuration --environment! --from-source --identity-admin-email --location --management-plan-sku --platform --platform-feed --platform-package --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resource-group! --resource-name-postfix --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-version",
+        "nb infra apply: --allow-public-access --dns-wait --environment! --location --management-plan-sku --monitor-private-link --network-mode --private-dns --private-dns-link-vnet-id --private-dns-zone-scope --private-endpoint-subnet-id --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resolver-subnet-id --resource-group! --resource-name-postfix --service-bus-capacity --service-bus-namespace-name --skip-transition --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-subnet-id --webapp-version",
+        "nb setup: --allow-public-access --assembly --configuration --dns-wait --environment! --from-source --identity-admin-email --location --management-plan-sku --monitor-private-link --network-mode --platform --platform-feed --platform-package --private-dns --private-dns-link-vnet-id --private-dns-zone-scope --private-endpoint-subnet-id --repo-root --resolver-max-instances --resolver-max-sessions --resolver-plan --resolver-subnet-id --resource-group! --resource-name-postfix --service-bus-capacity --service-bus-namespace-name --skip-transition --solution-id! --sql-admin-login --sql-mode --sql-server-name --storage-provider --webapp-subnet-id --webapp-version",
         "nb topology:",
-        "nb topology apply: --assembly --environment --platform --platform-feed --platform-package --resource-group --sb-connection-string --solution-id --storage-provider",
+        "nb topology apply: --assembly --dns-wait --environment --platform --platform-feed --platform-package --resource-group --sb-connection-string --service-bus-namespace-name --solution-id --storage-provider",
         "nb topology export: --assembly --output --platform --platform-feed --platform-package",
     ];
 }

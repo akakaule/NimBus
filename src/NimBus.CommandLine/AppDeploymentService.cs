@@ -11,12 +11,14 @@ internal sealed class AppDeploymentService
     private readonly IAzureCliRunner _az;
     private readonly IDeploymentArtifactSource _artifacts;
     private readonly PlatformPackage? _platformPackage;
+    private readonly PrivateEndpointDnsCheck _dnsCheck;
 
-    public AppDeploymentService(IAzureCliRunner az, IDeploymentArtifactSource artifacts, PlatformPackage? platformPackage = null)
+    public AppDeploymentService(IAzureCliRunner az, IDeploymentArtifactSource artifacts, PlatformPackage? platformPackage = null, PrivateEndpointDnsCheck? dnsCheck = null)
     {
         _az = az;
         _artifacts = artifacts;
         _platformPackage = platformPackage;
+        _dnsCheck = dnsCheck ?? new PrivateEndpointDnsCheck(az);
     }
 
     public async Task DeployAsync(AppDeploymentOptions options, CancellationToken cancellationToken)
@@ -26,6 +28,20 @@ internal sealed class AppDeploymentService
         var deployWebApp = options.Target != AppDeploymentTarget.Resolver;
 
         await _az.EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false);
+
+        // Deployments go through each app's Kudu/scm site, which a private deployment only
+        // exposes through the app's private endpoint (spec 034 §5.7).
+        var siteEndpoints = new List<string>();
+        if (deployResolver) siteEndpoints.Add(PrivateEndpointNames.Site(names.ResolverFunctionAppName));
+        if (deployWebApp) siteEndpoints.Add(PrivateEndpointNames.Site(names.WebAppName));
+        await PrivateNetworkPreflight.RunIfPrivateAsync(
+            _az,
+            _dnsCheck,
+            options.ResourceGroupName,
+            siteEndpoints,
+            options.DnsWait,
+            "deploying the applications",
+            cancellationToken).ConfigureAwait(false);
 
         var version = await _artifacts.GetVersionAsync(cancellationToken).ConfigureAwait(false);
         CliOutput.WriteLine(version != null

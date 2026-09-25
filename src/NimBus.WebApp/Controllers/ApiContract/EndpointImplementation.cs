@@ -46,11 +46,6 @@ public class EndpointImplementation : IEndpointApiController
     private const int PagingEvents = 40;
     private const int SqlInvalidObjectNameErrorNumber = 208;
 
-    // Status counts back the Monitor wall, which polls every few seconds per
-    // client; a 5s TTL collapses that fan-in to at most one store round-trip
-    // per endpoint per window without visibly staling the UI.
-    private static readonly TimeSpan StatusCountTtl = TimeSpan.FromSeconds(5);
-
     public EndpointImplementation(
         IHttpContextAccessor contextAccessor,
         IPlatform platform,
@@ -304,10 +299,7 @@ public class EndpointImplementation : IEndpointApiController
             // happens at the call sites above): the cached value is the
             // endpoint-scoped raw count, identical for every authorized user.
             // Failures propagate uncached, so the stub branches below stay live.
-            var endpointStateCount = await _storeResultCache.GetOrCreateAsync(
-                $"endpoint-state-count:{endpointId}",
-                StatusCountTtl,
-                () => messageStore.DownloadEndpointStateCount(endpointId));
+            var endpointStateCount = await _storeResultCache.GetEndpointStateCountAsync(messageStore, endpointId);
             return Mapper.EndpointStatusCountFromEndpointStateCount(endpointStateCount);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)

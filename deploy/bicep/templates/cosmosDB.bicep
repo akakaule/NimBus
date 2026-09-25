@@ -118,6 +118,11 @@ resource intelligenceContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
 // so every shared container must be declared here. Per-endpoint containers
 // (one per catalog endpoint, PK /id) are catalog-dependent and cannot be
 // declared statically; create them alongside topology provisioning.
+// Keep in sync with CosmosContainerDefaults.ReservedContainerIds (enforced by
+// CosmosBicepContainerSyncTests). The one deliberate omission is 'inbox': the
+// Cosmos consumer inbox is opt-in, its container id is configurable and it
+// requires Strong consistency (this account is Session), so a subscriber that
+// enables it provisions its own container (docs/inbox-pattern.md).
 var sharedContainers = [
   { name: 'subscriptions', pk: '/id' }   // endpoint notification subscriptions
   { name: 'eventschemas', pk: '/id' }    // agent-defined event schemas (spec 022)
@@ -126,6 +131,7 @@ var sharedContainers = [
   { name: 'Metadata', pk: '/id' }        // endpoint metadata (owner, heartbeat opt-in)
   { name: 'settings', pk: '/id' }        // operator-tuned platform settings
   { name: 'servicehealth', pk: '/id' }   // Resolver liveness beats
+  { name: 'endpointacknowledgements', pk: '/id' } // shared Monitor ACKs, one document per endpoint
   { name: 'heartbeatuptimedays', pk: '/EndpointId', ttl: -1 } // heartbeat uptime rollups; TTL on, items decide expiry
   { name: 'heartbeatgaps', pk: '/EndpointId', ttl: -1 }       // heartbeat silent periods; TTL on, items decide expiry
 ]

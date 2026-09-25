@@ -7,6 +7,7 @@ using NimBus.Core;
 using NimBus.MessageStore;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
+using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Tests;
@@ -41,6 +42,44 @@ public sealed class EventImplementationMissingEventTests
         var notFound = result.Result as NotFoundObjectResult;
         Assert.IsNotNull(notFound);
         Assert.AreEqual("Event not found", notFound.Value);
+    }
+
+    [TestMethod]
+    public async Task Resubmit_of_unknown_message_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.PostResubmitEventIdsAsync("missing", "missing-message");
+
+        AssertMessageNotFound(result);
+    }
+
+    [TestMethod]
+    public async Task Skip_of_unknown_message_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.PostSkipEventIdsAsync("missing", "missing-message");
+
+        AssertMessageNotFound(result);
+    }
+
+    [TestMethod]
+    public async Task Resubmit_with_changes_of_unknown_message_is_not_found()
+    {
+        var sut = Create();
+
+        var result = await sut.PostResubmitWithChangesEventIdsAsync(
+            new ResubmitWithChanges { EventTypeId = "CrmAccountCreated", EventContent = "{}" }, "missing", "missing-message");
+
+        AssertMessageNotFound(result);
+    }
+
+    private static void AssertMessageNotFound(IActionResult result)
+    {
+        var notFound = result as NotFoundObjectResult;
+        Assert.IsNotNull(notFound, $"Expected 404, got {result?.GetType().Name}");
+        Assert.AreEqual("Message not found", notFound.Value);
     }
 
     private static EventImplementation Create() =>

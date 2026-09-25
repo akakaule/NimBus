@@ -41,7 +41,7 @@ public partial class EventImplementation
         if (errorResponse == null)
         {
             logger.LogWarning("Could not resubmit message. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
-            return new BadRequestResult();
+            return new NotFoundObjectResult("Message not found");
         }
 
         // Resubmit must replay the original event payload. For a failed
@@ -114,7 +114,7 @@ public partial class EventImplementation
         if (errorResponse == null)
         {
             logger.LogWarning("Could not skip message. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
-            return new BadRequestResult();
+            return new NotFoundObjectResult("Message not found");
         }
 
         eventTypeId = errorResponse.EventTypeId;
@@ -286,7 +286,7 @@ public partial class EventImplementation
         if (errorResponse == null)
         {
             logger.LogWarning("Could not resubmit message with changes. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
-            return new BadRequestResult();
+            return new NotFoundObjectResult("Message not found");
         }
 
         // If error response message is a result of forwarding a deadlettered message.

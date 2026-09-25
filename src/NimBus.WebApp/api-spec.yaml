@@ -228,6 +228,8 @@ paths:
       responses:
         '200':
           description: OK
+        '404':
+          description: Event not found
       tags:
         - Event
   '/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
@@ -427,6 +429,8 @@ paths:
       responses:
         '200':
           description: OK
+        '404':
+          description: Event not found
       requestBody:
         content:
           application/json:

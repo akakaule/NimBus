@@ -231,7 +231,7 @@ public class PrecompressedStaticFileMiddlewareTests
         string? dir = Path.GetDirectoryName(typeof(PrecompressedStaticFileMiddlewareTests).Assembly.Location);
         while (!string.IsNullOrEmpty(dir))
         {
-            string candidate = Path.Combine(dir, "src", "NimBus.WebApp", "Startup.cs");
+            string candidate = Path.Combine(dir, "src", "NimBus.WebApp", "Startup.Pipeline.cs");
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -241,6 +241,6 @@ public class PrecompressedStaticFileMiddlewareTests
         }
 
         throw new FileNotFoundException(
-            "Could not locate src/NimBus.WebApp/Startup.cs by walking up from the test assembly directory.");
+            "Could not locate src/NimBus.WebApp/Startup.Pipeline.cs (Startup.Configure) by walking up from the test assembly directory.");
     }
 }

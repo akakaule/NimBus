@@ -35,7 +35,7 @@ public class RateLimitWiringTests
         // Source-order introspection, the same technique ResponseCompressionTests
         // uses for its own middleware-ordering invariant: a future refactor that
         // moves the call must not silently unbind the endpoint policies.
-        var source = File.ReadAllText(LocateWebAppFile("Startup.cs"));
+        var source = File.ReadAllText(LocateWebAppFile("Startup.Pipeline.cs"));
 
         var routing = source.IndexOf("app.UseRouting()", StringComparison.Ordinal);
         var limiter = source.IndexOf("app.UseRateLimiter()", StringComparison.Ordinal);
@@ -56,7 +56,12 @@ public class RateLimitWiringTests
     [TestMethod]
     public void Rate_limiting_is_registered_exactly_once()
     {
-        var startup = File.ReadAllText(LocateWebAppFile("Startup.cs"));
+        // Startup is split across partial files (Startup.*.cs); count across all of them.
+        var startupDirectory = Path.GetDirectoryName(LocateWebAppFile("Startup.cs"))!;
+        var startup = string.Concat(Directory
+            .GetFiles(startupDirectory, "Startup*.cs")
+            .Order(StringComparer.Ordinal)
+            .Select(File.ReadAllText));
         Assert.AreEqual(
             1,
             CountOccurrences(startup, "AddNimBusRateLimiting("),

@@ -213,8 +213,12 @@ public class SpaFallbackTests
     [TestMethod]
     public void Startup_ServesSpaViaUseStaticFiles_WithoutSpaServicesOrRuntimeCompilation()
     {
+        // Startup is split across partial files (Startup.*.cs); check them all.
         string startupPath = LocateStartupSource();
-        string source = File.ReadAllText(startupPath);
+        string source = string.Concat(Directory
+            .GetFiles(Path.GetDirectoryName(startupPath)!, "Startup*.cs")
+            .Order(StringComparer.Ordinal)
+            .Select(File.ReadAllText));
 
         Assert.IsTrue(
             source.Contains("app.UseStaticFiles", StringComparison.Ordinal),

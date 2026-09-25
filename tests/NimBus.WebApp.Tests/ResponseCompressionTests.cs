@@ -234,7 +234,7 @@ public class ResponseCompressionTests
         string? dir = Path.GetDirectoryName(typeof(ResponseCompressionTests).Assembly.Location);
         while (!string.IsNullOrEmpty(dir))
         {
-            string candidate = Path.Combine(dir, "src", "NimBus.WebApp", "Startup.cs");
+            string candidate = Path.Combine(dir, "src", "NimBus.WebApp", "Startup.Pipeline.cs");
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -243,6 +243,6 @@ public class ResponseCompressionTests
         }
 
         throw new FileNotFoundException(
-            "Could not locate src/NimBus.WebApp/Startup.cs by walking up from the test assembly directory.");
+            "Could not locate src/NimBus.WebApp/Startup.Pipeline.cs (Startup.Configure) by walking up from the test assembly directory.");
     }
 }

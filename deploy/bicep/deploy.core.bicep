@@ -2,7 +2,18 @@ param solutionId string
 param environment string = 'dev'
 param locationParam string = 'westeurope'
 param resolverId string
-param uniqueDeploy string
+
+// Deprecated and ignored. It used to seed the Elastic Premium content share name, which
+// then changed on every deployment and left the Resolver on a new, empty share. Still
+// accepted so existing parameter files and pipelines keep deploying.
+@description('Deprecated and ignored. The Elastic Premium content share name is now stable.')
+#disable-next-line no-unused-params
+param uniqueDeploy string = ''
+
+// The Resolver's current WEBSITE_CONTENTSHARE on Elastic Premium. The CLI passes it for an
+// existing Resolver so a redeployment keeps the share its code lives on. Empty means a new
+// deployment, which gets a stable name derived from the resource group and app.
+param existingResolverContentShare string = ''
 
 // Per-resource location overrides. Empty means "use the global locationParam".
 // The CLI populates these when it finds an existing resource in the resource
@@ -394,7 +405,11 @@ var sharedResolverSettings = [
 
 // Elastic Premium needs the Windows host to know where its content share lives.
 // Flex Consumption rejects these settings.
-var resolverContentShareName = '${toLower(resolverFunctionAppName)}${uniqueString(uniqueDeploy)}'
+// A share name must stay the same across deployments: pointing WEBSITE_CONTENTSHARE at a
+// new share leaves the app without its deployed code.
+var resolverContentShareName = empty(existingResolverContentShare)
+  ? '${toLower(resolverFunctionAppName)}${uniqueString(resourceGroup().id, resolverFunctionAppName)}'
+  : existingResolverContentShare
 
 var elasticPremiumExtraSettings = resolverPlan == 'ElasticPremium' ? [
   {

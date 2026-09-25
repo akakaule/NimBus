@@ -86,7 +86,9 @@ internal sealed class PrivateEndpointDnsCheck
 
     /// <summary>
     /// Reads, for each private endpoint, the host names it serves and its address from its
-    /// network interface. That works whichever DNS mode is in use.
+    /// network interface. That works whichever DNS mode is in use. Every endpoint must report
+    /// at least one host name with a valid address: an endpoint without that metadata would
+    /// otherwise contribute nothing to check, and the guard would pass without testing it.
     /// </summary>
     public async Task<IReadOnlyList<ExpectedEndpoint>> ReadExpectedAsync(
         string resourceGroupName,
@@ -119,25 +121,36 @@ internal sealed class PrivateEndpointDnsCheck
                 cancellationToken,
                 $"Could not read the network interface of private endpoint '{endpointName}'.").ConfigureAwait(false);
 
-            if (nic.RootElement.ValueKind != JsonValueKind.Array)
+            var found = 0;
+            if (nic.RootElement.ValueKind == JsonValueKind.Array)
             {
-                continue;
+                foreach (var configuration in nic.RootElement.EnumerateArray())
+                {
+                    if (!configuration.TryGetProperty("ip", out var ipElement)
+                        || ipElement.ValueKind != JsonValueKind.String
+                        || !IPAddress.TryParse(ipElement.GetString(), out var address)
+                        || !configuration.TryGetProperty("fqdns", out var fqdns)
+                        || fqdns.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (var fqdn in fqdns.EnumerateArray()
+                        .Where(f => f.ValueKind == JsonValueKind.String)
+                        .Select(f => f.GetString())
+                        .Where(f => !string.IsNullOrWhiteSpace(f)))
+                    {
+                        expected.Add(new ExpectedEndpoint(fqdn!, address, endpointName));
+                        found++;
+                    }
+                }
             }
 
-            foreach (var configuration in nic.RootElement.EnumerateArray())
+            if (found == 0)
             {
-                if (!configuration.TryGetProperty("ip", out var ipElement)
-                    || !IPAddress.TryParse(ipElement.GetString(), out var address)
-                    || !configuration.TryGetProperty("fqdns", out var fqdns)
-                    || fqdns.ValueKind != JsonValueKind.Array)
-                {
-                    continue;
-                }
-
-                foreach (var fqdn in fqdns.EnumerateArray().Select(f => f.GetString()).OfType<string>())
-                {
-                    expected.Add(new ExpectedEndpoint(fqdn, address, endpointName));
-                }
+                throw new CommandException(
+                    $"The private endpoint '{endpointName}' reports no host names with a private address on its network interface, so this machine's DNS cannot be checked against it. " +
+                    "If the endpoint was just created, rerun in a few minutes; otherwise check its connection state in the portal.");
             }
         }
 
@@ -253,7 +266,24 @@ internal static class PrivateNetworkPreflight
         CancellationToken cancellationToken)
     {
         CliOutput.WriteLine($"Checking that this machine resolves the private endpoints before {stepDescription}...");
-        var expected = await check.ReadExpectedAsync(resourceGroupName, privateEndpointNames, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ExpectedEndpoint> expected;
+        try
+        {
+            expected = await check.ReadExpectedAsync(resourceGroupName, privateEndpointNames, cancellationToken).ConfigureAwait(false);
+        }
+        catch (CommandException exception) when (!failOnMismatch)
+        {
+            // Private-transition: public access still works, so unreadable endpoint metadata
+            // is worth a warning, not a stop. Locking treats it as an error (failOnMismatch).
+            CliOutput.WriteLine($"Warning: the private endpoints could not be checked yet. Fix this before locking the deployment: {exception.Message}");
+            return;
+        }
+
+        if (expected.Count == 0)
+        {
+            // Nothing to compare means nothing was verified; never let that pass as success.
+            throw new CommandException($"Stopped before {stepDescription}: no private endpoint host names were found to check.");
+        }
         var result = await check.VerifyAsync(expected, failOnMismatch ? wait ?? PrivateEndpointDnsCheck.DefaultWait : TimeSpan.Zero, cancellationToken).ConfigureAwait(false);
         if (result.Succeeded)
         {

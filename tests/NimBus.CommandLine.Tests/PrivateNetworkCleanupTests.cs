@@ -98,6 +98,44 @@ public sealed class PrivateNetworkCleanupTests
         Assert.DoesNotContain(azureCli.Commands, c => c.Contains("vnet-integration") && c.Contains("remove"));
     }
 
+    /// <summary>
+    /// A failed lookup is not "nothing there": skipping the VNet disconnect and then deleting
+    /// the endpoints would break apps still routing privately.
+    /// </summary>
+    [Theory]
+    [InlineData("vnet-integration")]
+    [InlineData("private-endpoint")]
+    [InlineData("zone")]
+    public async Task RunAsync_StopsWhenALookupFails(string failingLookup)
+    {
+        var azureCli = OwnedNetwork(integrated: true);
+        azureCli.FailWhen = arguments => arguments.Contains(failingLookup) && arguments.Contains("list");
+
+        await Assert.ThrowsAsync<CommandException>(() =>
+            Cleanup(azureCli).RunAsync("rg-nimbus-dev", Owner, Names(), PrivateDnsModeChoice.Create, CancellationToken.None));
+
+        if (failingLookup == "vnet-integration")
+        {
+            Assert.DoesNotContain(azureCli.Commands, c => c.Contains("delete") || c.Contains("remove"));
+        }
+
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("zone") && c.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task RunAsync_StopsOnAnAnswerThatIsNotAList()
+    {
+        var azureCli = new RecordingAzureCliRunner
+        {
+            Responder = arguments => arguments.Contains("vnet-integration") ? """{"unexpected":true}""" : null,
+        };
+
+        await Assert.ThrowsAsync<CommandException>(() =>
+            Cleanup(azureCli).RunAsync("rg-nimbus-dev", Owner, Names(), PrivateDnsModeChoice.Create, CancellationToken.None));
+
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("private-endpoint"));
+    }
+
     /// <summary>An interrupted cleanup continues on the next run; with nothing left it does nothing.</summary>
     [Fact]
     public async Task RunAsync_IsANoOpWhenNothingIsLeft()

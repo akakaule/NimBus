@@ -148,21 +148,29 @@ internal sealed class PrivateNetworkCleanup
     private static string OwnedFilter(string owner, string field) =>
         $"[?tags.\"{OwnershipTag}\"=='{owner}'].{field}";
 
-    /// <summary>Runs a list query; an unreadable answer counts as an empty list.</summary>
+    /// <summary>
+    /// Runs a list query. Only a successful answer that is a JSON array counts; a failed or
+    /// unreadable one stops the cleanup, because treating it as "nothing there" could skip
+    /// removing VNet integration and then delete the endpoints the apps still route through.
+    /// Everything done so far is idempotent, so rerunning the command continues from here.
+    /// </summary>
     private async Task<IReadOnlyList<string>> ListAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         var result = await _az.TryRunAsync(arguments, cancellationToken).ConfigureAwait(false);
-        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+        if (!result.Succeeded)
         {
-            return Array.Empty<string>();
+            throw new CommandException(
+                $"The private network cleanup stopped: 'az {string.Join(' ', arguments.Take(4))}' failed, so it cannot tell what is left. " +
+                $"Rerun the same command to continue.{Environment.NewLine}{result.StandardError}".TrimEnd());
         }
 
         try
         {
-            using var document = JsonDocument.Parse(result.StandardOutput);
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(result.StandardOutput) ? "[]" : result.StandardOutput);
             if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
-                return Array.Empty<string>();
+                throw new CommandException(
+                    $"The private network cleanup stopped: 'az {string.Join(' ', arguments.Take(4))}' returned an unexpected answer. Rerun the same command to continue.");
             }
 
             return document.RootElement.EnumerateArray()
@@ -174,7 +182,8 @@ internal sealed class PrivateNetworkCleanup
         }
         catch (JsonException)
         {
-            return Array.Empty<string>();
+            throw new CommandException(
+                $"The private network cleanup stopped: 'az {string.Join(' ', arguments.Take(4))}' returned output that is not JSON. Rerun the same command to continue.");
         }
     }
 }

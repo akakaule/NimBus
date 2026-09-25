@@ -27,6 +27,9 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
     /// </summary>
     public Func<IReadOnlyList<string>, string?>? Responder { get; set; }
 
+    /// <summary>Optional: commands for which TryRunAsync reports a failed az call.</summary>
+    public Func<IReadOnlyList<string>, bool>? FailWhen { get; set; }
+
     public Task<JsonDocument> CaptureJsonAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken, string failureMessage)
     {
         Commands.Add(arguments.ToArray());
@@ -52,6 +55,11 @@ internal sealed class RecordingAzureCliRunner : IAzureCliRunner
     public Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         Commands.Add(arguments.ToArray());
+        if (FailWhen?.Invoke(arguments) == true)
+        {
+            return Task.FromResult(new ProcessResult(1, string.Empty, "ERROR: simulated az failure"));
+        }
+
         var output = Responder?.Invoke(arguments)
             ?? (arguments.Contains("list", StringComparer.Ordinal) || arguments.Contains("show", StringComparer.Ordinal)
                 ? "[]"

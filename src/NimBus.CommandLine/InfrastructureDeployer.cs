@@ -149,9 +149,18 @@ internal sealed class InfrastructureDeployer
         // Record the intent before deploying: an interrupted run then converges on the next
         // one, and a validation failure above never records a setup that cannot deploy. A
         // deployment that never used private mode or a namespace override gets no tags.
+        // Leaving private mode records a pending cleanup with the intent, so an interrupted
+        // cleanup still runs on the next deployment; it is cleared only once it finishes.
+        var needsCleanup = NetworkIntent.NeedsCleanup(stored, targetState);
         if (stored is not null || isPrivate || !string.IsNullOrWhiteSpace(serviceBusNamespaceName))
         {
-            await RecordNetworkIntentAsync(resourceGroup, NetworkIntent.ToTags(network, serviceBusNamespaceName), cancellationToken).ConfigureAwait(false);
+            var desired = new Dictionary<string, string>(NetworkIntent.ToTags(network, serviceBusNamespaceName), StringComparer.OrdinalIgnoreCase);
+            if (needsCleanup)
+            {
+                desired[NetworkIntent.CleanupPendingTag] = NetworkIntent.CleanupPendingValue;
+            }
+
+            await RecordNetworkIntentAsync(resourceGroup, desired, cancellationToken).ConfigureAwait(false);
         }
 
         CliOutput.WriteLine("Deploying core infrastructure...");
@@ -220,14 +229,22 @@ internal sealed class InfrastructureDeployer
         // private endpoints and VNet integration still existed, so clients kept working on
         // either path. Only now is the private network taken down (spec 034 §5.13). Runs on
         // every public deployment that has a record, so an interrupted cleanup continues.
-        if (targetState == NetworkState.Public && stored is not null)
+        if (needsCleanup)
         {
             await new PrivateNetworkCleanup(_az).RunAsync(
                 options.ResourceGroupName,
                 PrivateNetworkCleanup.OwnerValue(names),
                 names,
-                stored.Network.DnsMode,
+                stored!.Network.DnsMode,
                 cancellationToken).ConfigureAwait(false);
+
+            await _az.EnsureSuccessAsync(
+                TagUpdateArguments(
+                    resourceGroup.Id,
+                    "Delete",
+                    new Dictionary<string, string> { [NetworkIntent.CleanupPendingTag] = NetworkIntent.CleanupPendingValue }),
+                cancellationToken,
+                "The private network cleanup finished, but its pending marker could not be removed from the resource group. The next public deployment repeats the (now empty) cleanup.").ConfigureAwait(false);
         }
     }
 
@@ -397,12 +414,22 @@ internal sealed class InfrastructureDeployer
             $"solutionId={names.SolutionId}",
             $"environment={names.Environment}",
             $"resolverId={NimBus.Core.Messages.Constants.ResolverId}",
-            $"uniqueDeploy={Guid.NewGuid():N}",
             $"storageProvider={storageProviderParam}",
             $"sqlMode={sqlModeParam}",
             $"resolverPlan={resolverPlanParam}",
             $"managementPlanSku={managementPlanSku}",
         };
+
+        // An existing Elastic Premium Resolver keeps the content share its code lives on:
+        // WEBSITE_CONTENTSHARE must not change between deployments.
+        if (resolverPlan == ResolverPlanChoice.ElasticPremium && existingLocations.ContainsKey(names.ResolverFunctionAppName))
+        {
+            var existingShare = await ReadResolverContentShareAsync(options.ResourceGroupName, names.ResolverFunctionAppName, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(existingShare))
+            {
+                arguments.Add($"existingResolverContentShare={existingShare}");
+            }
+        }
 
         if (options.StorageProvider == StorageProviderChoice.SqlServer && options.SqlMode == SqlProvisioningMode.Provision)
         {
@@ -565,6 +592,31 @@ internal sealed class InfrastructureDeployer
 
     // Mirrors the locationParam default in both entry templates.
     private const string DefaultLocation = "westeurope";
+
+    private async Task<string?> ReadResolverContentShareAsync(string resourceGroupName, string functionAppName, CancellationToken cancellationToken)
+    {
+        var result = await _az.TryRunAsync(
+            new[]
+            {
+                "functionapp", "config", "appsettings", "list",
+                "--resource-group", resourceGroupName,
+                "--name", functionAppName,
+                "--query", "[?name=='WEBSITE_CONTENTSHARE'].value | [0]",
+                "--output", "tsv",
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        // Guessing here would repoint the Resolver at another share, so an unreadable setting
+        // stops the deployment. A readable but absent setting gets the stable default name.
+        if (!result.Succeeded)
+        {
+            throw new CommandException(
+                $"Could not read WEBSITE_CONTENTSHARE of '{functionAppName}'. Deploying without it could move the Resolver to a different content share. {result.StandardError}".Trim());
+        }
+
+        var share = result.StandardOutput.Trim();
+        return share.Length > 0 && !share.StartsWith('[') ? share : null;
+    }
 
     /// <summary>
     /// Writes the desired network tags and removes stale NimBus network tags. Merge and

@@ -207,6 +207,10 @@ and caching DNS forwarders can lag. It then names each host that still fails:
 
 In the transition state a mismatch is only a warning, because public access still works.
 
+Every endpoint must report at least one host name with a private address. An endpoint that
+reports none, for example one created moments ago, fails the check instead of being skipped:
+an empty list would otherwise pass without testing anything.
+
 ## Rolling back
 
 ```bash
@@ -222,8 +226,11 @@ nb setup ... --network-mode public
    with no other links. A zone someone else has linked is kept.
 
 Nothing without the tag is touched: your VNets, subnets and `existing` or `external` zones
-stay. The cleanup runs on every public deployment with a record, so an interrupted rollback
-continues on the next run. Not reversed: the Premium namespace, and DNS records your own DNS
+stay. Leaving private mode also records `nimbus-network-cleanup=pending` on the resource
+group, and `nb` removes it only once the cleanup has finished, so an interrupted rollback
+continues on the next run. A deployment that never had a private network never runs the
+cleanup, even if it records a namespace override. Any lookup that fails stops the cleanup
+before anything else is deleted; rerun the same command to continue. Not reversed: the Premium namespace, and DNS records your own DNS
 servers hold (remove those yourself).
 
 ## Pipelines

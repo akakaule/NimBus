@@ -122,6 +122,46 @@ public sealed class PrivateEndpointDnsCheckTests
         Assert.Contains(expected, e => e.Fqdn == "webapp-x-dev-management.scm.azurewebsites.net");
     }
 
+    /// <summary>An endpoint without host names or an address must not shrink the check to nothing.</summary>
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("""[{"ip":null,"fqdns":["sb-nimbus-dev.servicebus.windows.net"]}]""")]
+    [InlineData("""[{"ip":"10.20.0.4","fqdns":[]}]""")]
+    [InlineData("""[{"ip":"not-an-ip","fqdns":["sb-nimbus-dev.servicebus.windows.net"]}]""")]
+    public async Task ReadExpectedAsync_RequiresUsableMetadataForEveryEndpoint(string nicAnswer)
+    {
+        var azureCli = new RecordingAzureCliRunner
+        {
+            Responder = arguments =>
+                arguments.Contains("private-endpoint") ? "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/pe-nic"
+                : arguments.Contains("nic") ? nicAnswer
+                : null,
+        };
+
+        var error = await Assert.ThrowsAsync<CommandException>(() =>
+            new PrivateEndpointDnsCheck(azureCli).ReadExpectedAsync("rg", new[] { "pe-sb-nimbus-dev-namespace" }, CancellationToken.None));
+
+        Assert.Contains("pe-sb-nimbus-dev-namespace", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunIfPrivateAsync_StopsAPrivateDeploymentWhoseEndpointHasNoMetadata()
+    {
+        var azureCli = NetworkWithRecordedState("private", nicAnswer: "[]");
+
+        await Assert.ThrowsAsync<CommandException>(() => PrivateNetworkPreflight.RunIfPrivateAsync(
+            azureCli, UnreachableCheck(azureCli), "rg", new[] { "pe-sb-nimbus-dev-namespace" }, TimeSpan.Zero, "testing", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RunIfPrivateAsync_OnlyWarnsAboutMissingMetadataDuringTheTransition()
+    {
+        var azureCli = NetworkWithRecordedState("private-transition", nicAnswer: "[]");
+
+        await PrivateNetworkPreflight.RunIfPrivateAsync(
+            azureCli, UnreachableCheck(azureCli), "rg", new[] { "pe-sb-nimbus-dev-namespace" }, TimeSpan.Zero, "testing", CancellationToken.None);
+    }
+
     [Fact]
     public void EndpointNames_MatchTheBicepTemplates()
     {
@@ -171,12 +211,12 @@ public sealed class PrivateEndpointDnsCheckTests
         Assert.Contains(Namespace, error.Message, StringComparison.Ordinal);
     }
 
-    private static RecordingAzureCliRunner NetworkWithRecordedState(string? recordedMode) => new()
+    private static RecordingAzureCliRunner NetworkWithRecordedState(string? recordedMode, string? nicAnswer = null) => new()
     {
         Responder = arguments =>
             arguments.Contains("group") ? (recordedMode is null ? "null" : $$"""{"nimbus-network-mode":"{{recordedMode}}"}""")
             : arguments.Contains("private-endpoint") ? "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/pe-nic"
-            : arguments.Contains("nic") ? $$"""[{"ip":"{{EndpointIp}}","fqdns":["{{Namespace}}"]}]"""
+            : arguments.Contains("nic") ? nicAnswer ?? $$"""[{"ip":"{{EndpointIp}}","fqdns":["{{Namespace}}"]}]"""
             : null,
     };
 

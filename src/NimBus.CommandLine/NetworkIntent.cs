@@ -13,8 +13,11 @@ internal enum NetworkState
     Private,
 }
 
-/// <summary>A network setup read back from the resource group's tags.</summary>
-internal sealed record StoredNetwork(NetworkState State, NetworkOptions Network, string? ServiceBusNamespaceName);
+/// <summary>
+/// A network setup read back from the resource group's tags. <paramref name="CleanupPending"/>
+/// marks a switch from private to public whose cleanup has not finished yet.
+/// </summary>
+internal sealed record StoredNetwork(NetworkState State, NetworkOptions Network, string? ServiceBusNamespaceName, bool CleanupPending = false);
 
 /// <summary>
 /// The recorded network setup (spec 034 §5.13). The CLI stores the full private networking
@@ -27,6 +30,13 @@ internal static class NetworkIntent
     public const string ModeTag = "nimbus-network-mode";
     public const string TagPrefix = "nimbus-network-";
     public const string ServiceBusNamespaceTag = "nimbus-service-bus-namespace";
+
+    // Set when a deployment leaves private mode and removed once the cleanup has finished.
+    // Only this marker, never the mere presence of other tags, triggers the cleanup, so a
+    // public deployment that only uses a namespace override never has VNet integration
+    // it did not create removed.
+    public const string CleanupPendingTag = "nimbus-network-cleanup";
+    public const string CleanupPendingValue = "pending";
 
     // Azure caps tag values at 256 characters.
     public const int MaxTagValueLength = 256;
@@ -99,9 +109,11 @@ internal static class NetworkIntent
         };
 
         lookup.TryGetValue(ServiceBusNamespaceTag, out var namespaceName);
+        var cleanupPending = lookup.TryGetValue(CleanupPendingTag, out var cleanup)
+            && string.Equals(cleanup, CleanupPendingValue, StringComparison.OrdinalIgnoreCase);
         if (state == NetworkState.Public)
         {
-            return new StoredNetwork(state, new NetworkOptions(Mode: NetworkModeChoice.Public), namespaceName);
+            return new StoredNetwork(state, new NetworkOptions(Mode: NetworkModeChoice.Public), namespaceName, cleanupPending);
         }
 
         var linkedVnets = lookup
@@ -122,8 +134,17 @@ internal static class NetworkIntent
             DnsLinkVnetIds: linkedVnets.Count > 0 ? linkedVnets : null,
             MonitorPrivateLink: NetworkSelection.ParseMonitorPrivateLinkOption(Get(lookup, MonitorTag)));
 
-        return new StoredNetwork(state, network, namespaceName);
+        return new StoredNetwork(state, network, namespaceName, cleanupPending);
     }
+
+    /// <summary>
+    /// Whether this run leaves private mode or finishes an interrupted exit from it: a
+    /// public target, and a record that is either non-public or still marked pending.
+    /// </summary>
+    public static bool NeedsCleanup(StoredNetwork? stored, NetworkState target) =>
+        target == NetworkState.Public
+        && stored is not null
+        && (stored.State != NetworkState.Public || stored.CleanupPending);
 
     /// <summary>
     /// Combines the command line with the stored setup, setting by setting: an explicit

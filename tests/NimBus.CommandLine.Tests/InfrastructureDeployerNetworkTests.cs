@@ -323,10 +323,64 @@ public sealed class InfrastructureDeployerNetworkTests
 
         await Deployer(azureCli).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Public)), CancellationToken.None);
 
-        Assert.Contains(azureCli.Commands, c => c.Contains("Merge", StringComparer.Ordinal) && c.Contains("nimbus-network-mode=public", StringComparer.Ordinal));
-        var delete = Assert.Single(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal) && c.Contains("Delete", StringComparer.Ordinal));
-        Assert.Contains($"nimbus-network-resolver-subnet={ResolverSubnet}", delete);
+        var merge = Assert.Single(azureCli.Commands, c => c.Contains("tag", StringComparer.Ordinal) && c.Contains("Merge", StringComparer.Ordinal));
+        Assert.Contains("nimbus-network-mode=public", merge);
+        Assert.Contains("nimbus-network-cleanup=pending", merge);
+        Assert.Contains(azureCli.Commands, c => c.Contains("Delete", StringComparer.Ordinal) && c.Contains($"nimbus-network-resolver-subnet={ResolverSubnet}", StringComparer.Ordinal));
         Assert.DoesNotContain("networkMode=private", azureCli.Deployments[0].Arguments);
+    }
+
+    /// <summary>The pending marker is cleared only after the cleanup has run.</summary>
+    [Fact]
+    public async Task ApplyAsync_ClearsThePendingMarkerAfterTheCleanup()
+    {
+        var recorded = NetworkIntent.ToTags(PrivateNetwork, serviceBusNamespaceName: null);
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Disabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(new NetworkOptions(Mode: NetworkModeChoice.Public)), CancellationToken.None);
+
+        var endpointList = azureCli.Commands.FindIndex(c => c.Contains("private-endpoint", StringComparer.Ordinal) && c.Contains("list", StringComparer.Ordinal));
+        var markerDelete = azureCli.Commands.FindIndex(c => c.Contains("Delete", StringComparer.Ordinal) && c.Contains("nimbus-network-cleanup=pending", StringComparer.Ordinal));
+        Assert.InRange(markerDelete, endpointList + 1, int.MaxValue);
+    }
+
+    /// <summary>
+    /// A public deployment that only uses a namespace override has a record but never had a
+    /// private network: its apps' VNet integration, if any, is the customer's, not NimBus's.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_PublicDeploymentWithOnlyANamespaceOverrideRunsNoCleanup()
+    {
+        var recorded = NetworkIntent.ToTags(new NetworkOptions(Mode: NetworkModeChoice.Public), serviceBusNamespaceName: "sb-nimbus-dev-premium");
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None);
+
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("vnet-integration", StringComparer.Ordinal));
+        Assert.DoesNotContain(azureCli.Commands, c => c.Contains("private-endpoint", StringComparer.Ordinal));
+    }
+
+    /// <summary>A cleanup interrupted on an earlier run continues, although the mode already reads public.</summary>
+    [Fact]
+    public async Task ApplyAsync_ContinuesAnInterruptedCleanup()
+    {
+        var recorded = new Dictionary<string, string>
+        {
+            [NetworkIntent.ModeTag] = "public",
+            [NetworkIntent.CleanupPendingTag] = NetworkIntent.CleanupPendingValue,
+        };
+        var azureCli = CustomerNetwork(
+            existingServiceBus: """{"tier":"Premium","capacity":1,"publicNetworkAccess":"Enabled"}""",
+            recordedTags: recorded);
+
+        await Deployer(azureCli).ApplyAsync(Options(NetworkOptions.None), CancellationToken.None);
+
+        Assert.Contains(azureCli.Commands, c => c.Contains("private-endpoint", StringComparer.Ordinal) && c.Contains("list", StringComparer.Ordinal));
+        Assert.Contains(azureCli.Commands, c => c.Contains("Delete", StringComparer.Ordinal) && c.Contains("nimbus-network-cleanup=pending", StringComparer.Ordinal));
     }
 
     /// <summary>Public access is back on both deployments before any private resource is taken down.</summary>

@@ -62,5 +62,5 @@ not a versioning break. It still needs a release-notes entry. At the end of Phas
 - Authorization for the REST agent API (`/api/agent/*`), which currently checks no NimBus role and
   takes its audit actor from the `X-Agent-Id` header. It is tracked separately and outlives this
   server.
-- Shared Monitor acknowledgements, manual classification overrides, compose-new-event, bulk
-  recovery.
+- An acknowledge/clear tool (shared Monitor acknowledgements exist server-side since #142; the
+  read tools surface them), manual classification overrides, compose-new-event, bulk recovery.

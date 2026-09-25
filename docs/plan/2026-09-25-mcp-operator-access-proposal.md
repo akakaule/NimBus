@@ -35,10 +35,14 @@ proposed changes.
 - **Evidence.** Links retargeted to master after the `f1dc8120` split (`EventImplementation.OperatorActions.cs`,
   `Startup.Security.cs`), with new entries for the replaced server and the deduplication constraint.
 - **Tool contract.** `nimbus_set_message_reported` accepts the optional ticket ID.
+- **Master changes.** Shared Monitor acknowledgements (#142) are surfaced by the read tools; the
+  endpoint-scoped Failed page API (#143) backs cross-endpoint failure views.
+- **Supersedes #145.** Removes the rev 1 drafts `docs/spec/mcp-operator-design.html` and
+  `docs/plan/mcp-operator-proposal.md`.
 
 ## Verification
 
-- All 22 repository links and 7 section anchors in `design.html` resolve on master `7e4860d5`.
+- All 24 repository links and 7 section anchors in `design.html` resolve on master `dd876ed4`.
 - Browser check of `design.html`: no console errors, tool filters, architecture selection and
   recovery walkthrough, at desktop and 390 px widths.
 - No .NET or frontend builds were run: this is a documentation-only change. Builds, live SQL/Cosmos

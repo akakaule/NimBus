@@ -1,6 +1,7 @@
 # MCP operator access: proposal record
 
-Status: design proposal (rev 2); no platform implementation. Spec:
+Status: design proposal (rev 2). Phase 1 was implemented afterwards and shipped in v4.0.0; see
+the [Phase 1 plan](2026-09-25-mcp-operator-phase1-plan.md). Spec:
 [docs/spec/035-mcp-operator-access](../spec/035-mcp-operator-access/spec.md).
 
 ## What was produced

@@ -101,7 +101,7 @@ Set these app settings on the management WebApp:
 az webapp config appsettings set --resource-group <resource-group> --name <webapp-name> --settings NimBus__Mcp__Enabled=true NimBus__Mcp__Entra__TenantId=<tenant-id> NimBus__Mcp__Entra__ClientId=<client-id>
 ```
 
-`nb deploy infra` keeps every `NimBus__Mcp__*` setting across redeploys. If `NimBus__Mcp__Enabled`
+`nb infra apply` keeps every `NimBus__Mcp__*` setting across redeploys. If `NimBus__Mcp__Enabled`
 is `true` but the tenant or client id is missing, the WebApp fails to start and names the missing
 keys, rather than serving an unauthenticated endpoint.
 

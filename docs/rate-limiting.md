@@ -171,7 +171,7 @@ operator-set `RateLimiting__*` settings forward, with one exception:
 
 - **`RateLimiting__TrustForwardedForHeader` is template-owned** — it describes
   deployment topology (is there a trusted proxy?), not a tuning preference, so a
-  portal edit to it does **not** survive `nb deploy infra`.
+  portal edit to it does **not** survive `nb infra apply`.
 - Every other `RateLimiting__*` key, including `RateLimiting__Enabled`, is
   preserved.
 

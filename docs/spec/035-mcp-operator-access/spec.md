@@ -1,6 +1,9 @@
 # Spec 035 — MCP operator access
 
-Status: design proposal (rev 2, 2026-09-25). Nothing is implemented.
+Status: Phase 1 (Observe) is implemented and shipped in v4.0.0 (2026-09-28). Its exit criterion,
+a read-only pilot in a nonproduction Azure environment, is still open; see the
+[Phase 1 plan](../../plan/2026-09-25-mcp-operator-phase1-plan.md). Phases 2a to 3 have not
+started. Design: rev 2, 2026-09-25.
 
 The interactive design is in [design.html](design.html). It covers the architecture, the 21-tool
 catalog, a recovery walkthrough, the security model, delivery phases and the code it is based on.

@@ -194,7 +194,7 @@ public class RateLimitWiringTests
     {
         // App settings are a full replace on deploy. Without the RateLimiting__
         // prefix in the preservation filter an operator's tuned limit is silently
-        // restored to the shipped default on the next `nb deploy infra`.
+        // restored to the shipped default on the next `nb infra apply`.
         var bicep = File.ReadAllText(LocateRepoFile(Path.Combine("deploy", "bicep", "deploy.webapp.bicep")));
 
         StringAssert.Contains(

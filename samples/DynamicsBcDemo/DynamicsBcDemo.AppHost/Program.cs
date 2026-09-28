@@ -90,7 +90,7 @@ var d365Api = builder.AddProject<Projects.D365Sales_Api>("d365-api")
     .WaitFor(d365Db)
     .WaitForCompletion(provisioner);
 
-var d365Adapter = builder.AddProject<Projects.D365Sales_Adapter>("d365-adapter")
+builder.AddProject<Projects.D365Sales_Adapter>("d365-adapter")
     .WithReference(servicebus)
     .WithReference(d365Api)
     .WaitFor(d365Api)
@@ -105,7 +105,7 @@ var bcApi = builder.AddProject<Projects.BusinessCentral_Api>("bc-api")
     .WaitFor(bcDb)
     .WaitForCompletion(provisioner);
 
-var bcAdapter = builder.AddProject<Projects.BusinessCentral_Adapter>("bc-adapter")
+builder.AddProject<Projects.BusinessCentral_Adapter>("bc-adapter")
     .WithReference(servicebus)
     .WithReference(bcApi)
     // The adapter's inbox (deduplication store) lives in the integration platform's database.
@@ -113,5 +113,30 @@ var bcAdapter = builder.AddProject<Projects.BusinessCentral_Adapter>("bc-adapter
     .WaitFor(bcApi)
     .WaitFor(nimbusDb)
     .WaitForCompletion(provisioner);
+
+// ---- The two look-alike web clients ----------------------------------------------------------
+// Vite dev servers (Aspire installs the npm packages on first run). Their ports are pinned so the
+// apps can deep-link into each other and into nimbus-ops; the URLs reach the browser code as
+// VITE_* variables. Each proxies /api to its own simulator; the BC client also proxies /d365-api
+// for the presenter's /demo cockpit (the pilot-office burst).
+var d365Web = builder.AddViteApp("d365-web", "../D365Sales.Web")
+    .WithReference(d365Api)
+    .WithEndpoint("http", e => e.Port = 5283)
+    .WithExternalHttpEndpoints()
+    .WaitFor(d365Api);
+
+var bcWeb = builder.AddViteApp("bc-web", "../BusinessCentral.Web")
+    .WithReference(bcApi)
+    .WithReference(d365Api)
+    .WithEndpoint("http", e => e.Port = 5293)
+    .WithExternalHttpEndpoints()
+    .WaitFor(bcApi);
+
+d365Web
+    .WithEnvironment("VITE_BC_WEB_URL", bcWeb.GetEndpoint("http"))
+    .WithEnvironment("VITE_NIMBUS_OPS_URL", nimbusOps.GetEndpoint("https"));
+bcWeb
+    .WithEnvironment("VITE_D365_WEB_URL", d365Web.GetEndpoint("http"))
+    .WithEnvironment("VITE_NIMBUS_OPS_URL", nimbusOps.GetEndpoint("https"));
 
 builder.Build().Run();

@@ -1858,6 +1858,148 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(1, byType.Rows.Sum(r => r.Count), "The histogram applies the search filter.");
     }
 
+    // ───── Date bounds within one second ─────
+    // Cosmos DB stores DateTimes as ISO strings with trailing fractional zeros trimmed
+    // ("…T10:00:00Z", "…T10:00:00.1Z") and compares them as strings, where '.' sorts before 'Z',
+    // so within one second string order is not chronological. Cosmos keeps the caller's
+    // timestamps, which puts these rows exactly on that edge; SQL Server and the in-memory store
+    // stamp UpdatedAt with their own clock, so every bound is derived from the value read back.
+
+    [TestMethod]
+    public async Task UpdatedAt_bounds_place_a_row_just_after_a_whole_second_chronologically()
+    {
+        var store = CreateStore();
+        var endpointId = Id("fd-a");
+        var eventId = Id("fd1");
+        var ev = FailureEvent(endpointId, eventId, "s1");
+        ev.UpdatedAt = WholeSecond(DateTime.UtcNow.AddMinutes(-1)).AddMilliseconds(100);
+        await store.UploadFailedMessage(eventId, "s1", endpointId, ev);
+        var stored = (await store.GetFailedEvent(endpointId, eventId, "s1"))!.UpdatedAt;
+        var second = WholeSecond(stored);
+
+        // A bucket-aligned window start, as the Failed page's histogram and bar click use it.
+        Assert.IsTrue(await FailedSearchReturns(store, new EventFilter { UpdatedAtFrom = second }, endpointId, eventId),
+            "The failure search keeps a row in the first second after its lower bound.");
+        Assert.IsTrue(await EventSearchReturns(store, new EventFilter { UpdatedAtFrom = second }, endpointId, eventId),
+            "The event search keeps a row in the first second after its lower bound.");
+        var bar = await store.GetFailedEventHistogram(new EventFilter(), new[] { endpointId }, second, second.AddMinutes(1), TimeSpan.FromMinutes(1));
+        Assert.AreEqual(1, bar.Rows.Sum(r => r.Count), "The histogram counts a row in the first second of its window.");
+
+        // The same instant as an upper bound: the row lies after it (unless stored exactly on it).
+        var onOrBefore = stored <= second;
+        Assert.AreEqual(onOrBefore, await FailedSearchReturns(store, new EventFilter { UpdatedAtTo = second }, endpointId, eventId),
+            "The failure search upper bound compares chronologically.");
+        Assert.AreEqual(onOrBefore, await EventSearchReturns(store, new EventFilter { UpdatedAtTo = second }, endpointId, eventId),
+            "The event search upper bound compares chronologically.");
+        var previousBar = await store.GetFailedEventHistogram(new EventFilter(), new[] { endpointId }, second.AddMinutes(-1), second, TimeSpan.FromMinutes(1));
+        Assert.AreEqual(0, previousBar.Rows.Sum(r => r.Count), "A window ending at the row's second excludes the row.");
+    }
+
+    [TestMethod]
+    public async Task UpdatedAt_bounds_place_a_whole_second_row_before_the_rest_of_its_second()
+    {
+        var store = CreateStore();
+        var endpointId = Id("fd-b");
+        var eventId = Id("fd2");
+        var ev = FailureEvent(endpointId, eventId, "s1");
+        ev.UpdatedAt = WholeSecond(DateTime.UtcNow.AddMinutes(-1));
+        await store.UploadFailedMessage(eventId, "s1", endpointId, ev);
+        var stored = (await store.GetFailedEvent(endpointId, eventId, "s1"))!.UpdatedAt;
+
+        // A bar's last instant, as the Failed page's bar click sends it: bucket end minus 1 ms.
+        var lastInstant = WholeSecond(stored).AddSeconds(1).AddMilliseconds(-1);
+        var onOrBefore = stored <= lastInstant;
+        Assert.AreEqual(onOrBefore, await FailedSearchReturns(store, new EventFilter { UpdatedAtTo = lastInstant }, endpointId, eventId),
+            "The failure search keeps a row earlier in the second of its upper bound.");
+        Assert.AreEqual(onOrBefore, await EventSearchReturns(store, new EventFilter { UpdatedAtTo = lastInstant }, endpointId, eventId),
+            "The event search keeps a row earlier in the second of its upper bound.");
+
+        var onOrAfter = stored >= lastInstant;
+        Assert.AreEqual(onOrAfter, await FailedSearchReturns(store, new EventFilter { UpdatedAtFrom = lastInstant }, endpointId, eventId),
+            "The failure search lower bound compares chronologically.");
+        Assert.AreEqual(onOrAfter, await EventSearchReturns(store, new EventFilter { UpdatedAtFrom = lastInstant }, endpointId, eventId),
+            "The event search lower bound compares chronologically.");
+        var window = await store.GetFailedEventHistogram(new EventFilter(), new[] { endpointId }, lastInstant, lastInstant.AddMinutes(1), TimeSpan.FromMinutes(1));
+        Assert.AreEqual(onOrAfter ? 1 : 0, window.Rows.Sum(r => r.Count), "The histogram window start compares chronologically.");
+    }
+
+    [TestMethod]
+    public async Task EnqueuedAt_bounds_keep_rows_on_either_edge_of_their_second()
+    {
+        var store = CreateStore();
+        var endpointId = Id("fq-a");
+        var second = WholeSecond(DateTime.UtcNow.AddMinutes(-1));
+        var justAfter = FailureEvent(endpointId, Id("fq1"), "s1");
+        justAfter.EnqueuedTimeUtc = second.AddMilliseconds(100);
+        var onTheSecond = FailureEvent(endpointId, Id("fq2"), "s2");
+        onTheSecond.EnqueuedTimeUtc = second;
+        await store.UploadFailedMessage(Id("fq1"), "s1", endpointId, justAfter);
+        await store.UploadFailedMessage(Id("fq2"), "s2", endpointId, onTheSecond);
+
+        // SQL Server rounds EnqueuedTimeUtc to its DATETIME grid, so the bounds come from the
+        // values read back. A provider may leave these bounds to the caller (AdminService
+        // re-checks them), so the contract is only that no row inside them is dropped.
+        var storedAfter = (await store.GetFailedEvent(endpointId, Id("fq1"), "s1"))!.EnqueuedTimeUtc;
+        var storedOn = (await store.GetFailedEvent(endpointId, Id("fq2"), "s2"))!.EnqueuedTimeUtc;
+        Assert.IsTrue(await EventSearchReturns(store, new EventFilter { EnqueuedAtFrom = WholeSecond(storedAfter) }, endpointId, Id("fq1")),
+            "The event search keeps a row in the first second after its EnqueuedAt lower bound.");
+        Assert.IsTrue(await EventSearchReturns(store, new EventFilter { EnqueuedAtTo = WholeSecond(storedOn).AddSeconds(1).AddMilliseconds(-1) }, endpointId, Id("fq2")),
+            "The event search keeps a row earlier in the second of its EnqueuedAt upper bound.");
+    }
+
+    [TestMethod]
+    public async Task SearchMessages_EnqueuedAt_bounds_keep_messages_on_either_edge_of_their_second()
+    {
+        var store = CreateStore();
+        var endpointId = Id("mq-a");
+        var second = WholeSecond(DateTime.UtcNow.AddMinutes(-1));
+        await store.StoreMessage(new MessageEntity { EventId = Id("mq1"), MessageId = Id("mq-m1"), EndpointId = endpointId, EnqueuedTimeUtc = second.AddMilliseconds(100), MessageContent = new MessageContent() });
+        await store.StoreMessage(new MessageEntity { EventId = Id("mq2"), MessageId = Id("mq-m2"), EndpointId = endpointId, EnqueuedTimeUtc = second, MessageContent = new MessageContent() });
+
+        // As for events: bounds from the values read back, and only inclusion is the contract.
+        var stored = (await store.SearchMessages(new MessageFilter { EndpointId = endpointId }, null, 50)).Messages
+            .ToDictionary(m => m.MessageId, m => m.EnqueuedTimeUtc);
+        var from = await store.SearchMessages(
+            new MessageFilter { EndpointId = endpointId, EnqueuedAtFrom = WholeSecond(stored[Id("mq-m1")]) }, null, 50);
+        CollectionAssert.Contains(from.Messages.Select(m => m.MessageId).ToList(), Id("mq-m1"),
+            "The message search keeps a message in the first second after its lower bound.");
+        var to = await store.SearchMessages(
+            new MessageFilter { EndpointId = endpointId, EnqueuedAtTo = WholeSecond(stored[Id("mq-m2")]).AddSeconds(1).AddMilliseconds(-1) }, null, 50);
+        CollectionAssert.Contains(to.Messages.Select(m => m.MessageId).ToList(), Id("mq-m2"),
+            "The message search keeps a message earlier in the second of its upper bound.");
+    }
+
+    [TestMethod]
+    public async Task SearchAudits_CreatedAt_lower_bound_keeps_an_audit_later_in_the_same_second()
+    {
+        var store = CreateStore();
+        var auditor = Id("edge-auditor");
+        await store.StoreMessageAudit(Id("evt-edge"), new MessageAuditEntity
+        {
+            AuditorName = auditor,
+            AuditTimestamp = WholeSecond(DateTime.UtcNow).AddMilliseconds(100),
+            AuditType = MessageAuditType.Comment,
+        });
+
+        // Cosmos and SQL Server stamp CreatedAt with their own clock (the in-memory store takes
+        // the audit timestamp), so the bound comes from the value read back.
+        var createdAt = (await store.SearchAudits(new AuditFilter { AuditorName = auditor }, null, 50)).Audits.Single().CreatedAt;
+        var found = await store.SearchAudits(new AuditFilter { AuditorName = auditor, CreatedAtFrom = WholeSecond(createdAt) }, null, 50);
+        Assert.AreEqual(1, found.Audits.Count(), "The audit search keeps an audit in the first second after its lower bound.");
+    }
+
+    private static DateTime WholeSecond(DateTime value) =>
+        new(value.Ticks - value.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
+
+    private static async Task<bool> FailedSearchReturns(IMessageTrackingStore store, EventFilter filter, string endpointId, string eventId) =>
+        (await store.GetFailedEventsAcrossEndpoints(filter, new[] { endpointId }, null, 50)).Events.Any(e => e.EventId == eventId);
+
+    private static async Task<bool> EventSearchReturns(IMessageTrackingStore store, EventFilter filter, string endpointId, string eventId)
+    {
+        filter.EndPointId = endpointId;
+        return (await store.GetEventsByFilter(filter, null!, 50)).Events.Any(e => e.EventId == eventId);
+    }
+
     [TestMethod]
     public async Task SearchAudits_matches_auditor_by_case_insensitive_prefix()
     {

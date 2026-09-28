@@ -45,10 +45,12 @@ internal sealed partial class CosmosDbMessageTrackingStore
             token = eventDbo.ContinuationToken;
             foreach (var queryResult in eventDbo)
             {
-                events.Add(ToSearchResult(queryResult));
+                if (WithinDateBounds(filter, queryResult.Event))
+                    events.Add(ToSearchResult(queryResult));
             }
 
-            if (eventDbo.Count > 0)
+            // A page holding only rows just outside the date bounds leaves nothing to show yet.
+            if (events.Count > 0)
             {
                 return new SearchResponse { Events = events, ContinuationToken = token };
             }
@@ -126,7 +128,9 @@ internal sealed partial class CosmosDbMessageTrackingStore
             var index = 0;
             foreach (var dbo in response)
             {
-                if (index >= skip)
+                // The index counts every row of the Cosmos page, kept or not, so resume
+                // positions stay exact when rows just outside the date bounds are dropped.
+                if (index >= skip && WithinDateBounds(filter, dbo.Event))
                     rows.Add(new BufferedRow<EventDbo>(dbo.Event.UpdatedAt, dbo.Id, pageToken, index, dbo));
                 index++;
             }
@@ -153,34 +157,45 @@ internal sealed partial class CosmosDbMessageTrackingStore
         if (endpointIds.Count == 0 || statuses.Count == 0 || toUtc <= fromUtc)
             return new FailedEventHistogram();
 
-        // Failure backlogs are small, so the histogram reads two fields per matching row and
+        // Failure backlogs are small, so the histogram reads a few fields per matching row and
         // buckets in memory. That honours every search filter without a second hand-written
         // query dialect; the cap bounds the read when a backlog is not small after all.
+        var windowFrom = CosmosDateBounds.WidenFrom(fromUtc);
+        var windowTo = CosmosDateBounds.WidenTo(toUtc);
         var perEndpoint = await ForEachEndpointAsync(endpointIds, async (endpointId, container) =>
         {
             var query = FailedEventsQuery(container.GetItemLinqQueryable<EventDbo>(), filter, statuses)
-                .Where(x => x.Event.UpdatedAt >= fromUtc && x.Event.UpdatedAt < toUtc)
-                .Select(x => new HistogramPoint { UpdatedAt = x.Event.UpdatedAt, Status = x.Status })
+                .Where(x => x.Event.UpdatedAt >= windowFrom && x.Event.UpdatedAt <= windowTo)
+                .Select(x => new EventDbo
+                {
+                    Status = x.Status,
+                    Event = new UnresolvedEvent { UpdatedAt = x.Event.UpdatedAt, EnqueuedTimeUtc = x.Event.EnqueuedTimeUtc },
+                })
                 .Take(FailedHistogramRowCap + 1);
 
             var iterator = CosmosExceptionTranslation.Wrap(query.ToFeedIterator(), _logger);
-            var points = new List<(DateTime, string, string)>();
+            var rows = new List<(string EndpointId, EventDbo Row)>();
             while (iterator.HasMoreResults)
             {
-                foreach (var point in await iterator.ReadNextAsync())
-                    points.Add((point.UpdatedAt, endpointId, point.Status));
+                foreach (var row in await iterator.ReadNextAsync())
+                    rows.Add((endpointId, row));
             }
 
-            return points;
+            return rows;
         },
-        _ => new List<(DateTime, string, string)>());
+        _ => new List<(string EndpointId, EventDbo Row)>());
 
-        var observations = perEndpoint.SelectMany(p => p).ToList();
-        var truncated = observations.Count > FailedHistogramRowCap;
+        // Rows just outside the window or the filter's date bounds are read too. They count
+        // toward the cap, so Truncated never understates, but are not bucketed.
+        var read = perEndpoint.SelectMany(p => p).ToList();
+        var observations = read
+            .Where(r => r.Row.Event.UpdatedAt >= fromUtc && r.Row.Event.UpdatedAt < toUtc && WithinDateBounds(filter, r.Row.Event))
+            .Select(r => (r.Row.Event.UpdatedAt, r.EndpointId, r.Row.Status))
+            .Take(FailedHistogramRowCap);
         return new FailedEventHistogram
         {
-            Rows = FailedEventQuery.Bucket(observations.Take(FailedHistogramRowCap), fromUtc, bucketSize),
-            Truncated = truncated,
+            Rows = FailedEventQuery.Bucket(observations, fromUtc, bucketSize),
+            Truncated = read.Count > FailedHistogramRowCap,
         };
     }
 
@@ -221,25 +236,37 @@ internal sealed partial class CosmosDbMessageTrackingStore
     }
 
     // Shared by every event search so the filters cannot drift apart. The caller applies the
-    // status predicate, which differs per search.
+    // status predicate, which differs per search, and WithinDateBounds to the rows read.
     private static IQueryable<EventDbo> ApplyEventFilter(IQueryable<EventDbo> query, EventFilter filter)
     {
-        // Datetimes
+        // Datetimes, widened to whole seconds: Cosmos compares them as strings (see CosmosDateBounds).
         if (filter.UpdatedAtFrom != null)
+        {
+            var updatedFrom = CosmosDateBounds.WidenFrom(filter.UpdatedAtFrom.Value);
             query = query
-                .Where(x => x.Event.UpdatedAt >= filter.UpdatedAtFrom);
+                .Where(x => x.Event.UpdatedAt >= updatedFrom);
+        }
 
         if (filter.UpdatedAtTo != null)
+        {
+            var updatedTo = CosmosDateBounds.WidenTo(filter.UpdatedAtTo.Value);
             query = query
-                .Where(x => x.Event.UpdatedAt <= filter.UpdatedAtTo);
+                .Where(x => x.Event.UpdatedAt <= updatedTo);
+        }
 
         if (filter.EnqueuedAtFrom != null)
+        {
+            var enqueuedFrom = CosmosDateBounds.WidenFrom(filter.EnqueuedAtFrom.Value);
             query = query
-                .Where(x => x.Event.EnqueuedTimeUtc >= filter.EnqueuedAtFrom);
+                .Where(x => x.Event.EnqueuedTimeUtc >= enqueuedFrom);
+        }
 
         if (filter.EnqueuedAtTo != null)
+        {
+            var enqueuedTo = CosmosDateBounds.WidenTo(filter.EnqueuedAtTo.Value);
             query = query
-                .Where(x => x.Event.EnqueuedTimeUtc <= filter.EnqueuedAtTo);
+                .Where(x => x.Event.EnqueuedTimeUtc <= enqueuedTo);
+        }
 
         // Strings
         if (filter.EventTypeId != null && filter.EventTypeId.Any())
@@ -294,6 +321,13 @@ internal sealed partial class CosmosDbMessageTrackingStore
 
         return query;
     }
+
+    // The exact date bounds that ApplyEventFilter queries widened.
+    private static bool WithinDateBounds(EventFilter filter, UnresolvedEvent e) =>
+        (filter.UpdatedAtFrom == null || e.UpdatedAt >= filter.UpdatedAtFrom) &&
+        (filter.UpdatedAtTo == null || e.UpdatedAt <= filter.UpdatedAtTo) &&
+        (filter.EnqueuedAtFrom == null || e.EnqueuedTimeUtc >= filter.EnqueuedAtFrom) &&
+        (filter.EnqueuedAtTo == null || e.EnqueuedTimeUtc <= filter.EnqueuedAtTo);
 
     // Server-side projection: every UnresolvedEvent property EXCEPT the heavy
     // EventJson payload (search results never surface it; the detail view
@@ -369,12 +403,6 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
 
         return ev;
-    }
-
-    private sealed class HistogramPoint
-    {
-        public DateTime UpdatedAt { get; set; }
-        public string Status { get; set; } = string.Empty;
     }
 
     public async Task<BlockedMessageEventPage> GetBlockedEventsOnSession(string endpointId,
@@ -647,18 +675,19 @@ internal sealed partial class CosmosDbMessageTrackingStore
             parameters[p] = filter.MessageType.ToString();
         }
 
+        // Widened to whole seconds: Cosmos compares datetimes as strings (see CosmosDateBounds).
         if (filter.EnqueuedAtFrom != null)
         {
             var p = NextParam();
             conditions.Add($"c.message.EnqueuedTimeUtc >= {p}");
-            parameters[p] = filter.EnqueuedAtFrom.Value;
+            parameters[p] = CosmosDateBounds.WidenFrom(filter.EnqueuedAtFrom.Value);
         }
 
         if (filter.EnqueuedAtTo != null)
         {
             var p = NextParam();
             conditions.Add($"c.message.EnqueuedTimeUtc <= {p}");
-            parameters[p] = filter.EnqueuedAtTo.Value;
+            parameters[p] = CosmosDateBounds.WidenTo(filter.EnqueuedAtTo.Value);
         }
 
         var sql = MessageSearchProjection;
@@ -679,14 +708,23 @@ internal sealed partial class CosmosDbMessageTrackingStore
         var messages = new List<MessageEntity>();
         string? token = null;
 
-        if (result.HasMoreResults)
+        // One page per call, applying the exact date bounds; a page holding only rows just
+        // outside them would come back empty, so read on past it.
+        while (result.HasMoreResults)
         {
             var feed = await result.ReadNextAsync();
             token = feed.ContinuationToken;
             foreach (var doc in feed)
             {
+                if ((filter.EnqueuedAtFrom != null && doc.Message.EnqueuedTimeUtc < filter.EnqueuedAtFrom) ||
+                    (filter.EnqueuedAtTo != null && doc.Message.EnqueuedTimeUtc > filter.EnqueuedAtTo))
+                    continue;
+
                 messages.Add(doc.Message);
             }
+
+            if (messages.Count > 0 || feed.Count == 0)
+                break;
         }
 
         return new MessageSearchResult { Messages = messages, ContinuationToken = token };

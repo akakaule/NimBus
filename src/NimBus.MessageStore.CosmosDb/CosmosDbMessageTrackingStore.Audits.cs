@@ -112,18 +112,19 @@ internal sealed partial class CosmosDbMessageTrackingStore
             parameters[p] = (int)filter.AuditType.Value;
         }
 
+        // Widened to whole seconds: Cosmos compares datetimes as strings (see CosmosDateBounds).
         if (filter.CreatedAtFrom != null)
         {
             var p = NextParam();
             conditions.Add($"c.createdAt >= {p}");
-            parameters[p] = filter.CreatedAtFrom.Value;
+            parameters[p] = CosmosDateBounds.WidenFrom(filter.CreatedAtFrom.Value);
         }
 
         if (filter.CreatedAtTo != null)
         {
             var p = NextParam();
             conditions.Add($"c.createdAt <= {p}");
-            parameters[p] = filter.CreatedAtTo.Value;
+            parameters[p] = CosmosDateBounds.WidenTo(filter.CreatedAtTo.Value);
         }
 
         var sql = "SELECT * FROM c";
@@ -144,12 +145,18 @@ internal sealed partial class CosmosDbMessageTrackingStore
         var audits = new List<AuditSearchItem>();
         string? token = null;
 
-        if (result.HasMoreResults)
+        // One page per call, applying the exact date bounds; a page holding only rows just
+        // outside them would come back empty, so read on past it.
+        while (result.HasMoreResults)
         {
             var feed = await result.ReadNextAsync();
             token = feed.ContinuationToken;
             foreach (var doc in feed)
             {
+                if ((filter.CreatedAtFrom != null && doc.CreatedAt < filter.CreatedAtFrom) ||
+                    (filter.CreatedAtTo != null && doc.CreatedAt > filter.CreatedAtTo))
+                    continue;
+
                 audits.Add(new AuditSearchItem
                 {
                     EventId = doc.EventId,
@@ -159,6 +166,9 @@ internal sealed partial class CosmosDbMessageTrackingStore
                     CreatedAt = doc.CreatedAt
                 });
             }
+
+            if (audits.Count > 0 || feed.Count == 0)
+                break;
         }
 
         return new AuditSearchResult { Audits = audits, ContinuationToken = token };

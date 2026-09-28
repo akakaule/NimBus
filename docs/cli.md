@@ -298,8 +298,11 @@ nb setup --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 Combines `infra apply` → `topology apply` → `deploy apps` in a single command. Accepts all options from the individual commands, including `--storage-provider`, `--sql-mode`, `--sql-admin-login`, `--sql-server-name`, `--resolver-plan`, `--resolver-max-sessions`, `--resolver-max-instances`, `--management-plan-sku`, the private networking options, `--assembly`, and `--from-source`. On a private deployment the topology and app steps each check first that this machine resolves the private endpoints, so the check runs after the infrastructure step has created them. SQL and bootstrap-admin secrets use the environment variables documented under `nb infra apply`.
 
 Like the individual commands, this needs no repository clone. Deploying your own event
-catalog means passing `--assembly` so the topology step provisions your endpoints rather
-than the built-in ones.
+catalog means passing `--platform-package`: the topology step provisions your endpoints and
+the app step deploys the catalog with the WebApp. `--assembly` feeds only the topology step;
+the app step then deploys the WebApp with its built-in catalog and clears any
+`NimBus__PlatformType` / `NimBus__PlatformAssembly` settings, so the management UI does not
+show your endpoints.
 
 ---
 

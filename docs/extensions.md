@@ -159,6 +159,9 @@ All observer methods have default no-op implementations, so you only override th
 | `OnMessageCompleted` | A message was processed successfully |
 | `OnMessageFailed` | A message handler threw an exception |
 | `OnMessageDeadLettered` | A message was sent to the dead-letter queue |
+| `OnSessionBlocked` | A message arrived for a session blocked by an earlier event and was deferred; the blocking event id is passed |
+| `OnDuplicateDetected` | Inbox deduplication skipped an already processed message |
+| `OnCircuitStateChanged` | An endpoint circuit changed state; receives a `CircuitStateChangeContext` instead of a `MessageLifecycleContext` |
 
 #### Implementing a lifecycle observer
 
@@ -323,9 +326,7 @@ Follow the naming pattern `NimBus.Extensions.{Name}`:
 |---------|-------------|
 | `NimBus.Extensions.Notifications` | Notification channels on failures/dead-letters |
 | `NimBus.Extensions.Identity` | Username/password authentication with email verification |
-| `NimBus.Extensions.TicketIntegration` | Automatic ticket creation on errors |
-| `NimBus.Extensions.AuditLog` | Audit trail for all messages |
-| `NimBus.Extensions.RateLimiting` | Throttle message processing |
+| `NimBus.Extensions.IntegrationIntelligence` | Advisory failure classification for the management WebApp |
 
 ## Worked example: Notifications extension
 

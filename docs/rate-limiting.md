@@ -16,6 +16,7 @@ Exceeding a limit returns **HTTP 429**.
 | `nimbus-admin` | `/api/admin/*` (21 routes) | Fixed window | 60 per 60 s | user id |
 | `nimbus-search` | `POST /api/messages/search`, `POST /api/audits/search` | Fixed window | 120 per 60 s | user id |
 | `nimbus-login` | `POST /account/login` | Fixed window | 50 per 300 s | client IP |
+| `nimbus-intelligence` | `POST /api/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
 | `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
 
 `GET /account/login` — the sign-in *page* — is deliberately not throttled;
@@ -39,6 +40,7 @@ quote:
 | `nimbus-admin` | ≤ 60 per user | ≤ 120 | 3,600/hour per user |
 | `nimbus-search` | ≤ 120 per user | ≤ 240 | 7,200/hour per user |
 | `nimbus-login` | ≤ 50 per address | ≤ 100 | 600/hour per address |
+| `nimbus-intelligence` | ≤ 10 per user | ≤ 20 | 600/hour per user |
 | `nimbus-mcp` | ≤ 60 per caller and client | ≤ 120 | 3,600/hour per caller and client |
 
 **A caller pacing at or below the sustained rate is never rejected**, and
@@ -154,6 +156,8 @@ a restart, which an App Service application-setting change triggers anyway.
 | `RateLimiting:Login:PermitLimit` | `50` |
 | `RateLimiting:Login:WindowSeconds` | `300` |
 | `RateLimiting:Login:IPv6PrefixBits` | `128` |
+| `RateLimiting:Intelligence:PermitLimit` | `10` |
+| `RateLimiting:Intelligence:WindowSeconds` | `60` |
 | `RateLimiting:Mcp:PermitLimit` | `60` |
 | `RateLimiting:Mcp:WindowSeconds` | `60` |
 
@@ -179,7 +183,7 @@ operator-set `RateLimiting__*` settings forward, with one exception:
 
 Rejections carry a short `text/plain` body naming the policy — `POST
 /account/login` is a browser form surface, where a bodyless 429 shows a human
-nothing. The three fixed-window policies also emit `Retry-After`; the
+nothing. The fixed-window policies also emit `Retry-After`; the
 concurrency limiter does not, because it has no meaningful retry hint (permits
 return on completion, not on a clock).
 
@@ -189,7 +193,7 @@ telemetry, since it is the only field making an attempt attributable. As above:
 a caller pacing under the limit is never rejected and so never appears there.
 
 Neither the SPA nor the `nb` CLI currently surfaces or retries on 429. The `nb`
-CLI calls none of these four surfaces, and the limits are sized so legitimate
+CLI calls none of these surfaces, and the limits are sized so legitimate
 SPA usage never reaches them.
 
 ## Scope

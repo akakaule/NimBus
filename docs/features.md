@@ -22,7 +22,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Extensibility hooks | Pipeline middleware | Middleware behaviors wrap handling for cross-cutting concerns. | `NimBus.Core` |
 | Extensibility hooks | Lifecycle observers | Passive hooks for received/completed/failed/dead-lettered message events. | `NimBus.Core` |
 | Built-in middleware | Logging/Metrics/Validation middleware | Built-in behaviors for processing logs, OpenTelemetry metrics, and basic message validation. | `NimBus.Core` |
-| State and audit | Resolver state tracking | Central resolver stores message outcomes and endpoint resolution state in Cosmos DB. | `NimBus.Resolver`, `NimBus.MessageStore` |
+| State and audit | Resolver state tracking | Central resolver stores message outcomes and endpoint resolution state in Cosmos DB or SQL Server. | `NimBus.Resolver`, `NimBus.MessageStore` |
 | Operations UI | Management WebApp | Authenticated UI/API for endpoint/event/message inspection and operational workflows, including reconciling stale `Pending` rows from their stored outcome. | `NimBus.WebApp` |
 | Operations UI | Failed messages across endpoints | One page for every unresolved failure the operator can read: stacked failures-over-time chart, Messages-style filters, and list / by-endpoint / by-error views with resubmit and skip. | `NimBus.WebApp`, `NimBus.MessageStore` |
 | Operations automation | CLI provisioning + operations | `nb` CLI commands for infra/topology/app deploy, purge, session cleanup, and container operations. | `NimBus.CommandLine` |

@@ -36,10 +36,12 @@ like one that does not exist.
 
 ## Local development (Aspire)
 
-No setup is needed. The NimBus Aspire AppHost (`src/NimBus.AppHost`) sets
+With the NimBus Aspire AppHost (`src/NimBus.AppHost`) no setup is needed: it sets
 `NimBus__Mcp__EnableForLocalDevelopment=true`, and the
 WebApp serves `/mcp` whenever its local-dev bypass is on (Development and
-`EnableLocalDevAuthentication=true` in `src/NimBus.WebApp/appsettings.Development.json`). No sign-in
+`EnableLocalDevAuthentication=true` in `src/NimBus.WebApp/appsettings.Development.json`). The
+CrmErpDemo AppHost does not set it; to use `/mcp` there, set `NimBus:Mcp:EnableForLocalDevelopment`
+to `true` yourself, for example in that `appsettings.Development.json`. No sign-in
 is involved; every call runs as the "Local Developer" user, with the same role and PII checks as the
 Web UI. With the bypass off, `/mcp` is not served.
 

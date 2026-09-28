@@ -284,7 +284,7 @@ builder.Services.AddNimBusSubscriber("billingendpoint", sub =>
     sub.AddHandler<OrderPlaced, OrderPlacedHandler>();
     sub.ConfigureRetryPolicies(policies =>
     {
-        policies.AddDefaultPolicy(new RetryPolicy
+        policies.SetDefaultPolicy(new RetryPolicy
         {
             MaxRetries = 3,
             Strategy   = BackoffStrategy.Exponential,

@@ -229,7 +229,7 @@ nb topology apply --solution-id nimbus --environment dev --resource-group rg-nim
 nb deploy apps   --solution-id nimbus --environment dev --resource-group rg-nimbus-dev
 ```
 
-Both must run from a repository clone (`nb deploy apps` publishes the resolver and WebApp from source; the WebApp SPA build needs Node.js 22).
+Neither needs a repository clone: `nb deploy apps` deploys the Resolver and WebApp released for the CLI's own version. To build them from a clone instead, add `--from-source`; that source build needs Node.js 22 for the WebApp SPA.
 
 ## Troubleshooting
 

@@ -89,7 +89,7 @@ public abstract class BcCustomerEvent : Event
     public DateTimeOffset ChangedAt { get; set; }
 }
 
-[Description("Published by Business Central when a customer is created — normally when a CRM prospect's quote becomes an order, the moment BC takes ownership of the buying customer. CRM flips the account from Prospect to Customer and locks the BC-owned fields.")]
+[Description("Published by Business Central when a customer is created — normally when a CRM prospect's quote becomes an order and the prospect contact becomes a buying customer. CRM flips the account from Prospect to Customer and shows the BC customer data read-only.")]
 public class BcCustomerCreated : BcCustomerEvent
 {
     public static readonly BcCustomerCreated Example = new()
@@ -115,7 +115,7 @@ public class BcCustomerCreated : BcCustomerEvent
     };
 }
 
-[Description("Published by Business Central when customer master data changes: address, payment terms, credit limit, balance or blocked status. CRM updates its read-only mirror.")]
+[Description("Published by Business Central when customer master data changes (address, payment terms, credit limit, balance or blocked status) and for every customer in the initial sync at go-live. CRM creates or updates its read-only copy of the account.")]
 public class BcCustomerUpdated : BcCustomerEvent
 {
     public static readonly BcCustomerUpdated Example = new()

@@ -12,7 +12,7 @@ using NimBus.Extensions.Notifications;
 using NimBus.Inbox.SqlServer;
 using NimBus.SDK.Extensions;
 
-// Business Central adapter: receives CRM's quote requests, prospect updates and credit checks on
+// Business Central adapter: receives CRM's prospects, opportunities and credit checks on
 // BusinessCentralEndpoint and calls the Business Central APIs. It is a worker (container) rather
 // than an Azure Function because only a worker host can pause its receivers when the circuit
 // breaker opens — which is exactly what a BC update window calls for.
@@ -62,12 +62,12 @@ builder.Services.AddNimBusSubscriber(
     configure: options => options.Endpoint = "BusinessCentralEndpoint",
     configureBuilder: sub =>
     {
-        sub.AddHandlersFromAssemblyContaining<CreateBcSalesQuoteHandler>();
+        sub.AddHandlersFromAssemblyContaining<D365ProspectUpdatedHandler>();
         sub.AddRequestHandler<D365CreditCheckRequested, BcCreditStatus, D365CreditCheckRequestedHandler>();
 
-        // A double-clicked "Request quote" arrives with the same deterministic MessageId and is
-        // skipped as DuplicateDetected. Operator resubmits get a new MessageId and run the handler;
-        // BC's quote request is idempotent per opportunity for exactly that case.
+        // CRM gives every change a deterministic MessageId, so a change delivered twice is skipped as
+        // DuplicateDetected. Operator resubmits get a new MessageId and run the handler; the BC upserts
+        // are idempotent for exactly that case.
         sub.UseInbox(inbox =>
         {
             inbox.DeduplicationStore = InboxStore.SqlServer;

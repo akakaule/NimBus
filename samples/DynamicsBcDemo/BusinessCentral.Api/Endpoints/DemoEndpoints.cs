@@ -1,11 +1,13 @@
 using BusinessCentral.Api.Demo;
+using BusinessCentral.Api.Domain;
+using BusinessCentral.Api.Integration;
 
 namespace BusinessCentral.Api.Endpoints;
 
 /// <summary>
-/// Demo-only controls and sinks, used by the hidden /demo page of the BC web client:
-/// time-boxed failure modes, the notification sink behind the "#integration-alerts" page, and the
-/// adapter's circuit state. Unauthenticated by design — a local demo, not a production pattern.
+/// Demo-only controls and sinks, used by the hidden /demo page of the BC web client: the go-live
+/// initial sync, time-boxed failure modes, the notification sink behind the "#integration-alerts" page,
+/// and the adapter's circuit state. Unauthenticated by design — a local demo, not a production pattern.
 /// </summary>
 public static class DemoEndpoints
 {
@@ -14,6 +16,12 @@ public static class DemoEndpoints
     public static void MapDemoEndpoints(this IEndpointRouteBuilder app)
     {
         var demo = app.MapGroup("/api/demo");
+
+        // The go-live initial load: item categories, customers and their contacts, published through
+        // the outbox in one transaction. In production this is a one-off job; CRM upserts, so it is
+        // safe to run again.
+        demo.MapPost("/initial-sync", async (BcUnitOfWork uow, SalesService sales, CancellationToken ct) =>
+            Results.Ok(await uow.RunAsync(events => sales.BuildInitialSyncAsync(events, ct), ct)));
 
         demo.MapGet("/state", (BcFaultState faults, CircuitStateStore circuit, AlertsState alerts) =>
             Results.Ok(new

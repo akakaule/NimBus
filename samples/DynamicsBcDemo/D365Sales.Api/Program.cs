@@ -8,7 +8,7 @@ using NimBus.SDK;
 using NimBus.SDK.Extensions;
 
 // Dynamics 365 Sales simulator: the Dataverse data the demo needs (leads, accounts, contacts,
-// opportunities, products), the Sales Hub look-alike's JSON surface, a Dataverse-shaped API for the
+// opportunities, product groups), the Sales Hub look-alike's JSON surface, a Dataverse-shaped API for the
 // integration, and the pilot-office burst. Seller actions publish to NimBus directly; in production
 // they would leave Dataverse through a Service Endpoint and the NimBus Dataverse adapter.
 var builder = WebApplication.CreateBuilder(args);
@@ -27,7 +27,8 @@ var d365ConnectionString = builder.Configuration.GetConnectionString("d365")
 builder.Services.AddDbContext<D365DbContext>(options => options.UseSqlServer(d365ConnectionString));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<SalesService>();
-builder.Services.AddScoped<QuoteRequestPublisher>();
+builder.Services.AddScoped<CrmChangePublisher>();
+builder.Services.AddSingleton<LastPublishedChange>();
 
 if (hasServiceBus)
 {

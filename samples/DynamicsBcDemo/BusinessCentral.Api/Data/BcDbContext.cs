@@ -5,9 +5,11 @@ namespace BusinessCentral.Api.Data;
 public class BcDbContext(DbContextOptions<BcDbContext> options) : DbContext(options)
 {
     public DbSet<Salesperson> Salespeople => Set<Salesperson>();
+    public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
     public DbSet<Item> Items => Set<Item>();
     public DbSet<Contact> Contacts => Set<Contact>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CrmOpportunity> CrmOpportunities => Set<CrmOpportunity>();
     public DbSet<SalesQuote> SalesQuotes => Set<SalesQuote>();
     public DbSet<SalesQuoteLine> SalesQuoteLines => Set<SalesQuoteLine>();
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
@@ -27,6 +29,12 @@ public class BcDbContext(DbContextOptions<BcDbContext> options) : DbContext(opti
             e.HasIndex(x => x.Email).IsUnique();
         });
 
+        modelBuilder.Entity<ItemCategory>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Code).IsUnique();
+        });
+
         modelBuilder.Entity<Item>(e =>
         {
             e.HasKey(x => x.Id);
@@ -38,6 +46,7 @@ public class BcDbContext(DbContextOptions<BcDbContext> options) : DbContext(opti
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Number).IsUnique();
             e.HasIndex(x => x.CrmAccountId).IsUnique().HasFilter("[CrmAccountId] IS NOT NULL");
+            e.HasIndex(x => x.CompanyContactId);
         });
 
         modelBuilder.Entity<Customer>(e =>
@@ -45,6 +54,12 @@ public class BcDbContext(DbContextOptions<BcDbContext> options) : DbContext(opti
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Number).IsUnique();
             e.HasIndex(x => x.CrmAccountId).IsUnique().HasFilter("[CrmAccountId] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<CrmOpportunity>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmAccountId);
         });
 
         modelBuilder.Entity<SalesQuote>(e =>

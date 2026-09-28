@@ -18,29 +18,28 @@ public sealed class BusinessCentralClient(HttpClient http) : IBusinessCentralCli
     private static readonly string CrmApi = $"/api/contoso/crm/v1.0/companies({SeedData.CompanyId})";
     private static readonly string StandardApi = $"/api/v2.0/companies({SeedData.CompanyId})";
 
-    public async Task<QuoteRequestResponse> CreateQuoteRequestAsync(QuoteRequestBody body, CancellationToken cancellationToken)
+    public async Task<ProspectUpsertResult> UpsertProspectAsync(Guid crmAccountId, ProspectUpsertBody body, CancellationToken cancellationToken)
     {
-        var operation = $"Create the Business Central quote for opportunity {body.OpportunityNumber}";
+        var operation = $"Send the prospect for CRM account {crmAccountId} to Business Central";
         using var response = await SendAsync(
-            () => http.PostAsJsonAsync($"{CrmApi}/quoteRequests", body, cancellationToken),
+            () => http.PutAsJsonAsync($"{CrmApi}/prospects({crmAccountId})", body, cancellationToken),
             operation);
+
+        if (response.StatusCode == HttpStatusCode.Conflict) return ProspectUpsertResult.OwnedByBusinessCentral;
+
         await ThrowOnFailureAsync(response, operation, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<QuoteRequestResponse>(cancellationToken)
-            ?? throw new BcUnavailableException($"{operation} failed: {ApiName} returned an empty body.");
+        return response.StatusCode == HttpStatusCode.Created ? ProspectUpsertResult.Created : ProspectUpsertResult.Updated;
     }
 
-    public async Task<ProspectUpdateResult> UpdateProspectAsync(Guid crmAccountId, ProspectPatchBody body, CancellationToken cancellationToken)
+    public async Task<CrmOpportunityResponse> UpsertCrmOpportunityAsync(Guid opportunityId, CrmOpportunityBody body, CancellationToken cancellationToken)
     {
-        var operation = $"Update the Business Central prospect for CRM account {crmAccountId}";
+        var operation = $"Send CRM opportunity {body.Number} to Business Central";
         using var response = await SendAsync(
-            () => http.PatchAsJsonAsync($"{CrmApi}/prospects({crmAccountId})", body, cancellationToken),
+            () => http.PutAsJsonAsync($"{CrmApi}/crmOpportunities({opportunityId})", body, cancellationToken),
             operation);
-
-        if (response.StatusCode == HttpStatusCode.NotFound) return ProspectUpdateResult.NotInBusinessCentral;
-        if (response.StatusCode == HttpStatusCode.Conflict) return ProspectUpdateResult.OwnedByBusinessCentral;
-
         await ThrowOnFailureAsync(response, operation, cancellationToken);
-        return ProspectUpdateResult.Updated;
+        return await response.Content.ReadFromJsonAsync<CrmOpportunityResponse>(cancellationToken)
+            ?? throw new BcUnavailableException($"{operation} failed: {ApiName} returned an empty body.");
     }
 
     public async Task<BcApiCustomer?> GetCustomerAsync(Guid customerId, CancellationToken cancellationToken)

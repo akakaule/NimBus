@@ -1,19 +1,18 @@
 using System.Globalization;
 using D365Sales.Adapter.Clients;
 using DynamicsBcDemo.Contracts.BusinessCentral;
-using DynamicsBcDemo.Contracts.Demo;
 using NimBus.SDK.EventHandlers;
 
 namespace D365Sales.Adapter.Handlers;
 
-/// <summary>Business Central created a quote for an opportunity: link it and show it read-only.</summary>
+/// <summary>A BC user created a quote linked to an opportunity: link it, show it read-only, and hand the account to Business Central.</summary>
 public sealed class BcSalesQuoteCreatedHandler(IDataverseClient dataverse) : IEventHandler<BcSalesQuoteCreated>
 {
     public Task Handle(BcSalesQuoteCreated message, IEventHandlerContext context, CancellationToken cancellationToken = default) =>
         QuoteMirror.ApplyAsync(dataverse, message, cancellationToken);
 }
 
-/// <summary>A Business Central quote changed (revised, sent, accepted): follow it in the pipeline.</summary>
+/// <summary>A Business Central quote changed (revised, sent, accepted): show its status on the deal.</summary>
 public sealed class BcSalesQuoteUpdatedHandler(IDataverseClient dataverse) : IEventHandler<BcSalesQuoteUpdated>
 {
     public Task Handle(BcSalesQuoteUpdated message, IEventHandlerContext context, CancellationToken cancellationToken = default) =>
@@ -21,13 +20,22 @@ public sealed class BcSalesQuoteUpdatedHandler(IDataverseClient dataverse) : IEv
 }
 
 /// <summary>
-/// Mirrors a Business Central quote into Dynamics 365: the read-only quote row, the opportunity's
-/// link, status and — the point for the sales manager — the estimated revenue, which from now on is
-/// the real quote total instead of CRM's list-price estimate. Every write is idempotent (PATCH/upsert),
-/// so redelivery and operator resubmits are harmless.
+/// Mirrors a Business Central quote into Dynamics 365:
+/// <list type="bullet">
+/// <item>the read-only quote row and the opportunity's link and quote status — the opportunity itself
+/// stays CRM's;</item>
+/// <item>the account: from its first quote on, Business Central manages it, so CRM locks its master
+/// data;</item>
+/// <item>when the quote is accepted (it became an order in BC), the opportunity is closed as won with the
+/// quote total. The order itself stays in Business Central.</item>
+/// </list>
+/// Every write is idempotent (PATCH/upsert, and winning a won opportunity changes nothing), so
+/// redelivery and operator resubmits are harmless.
 /// </summary>
 internal static class QuoteMirror
 {
+    public const string Accepted = "Accepted";
+
     public static async Task ApplyAsync(IDataverseClient dataverse, BcSalesQuoteEvent quote, CancellationToken cancellationToken)
     {
         var mirror = new Dictionary<string, object?>
@@ -47,31 +55,37 @@ internal static class QuoteMirror
 
         if (quote.OpportunityId != Guid.Empty)
         {
-            var opportunity = new Dictionary<string, object?>
-            {
-                ["cs_bcquoteid"] = quote.QuoteId,
-                ["cs_bcquotenumber"] = quote.QuoteNumber,
-                ["cs_bcquotestatus"] = quote.Status,
-            };
-
-            // An accepted quote is won by the order event, with the order amount; until then the
-            // pipeline shows the quote total in the Propose stage.
-            if (quote.Status is "Draft" or "Sent")
-            {
-                opportunity["estimatedvalue"] = quote.TotalAmountExcludingTax;
-                opportunity["stepname"] = SeedData.Stages.Propose;
-            }
-
-            await dataverse.PatchOpportunityAsync(quote.OpportunityId, opportunity, cancellationToken);
+            await dataverse.PatchOpportunityAsync(
+                quote.OpportunityId,
+                new Dictionary<string, object?>
+                {
+                    ["cs_bcquoteid"] = quote.QuoteId,
+                    ["cs_bcquotenumber"] = quote.QuoteNumber,
+                    ["cs_bcquotestatus"] = quote.Status,
+                },
+                cancellationToken);
         }
 
-        // Business Central now knows the prospect as a contact, so later CRM edits to it are sent on.
-        if (quote.SellToContactNumber is not null && quote.CustomerNumber is null)
+        var account = new Dictionary<string, object?>
         {
-            await dataverse.PatchAccountAsync(
-                quote.AccountId,
-                new Dictionary<string, object?> { ["cs_bccontactnumber"] = quote.SellToContactNumber },
+            ["cs_masterdataowner"] = MasterDataOwnerBusinessCentral,
+        };
+        // A prospect is quoted as a BC contact; keep its number so CRM can show where it lives.
+        if (quote.SellToContactNumber is not null && quote.CustomerNumber is null)
+            account["cs_bccontactnumber"] = quote.SellToContactNumber;
+        await dataverse.PatchAccountAsync(quote.AccountId, account, cancellationToken);
+
+        if (quote.Status == Accepted && quote.OpportunityId != Guid.Empty)
+        {
+            await dataverse.WinOpportunityAsync(
+                quote.OpportunityId,
+                quote.TotalAmountExcludingTax,
+                quote.AcceptedDate ?? quote.DocumentDate,
+                $"Won: Business Central quote {quote.QuoteNumber} accepted",
                 cancellationToken);
         }
     }
+
+    /// <summary>account.cs_masterdataowner: 2 = Business Central.</summary>
+    private const int MasterDataOwnerBusinessCentral = 2;
 }

@@ -14,23 +14,31 @@ public static class BcEvents
 
     public static BcCustomerUpdated CustomerUpdated(Customer customer) => Fill(new BcCustomerUpdated(), customer);
 
-    public static BcSalesOrderCreated OrderCreated(SalesOrder order) => new()
+    public static BcItemCategoryUpdated ItemCategoryUpdated(ItemCategory category) => new()
     {
-        // Session key: the CRM account when BC knows it, else the customer — the same key the
-        // customer events for this customer use, so order always follows customer.
-        AccountId = order.CrmAccountId ?? order.CustomerId,
-        CrmAccountId = order.CrmAccountId,
-        OrderId = order.Id,
-        OrderNumber = order.Number,
-        QuoteNumber = order.QuoteNumber,
-        OpportunityId = order.CrmOpportunityId,
-        ExternalDocumentNumber = order.ExternalDocumentNumber,
-        CustomerId = order.CustomerId,
-        CustomerNumber = order.CustomerNumber,
-        SalespersonCode = order.SalespersonCode,
-        CurrencyCode = order.CurrencyCode,
-        TotalAmountExcludingTax = order.TotalAmountExcludingTax,
-        OrderDate = order.OrderDate,
+        ItemCategoryId = category.Id,
+        Code = category.Code,
+        DisplayName = category.DisplayName,
+        ChangedAt = category.LastModifiedDateTime,
+    };
+
+    public static BcContactUpdated ContactUpdated(Contact person, Contact company, Customer customer) => new()
+    {
+        // The customer's own session key, so a contact always follows its customer.
+        AccountId = customer.CrmAccountId ?? customer.Id,
+        ContactId = person.Id,
+        ContactNumber = person.Number,
+        FirstName = person.FirstName,
+        Surname = person.Surname ?? person.DisplayName,
+        Email = person.Email,
+        PhoneNumber = person.PhoneNumber,
+        JobTitle = person.JobTitle,
+        CompanyContactId = company.Id,
+        CompanyName = company.DisplayName,
+        CustomerId = customer.Id,
+        CustomerNumber = customer.Number,
+        CrmAccountId = customer.CrmAccountId,
+        ChangedAt = person.LastModifiedDateTime,
     };
 
     private static T Fill<T>(T e, SalesQuote quote) where T : BcSalesQuoteEvent

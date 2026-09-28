@@ -57,7 +57,11 @@ public static class D365DatabaseInitializer
         }
     }
 
-    /// <summary>Adds the seed data to <paramref name="db"/> (no save). Public for tests.</summary>
+    /// <summary>
+    /// Adds the seed data to <paramref name="db"/> (no save). Public for tests. CRM starts on go-live
+    /// morning: prospects, opportunities and leads, but none of Business Central's customers, contacts
+    /// or product groups yet — they arrive with the initial sync.
+    /// </summary>
     public static void Seed(D365DbContext db, DateTimeOffset now)
     {
         foreach (var seller in SeedData.Sellers)
@@ -70,19 +74,7 @@ public static class D365DatabaseInitializer
             });
         }
 
-        foreach (var item in SeedData.Items)
-        {
-            db.Products.Add(new Product
-            {
-                ProductId = item.ItemId,
-                ProductNumber = item.Number,
-                Name = item.DisplayName,
-                Price = item.UnitPrice,
-                DefaultUnit = item.UnitOfMeasure,
-            });
-        }
-
-        foreach (var seed in SeedData.Accounts)
+        foreach (var seed in SeedData.CrmAccounts)
         {
             var bc = seed.BcCustomer;
             db.Accounts.Add(new Account
@@ -103,6 +95,7 @@ public static class D365DatabaseInitializer
                 OwnerId = seed.OwnerId,
                 PrimaryContactId = seed.PrimaryContact.ContactId,
                 CsBcCustomerId = bc?.CustomerId,
+                CsBcContactNumber = bc is null ? seed.BcCompanyContactNumber : null,
                 CsBcBlocked = bc?.Blocked,
                 CsBcBalanceDue = bc?.BalanceDue,
                 CsBcPaymentTerms = bc?.PaymentTermsCode,
@@ -121,79 +114,36 @@ public static class D365DatabaseInitializer
                 Telephone1 = seed.PrimaryContact.Phone,
                 JobTitle = seed.PrimaryContact.JobTitle,
                 ParentCustomerId = seed.AccountId,
+                // A customer's contacts belong to Business Central: the link lets the initial sync
+                // update this contact instead of adding a second one.
+                CsBcContactId = bc is null ? null : seed.PrimaryContact.BcContactId,
                 CreatedOn = now.AddDays(-30),
             });
 
             if (bc is not null)
             {
-                Timeline.Add(db, seed.AccountId, $"Existing Business Central customer {bc.Number}", "Loaded into Dynamics 365 at go-live. Business Central owns this account's master data.", Timeline.Integration, now.AddDays(-30));
+                Timeline.Add(db, seed.AccountId, $"Existing Business Central customer {bc.Number}", "Business Central owns this account's master data.", Timeline.Integration, now.AddDays(-30));
             }
         }
 
         foreach (var seed in SeedData.Opportunities)
         {
             var account = SeedData.Accounts.Single(a => a.AccountId == seed.AccountId);
-            var opportunity = new Opportunity
+            db.Opportunities.Add(new Opportunity
             {
                 OpportunityId = seed.OpportunityId,
                 CsNumber = seed.Number,
                 Name = seed.Name,
                 CustomerId = seed.AccountId,
                 ParentContactId = account.PrimaryContact.ContactId,
+                EstimatedValue = seed.EstimatedValue,
                 EstimatedCloseDate = now.UtcDateTime.Date.AddDays(seed.CloseInDays),
                 CloseProbability = seed.Probability,
                 StepName = seed.Stage,
                 OwnerId = seed.OwnerId,
-                CsLinesRevision = 1,
                 CreatedOn = now.AddDays(-14),
                 ModifiedOn = now,
-            };
-
-            var sequence = 1;
-            foreach (var (itemNumber, quantity) in seed.Lines)
-            {
-                var item = SeedData.Items.Single(i => i.Number == itemNumber);
-                opportunity.Lines.Add(new OpportunityProduct
-                {
-                    OpportunityProductId = Guid.NewGuid(),
-                    OpportunityId = seed.OpportunityId,
-                    Sequence = sequence++,
-                    ProductNumber = item.Number,
-                    Description = item.DisplayName,
-                    Quantity = quantity,
-                    PricePerUnit = item.UnitPrice,
-                    ExtendedAmount = Math.Round(quantity * item.UnitPrice, 2),
-                });
-            }
-
-            opportunity.EstimatedValue = opportunity.Lines.Sum(l => l.ExtendedAmount);
-
-            if (seed.Quote is { } quote)
-            {
-                // Same pricing as the BC seed, so the mirror and the BC quote agree to the cent.
-                var sentAt = now.AddDays(-quote.SentDaysAgo);
-                opportunity.CsBcQuoteId = quote.QuoteId;
-                opportunity.CsBcQuoteNumber = quote.Number;
-                opportunity.CsBcQuoteStatus = "Sent";
-                opportunity.CsQuoteRequestRevision = 1;
-                opportunity.CsQuoteRequestedOn = sentAt.AddDays(-1);
-                db.BcQuotes.Add(new BcQuoteMirror
-                {
-                    BcQuoteId = quote.QuoteId,
-                    QuoteNumber = quote.Number,
-                    OpportunityId = seed.OpportunityId,
-                    AccountId = seed.AccountId,
-                    Status = "Sent",
-                    TotalAmount = opportunity.EstimatedValue.Value,
-                    CurrencyCode = SeedData.CurrencyCode,
-                    ValidUntil = sentAt.UtcDateTime.Date.AddDays(quote.ValidForDays),
-                    SentOn = sentAt,
-                    LastSyncedOn = sentAt,
-                });
-                Timeline.Add(db, seed.OpportunityId, $"Business Central quote {quote.Number} is now Sent", $"{Timeline.Money(opportunity.EstimatedValue.Value)}.", Timeline.Integration, sentAt);
-            }
-
-            db.Opportunities.Add(opportunity);
+            });
         }
 
         foreach (var seed in SeedData.Leads)

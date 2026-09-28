@@ -32,7 +32,8 @@ public static partial class DataverseApiEndpoints
             return Results.NoContent();
         });
 
-        // Upsert by alternate key: a Business Central customer CRM has never seen (created in BC).
+        // Upsert by alternate key: a Business Central customer CRM has never seen (loaded at go-live,
+        // or created in BC).
         api.MapPatch("/accounts(cs_bccustomerid={bcCustomerId:guid})", async (Guid bcCustomerId, Dictionary<string, JsonElement> body, D365DbContext db, TimeProvider clock, CancellationToken ct) =>
         {
             var now = clock.GetUtcNow();
@@ -43,11 +44,13 @@ public static partial class DataverseApiEndpoints
                 {
                     AccountId = Guid.NewGuid(),
                     CsBcCustomerId = bcCustomerId,
+                    CustomerTypeCode = OptionSets.RelationshipType.Customer,
+                    CsMasterDataOwner = OptionSets.MasterDataOwner.BusinessCentral,
                     OwnerId = SeedData.AlexRivera.SystemUserId,
                     CreatedOn = now,
                 };
                 db.Accounts.Add(account);
-                Timeline.Add(db, account.AccountId, "Account created by Business Central", "An existing Business Central customer, synchronised into Dynamics 365.", Timeline.Integration, now);
+                Timeline.Add(db, account.AccountId, "Account created from Business Central", "A Business Central customer, loaded into Dynamics 365. Business Central owns its master data.", Timeline.Integration, now);
             }
 
             ApplyAccount(db, account, body, now);
@@ -60,6 +63,56 @@ public static partial class DataverseApiEndpoints
             var opportunity = await db.Opportunities.FirstOrDefaultAsync(o => o.OpportunityId == id, ct)
                 ?? throw DoesNotExist("opportunity", id);
             ApplyOpportunity(opportunity, body, clock.GetUtcNow());
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        // Upsert by alternate key: a Business Central person contact (contacts are mastered in BC).
+        api.MapPatch("/contacts(cs_bccontactid={bcContactId:guid})", async (Guid bcContactId, Dictionary<string, JsonElement> body, D365DbContext db, TimeProvider clock, CancellationToken ct) =>
+        {
+            var now = clock.GetUtcNow();
+            var contact = await db.Contacts.FirstOrDefaultAsync(c => c.CsBcContactId == bcContactId, ct);
+            var created = contact is null;
+            if (contact is null)
+            {
+                contact = new Contact { ContactId = Guid.NewGuid(), CsBcContactId = bcContactId, CreatedOn = now };
+                db.Contacts.Add(contact);
+            }
+
+            await ApplyContactAsync(db, contact, body, ct);
+            if (contact.ParentCustomerId is Guid accountId
+                && await db.Accounts.FirstOrDefaultAsync(a => a.AccountId == accountId, ct) is { } account)
+            {
+                account.PrimaryContactId ??= contact.ContactId;
+                if (created)
+                    Timeline.Add(db, accountId, $"Contact {contact.FullName} added from Business Central", contact.JobTitle, Timeline.Integration, now);
+            }
+
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        // Upsert of a product group (custom table cs_productgroup), keyed on the BC item category id.
+        api.MapPatch("/cs_productgroups(cs_productgroupid={productGroupId:guid})", async (Guid productGroupId, Dictionary<string, JsonElement> body, D365DbContext db, TimeProvider clock, CancellationToken ct) =>
+        {
+            var group = await db.ProductGroups.FirstOrDefaultAsync(g => g.ProductGroupId == productGroupId, ct);
+            if (group is null)
+            {
+                group = new ProductGroup { ProductGroupId = productGroupId };
+                db.ProductGroups.Add(group);
+            }
+
+            foreach (var (column, value) in body)
+            {
+                switch (column)
+                {
+                    case "cs_code": group.CsCode = Str(value) ?? group.CsCode; break;
+                    case "cs_name": group.Name = Str(value) ?? group.Name; break;
+                    default: throw UnknownProperty(column, "cs_productgroup");
+                }
+            }
+
+            group.LastSyncedOn = clock.GetUtcNow();
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -104,7 +157,7 @@ public static partial class DataverseApiEndpoints
                 ?? throw DoesNotExist("opportunity", opportunityId);
 
             // Real Dataverse refuses to close a closed opportunity; the simulator accepts the repeat
-            // so an operator resubmit of the order event stays harmless.
+            // so an operator resubmit of the accepted-quote event stays harmless.
             if (opportunity.StateCode == OptionSets.State.WonOrQualified)
                 return Results.NoContent();
 
@@ -127,6 +180,7 @@ public static partial class DataverseApiEndpoints
     private static void ApplyAccount(D365DbContext db, Account account, Dictionary<string, JsonElement> body, DateTimeOffset now)
     {
         var wasCustomer = account.CustomerTypeCode == OptionSets.RelationshipType.Customer;
+        var ownerBefore = account.CsMasterDataOwner;
         var creditBefore = (account.CreditLimit, account.CsBcBalanceDue, account.CsBcBlocked);
 
         foreach (var (column, value) in body)
@@ -173,6 +227,18 @@ public static partial class DataverseApiEndpoints
                 Timeline.Integration,
                 now);
         }
+        else if (!wasCustomer
+            && ownerBefore != OptionSets.MasterDataOwner.BusinessCentral
+            && account.CsMasterDataOwner == OptionSets.MasterDataOwner.BusinessCentral)
+        {
+            Timeline.Add(
+                db,
+                account.AccountId,
+                "Business Central manages this account now",
+                "It has a Business Central quote, so Business Central manages its master data from here on; the fields are read-only here.",
+                Timeline.Integration,
+                now);
+        }
         else if (wasCustomer && creditBefore != (account.CreditLimit, account.CsBcBalanceDue, account.CsBcBlocked))
         {
             var blocked = string.IsNullOrWhiteSpace(account.CsBcBlocked) ? "not blocked" : $"blocked: {account.CsBcBlocked}";
@@ -198,12 +264,43 @@ public static partial class DataverseApiEndpoints
                 case "cs_bcquoteid": opportunity.CsBcQuoteId = value.ValueKind == JsonValueKind.Null ? null : value.GetGuid(); break;
                 case "cs_bcquotenumber": opportunity.CsBcQuoteNumber = Str(value); break;
                 case "cs_bcquotestatus": opportunity.CsBcQuoteStatus = Str(value); break;
-                case "cs_bcordernumber": opportunity.CsBcOrderNumber = Str(value); break;
                 default: throw UnknownProperty(column, "opportunity");
             }
         }
 
         opportunity.ModifiedOn = now;
+    }
+
+    private static async Task ApplyContactAsync(D365DbContext db, Contact contact, Dictionary<string, JsonElement> body, CancellationToken cancellationToken)
+    {
+        foreach (var (column, value) in body)
+        {
+            switch (column)
+            {
+                case "firstname": contact.FirstName = Str(value) ?? string.Empty; break;
+                case "lastname": contact.LastName = Str(value) ?? contact.LastName; break;
+                case "emailaddress1": contact.EmailAddress1 = Str(value); break;
+                case "telephone1": contact.Telephone1 = Str(value); break;
+                case "jobtitle": contact.JobTitle = Str(value); break;
+                case "parentcustomerid_account@odata.bind": contact.ParentCustomerId = await ResolveAccountAsync(db, value, cancellationToken); break;
+                default: throw UnknownProperty(column, "contact");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves an account <c>@odata.bind</c> by id (<c>/accounts(id)</c>) or by the Business Central
+    /// alternate key (<c>/accounts(cs_bccustomerid=id)</c>), as Dataverse allows.
+    /// </summary>
+    private static async Task<Guid> ResolveAccountAsync(D365DbContext db, JsonElement value, CancellationToken cancellationToken)
+    {
+        var match = AlternateKeyBindPattern().Match(value.GetString() ?? string.Empty);
+        if (!match.Success)
+            return BindId(value);
+
+        var bcCustomerId = Guid.Parse(match.Groups["id"].Value);
+        return await db.Accounts.Where(a => a.CsBcCustomerId == bcCustomerId).Select(a => (Guid?)a.AccountId).FirstOrDefaultAsync(cancellationToken)
+            ?? throw new DataverseApiException(StatusCodes.Status404NotFound, "0x80040217", $"account With Ids = cs_bccustomerid:{bcCustomerId} Do Not Exist");
     }
 
     private static void ApplyQuote(BcQuoteMirror quote, Dictionary<string, JsonElement> body, DateTimeOffset now)
@@ -248,6 +345,9 @@ public static partial class DataverseApiEndpoints
 
     [GeneratedRegex(@"\((?<id>[0-9a-fA-F-]{36})\)\s*$")]
     private static partial Regex BindPattern();
+
+    [GeneratedRegex(@"\(cs_bccustomerid=(?<id>[0-9a-fA-F-]{36})\)\s*$")]
+    private static partial Regex AlternateKeyBindPattern();
 
     private static DataverseApiException DoesNotExist(string entity, Guid id) =>
         new(StatusCodes.Status404NotFound, "0x80040217", $"{entity} With Ids = {id} Do Not Exist");

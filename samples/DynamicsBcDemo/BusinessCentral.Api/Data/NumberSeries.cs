@@ -33,7 +33,7 @@ public static class NumberFormats
 }
 
 /// <summary>
-/// Number series backed by SQL SEQUENCEs, so concurrent quote requests (a burst from the whole
+/// Number series backed by SQL SEQUENCEs, so concurrent inserts (a burst of new prospects from the whole
 /// pilot office) never collide. Sequences are created by <see cref="BcDatabaseInitializer"/>.
 /// </summary>
 public sealed class SqlNumberSeries(BcDbContext db) : INumberSeries

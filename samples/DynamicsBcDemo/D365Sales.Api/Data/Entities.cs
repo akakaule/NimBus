@@ -38,14 +38,20 @@ public class SystemUser
     public string InternalEmailAddress { get; set; } = string.Empty;
 }
 
-/// <summary>product: CRM's copy of the Business Central item list.</summary>
-public class Product
+/// <summary>
+/// cs_productgroup: a product group, mirrored from a Business Central item category. Items stay in
+/// Business Central; CRM only classifies opportunities by product group.
+/// </summary>
+public class ProductGroup
 {
-    public Guid ProductId { get; set; }
-    public string ProductNumber { get; set; } = string.Empty;
+    /// <summary>cs_productgroupid: the Business Central item category id (alternate key).</summary>
+    public Guid ProductGroupId { get; set; }
+
+    /// <summary>cs_code: the item category code, e.g. WINCH.</summary>
+    public string CsCode { get; set; } = string.Empty;
+
     public string Name { get; set; } = string.Empty;
-    public decimal Price { get; set; }
-    public string DefaultUnit { get; set; } = "PCS";
+    public DateTimeOffset LastSyncedOn { get; set; }
 }
 
 /// <summary>account.</summary>
@@ -78,7 +84,7 @@ public class Account
     /// <summary>cs_bccustomerid: the Business Central customer (customers resource id).</summary>
     public Guid? CsBcCustomerId { get; set; }
 
-    /// <summary>cs_bccontactnumber: the Business Central prospect contact, once BC knows the prospect.</summary>
+    /// <summary>cs_bccontactnumber: the Business Central prospect contact, reported back with the first quote.</summary>
     public string? CsBcContactNumber { get; set; }
 
     public string? CsBcBlocked { get; set; }
@@ -104,6 +110,10 @@ public class Contact
     public string? Telephone1 { get; set; }
     public string? JobTitle { get; set; }
     public Guid? ParentCustomerId { get; set; }
+
+    /// <summary>cs_bccontactid: the Business Central person contact (alternate key), for contacts BC owns.</summary>
+    public Guid? CsBcContactId { get; set; }
+
     public DateTimeOffset CreatedOn { get; set; }
 
     public string FullName => $"{FirstName} {LastName}".Trim();
@@ -169,35 +179,18 @@ public class Opportunity
     public DateTime? ActualCloseDate { get; set; }
     public Guid OwnerId { get; set; }
 
+    /// <summary>cs_productgroupid: the product group (a Business Central item category).</summary>
+    public Guid? CsProductGroupId { get; set; }
+
+    /// <summary>cs_bcquoteid / cs_bcquotenumber: the latest Business Central quote linked to the opportunity.</summary>
     public Guid? CsBcQuoteId { get; set; }
     public string? CsBcQuoteNumber { get; set; }
 
-    /// <summary>cs_bcquotestatus: Requested, then Business Central's Draft / Sent / Accepted / Expired.</summary>
+    /// <summary>cs_bcquotestatus: Business Central's Draft / Sent / Accepted / Expired.</summary>
     public string? CsBcQuoteStatus { get; set; }
 
-    public string? CsBcOrderNumber { get; set; }
-
-    /// <summary>Bumped whenever the product lines change; part of the quote request's MessageId.</summary>
-    public int CsLinesRevision { get; set; } = 1;
-
-    public int CsQuoteRequestRevision { get; set; }
-    public DateTimeOffset? CsQuoteRequestedOn { get; set; }
     public DateTimeOffset CreatedOn { get; set; }
     public DateTimeOffset ModifiedOn { get; set; }
-    public List<OpportunityProduct> Lines { get; set; } = [];
-}
-
-/// <summary>opportunityproduct: a product line.</summary>
-public class OpportunityProduct
-{
-    public Guid OpportunityProductId { get; set; }
-    public Guid OpportunityId { get; set; }
-    public int Sequence { get; set; }
-    public string ProductNumber { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public decimal Quantity { get; set; }
-    public decimal PricePerUnit { get; set; }
-    public decimal ExtendedAmount { get; set; }
 }
 
 /// <summary>cs_bcquote: a read-only mirror of a Business Central sales quote.</summary>

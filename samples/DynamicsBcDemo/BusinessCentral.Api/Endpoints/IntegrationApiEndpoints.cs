@@ -10,9 +10,9 @@ namespace BusinessCentral.Api.Endpoints;
 /// The surface the Business Central adapter calls, shaped like Business Central online:
 /// <list type="bullet">
 /// <item>standard API v2.0 routes (<c>/api/v2.0/companies({id})/customers(...)</c>) for reads;</item>
-/// <item>a custom API (<c>/api/contoso/crm/v1.0/...</c>) for what the standard API can't do — quoting
-/// a prospect contact and keeping CRM reference fields. In a real tenant that is a small AL
-/// extension with API pages.</item>
+/// <item>a custom API (<c>/api/contoso/crm/v1.0/...</c>) for what the standard API can't do — keeping
+/// CRM's prospects (as contacts) and opportunities, so BC users can quote them and link the quotes. In
+/// a real tenant that is a small AL extension with API pages.</item>
 /// </list>
 /// Both answer 503/429 while the demo's fault toggles are on (see BcFaultInjectionMiddleware).
 /// </summary>
@@ -45,34 +45,23 @@ public static class IntegrationApiEndpoints
             .AddEndpointFilter(CompanyFilter)
             .AddEndpointFilter(BusinessRuleFilter);
 
-        crm.MapPost("/quoteRequests", async (QuoteRequest request, BcUnitOfWork uow, SalesService sales, ILogger<SalesService> logger, CancellationToken ct) =>
+        crm.MapPut("/prospects({crmAccountId:guid})", async (Guid crmAccountId, ProspectUpsert body, BcUnitOfWork uow, SalesService sales, CancellationToken ct) =>
         {
-            var result = await uow.RunAsync(events => sales.HandleQuoteRequestAsync(request, events, ct), ct);
-            logger.LogInformation(
-                "Quote request for opportunity {OpportunityNumber} (revision {Revision}): {Outcome} {QuoteNumber}",
-                request.OpportunityNumber, request.RequestRevision, result.Outcome, result.Quote.Number);
-
-            var body = new
-            {
-                id = result.Quote.Id,
-                number = result.Quote.Number,
-                status = result.Quote.Status,
-                sellToContactNumber = result.Quote.SellToContactNumber,
-                customerNumber = result.Quote.CustomerNumber,
-                totalAmountExcludingTax = result.Quote.TotalAmountExcludingTax,
-                outcome = result.Outcome.ToString(),
-            };
-            return result.Outcome == QuoteRequestOutcome.Created
-                ? Results.Created($"/api/v2.0/companies({SeedData.CompanyId})/salesQuotes({result.Quote.Id})", body)
-                : Results.Ok(body);
+            var outcome = await uow.RunAsync(_ => sales.UpsertProspectAsync(crmAccountId, body.Prospect, body.ContactPerson, ct), ct);
+            var result = new { crmAccountId, outcome = outcome.ToString() };
+            return outcome == ProspectUpsertOutcome.Created
+                ? Results.Created($"/api/contoso/crm/v1.0/companies({SeedData.CompanyId})/prospects({crmAccountId})", result)
+                : Results.Ok(result);
         });
 
-        crm.MapPatch("/prospects({crmAccountId:guid})", async (Guid crmAccountId, ProspectPatch patch, BcUnitOfWork uow, SalesService sales, CancellationToken ct) =>
+        crm.MapPut("/crmOpportunities({id:guid})", async (Guid id, CrmOpportunityData body, BcUnitOfWork uow, SalesService sales, ILogger<SalesService> logger, CancellationToken ct) =>
         {
-            var outcome = await uow.RunAsync(_ => sales.UpdateProspectAsync(crmAccountId, patch.Prospect, patch.ContactPerson, ct), ct);
-            return outcome == ProspectUpdateOutcome.NotFound
-                ? NotFound($"No prospect contact is linked to CRM account {crmAccountId}.")
-                : Results.Ok(new { crmAccountId, outcome = outcome.ToString() });
+            var outcome = await uow.RunAsync(_ => sales.UpsertCrmOpportunityAsync(id, body, ct), ct);
+            logger.LogInformation("CRM opportunity {OpportunityNumber}: {Outcome}", body.Number, outcome);
+            var result = new { id, number = body.Number, outcome = outcome.ToString() };
+            return outcome == CrmOpportunityUpsertOutcome.Created
+                ? Results.Created($"/api/contoso/crm/v1.0/companies({SeedData.CompanyId})/crmOpportunities({id})", result)
+                : Results.Ok(result);
         });
     }
 
@@ -128,5 +117,3 @@ public static class IntegrationApiEndpoints
     }
 }
 
-/// <summary>Body of <c>PATCH .../prospects({crmAccountId})</c>.</summary>
-public sealed record ProspectPatch(ProspectData Prospect, ContactPersonData? ContactPerson);

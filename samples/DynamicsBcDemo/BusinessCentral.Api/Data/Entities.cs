@@ -1,8 +1,8 @@
 namespace BusinessCentral.Api.Data;
 
 // A deliberately small slice of the Business Central data model, named after the BC API v2.0
-// resources (customer, salesQuote, salesOrder, item). Fields marked "AL extension" don't exist in
-// standard BC: a real implementation adds them with a small AL table extension.
+// resources (customer, contact, salesQuote, salesOrder, item, itemCategory). Fields and tables marked
+// "AL extension" don't exist in standard BC: a real implementation adds them with a small AL extension.
 
 /// <summary>Salesperson/Purchaser. CRM sellers map to it by e-mail.</summary>
 public class Salesperson
@@ -13,7 +13,16 @@ public class Salesperson
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-/// <summary>Item card. BC is the master of items and prices.</summary>
+/// <summary>Item category. CRM receives it as a product group.</summary>
+public class ItemCategory
+{
+    public Guid Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public DateTimeOffset LastModifiedDateTime { get; set; }
+}
+
+/// <summary>Item card. BC is the master of items and prices; items never leave BC.</summary>
 public class Item
 {
     public Guid Id { get; set; }
@@ -21,19 +30,29 @@ public class Item
     public string DisplayName { get; set; } = string.Empty;
     public decimal UnitPrice { get; set; }
     public string BaseUnitOfMeasure { get; set; } = "PCS";
+    public string? ItemCategoryCode { get; set; }
     public bool Blocked { get; set; }
 }
 
 /// <summary>
-/// A company contact that is not (yet) a customer: the prospect CRM asked a quote for. BC quotes
-/// the contact, and only creates a customer from it when the quote becomes an order.
+/// A contact: a company or a person at one (<see cref="ContactType"/>). A CRM prospect is a company
+/// contact without a customer: BC quotes the contact, and only creates a customer from it when a quote
+/// becomes an order. Every customer also has a company contact, and people belong to a company contact.
 /// </summary>
 public class Contact
 {
     public Guid Id { get; set; }
     public string Number { get; set; } = string.Empty;
-    public string Type { get; set; } = "Company";
+    public string Type { get; set; } = ContactType.Company;
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>For a person: the company contact the person works for.</summary>
+    public Guid? CompanyContactId { get; set; }
+
+    public string? FirstName { get; set; }
+    public string? Surname { get; set; }
+    public string? JobTitle { get; set; }
+    public string? Email { get; set; }
     public string? AddressLine1 { get; set; }
     public string? City { get; set; }
     public string? PostalCode { get; set; }
@@ -41,6 +60,7 @@ public class Contact
     public string? PhoneNumber { get; set; }
     public string? Website { get; set; }
     public string? VatRegistrationNumber { get; set; }
+    /// <summary>For a prospect company: the contact person CRM sent with it.</summary>
     public string? ContactPersonName { get; set; }
     public string? ContactPersonEmail { get; set; }
     public string? ContactPersonPhone { get; set; }
@@ -49,7 +69,7 @@ public class Contact
     /// <summary>AL extension: the CRM account this prospect came from.</summary>
     public Guid? CrmAccountId { get; set; }
 
-    /// <summary>Set once the contact has been converted to a customer (Make Order).</summary>
+    /// <summary>For a company: the customer it is (an existing customer, or a prospect converted by Make Order).</summary>
     public Guid? CustomerId { get; set; }
     public string? CustomerNumber { get; set; }
 
@@ -115,12 +135,9 @@ public class SalesQuote
     public string CurrencyCode { get; set; } = "EUR";
     public decimal TotalAmountExcludingTax { get; set; }
 
-    /// <summary>AL extension: the CRM opportunity and account the quote was requested for.</summary>
+    /// <summary>AL extension: the CRM opportunity the quote is linked to, and its account.</summary>
     public Guid? CrmOpportunityId { get; set; }
     public Guid? CrmAccountId { get; set; }
-
-    /// <summary>AL extension: the CRM quote-request revision last applied to this quote.</summary>
-    public int CrmRequestRevision { get; set; }
 
     /// <summary>The order the quote became (Make Order).</summary>
     public string? OrderNumber { get; set; }
@@ -176,6 +193,49 @@ public class SalesOrderLine
     public decimal UnitPrice { get; set; }
     public decimal DiscountPercent { get; set; }
     public decimal AmountExcludingTax { get; set; }
+}
+
+/// <summary>
+/// AL extension table: a CRM opportunity, kept so BC users can create quotes for it and link them.
+/// CRM owns it; BC only reads it, except that BC marks it Won when a linked quote is accepted.
+/// </summary>
+public class CrmOpportunity
+{
+    /// <summary>The CRM opportunity id.</summary>
+    public Guid Id { get; set; }
+    public string Number { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public Guid CrmAccountId { get; set; }
+    public string AccountName { get; set; } = string.Empty;
+
+    /// <summary>The BC customer, once the account is one.</summary>
+    public Guid? CustomerId { get; set; }
+
+    public string? SalespersonCode { get; set; }
+    public decimal? EstimatedValue { get; set; }
+    public string CurrencyCode { get; set; } = "EUR";
+    public DateTime? EstimatedCloseDate { get; set; }
+    public string? ItemCategoryCode { get; set; }
+
+    /// <summary>Open, Won or Lost.</summary>
+    public string Status { get; set; } = CrmOpportunityStatus.Open;
+
+    public DateTimeOffset LastModifiedDateTime { get; set; }
+}
+
+/// <summary>contact.type values.</summary>
+public static class ContactType
+{
+    public const string Company = "Company";
+    public const string Person = "Person";
+}
+
+/// <summary>CRM opportunity states as BC stores them.</summary>
+public static class CrmOpportunityStatus
+{
+    public const string Open = "Open";
+    public const string Won = "Won";
+    public const string Lost = "Lost";
 }
 
 /// <summary>salesQuote.status values.</summary>

@@ -5,8 +5,8 @@ using NimBus.Core.Events;
 namespace DynamicsBcDemo.Contracts.BusinessCentral;
 
 /// <summary>
-/// Shared shape of the Business Central sales-quote events. Field names follow the BC API v2.0
-/// <c>salesQuote</c> resource where one exists.
+/// Shared shape of the Business Central sales-quote events, raised only for quotes linked to a CRM
+/// opportunity. Field names follow the BC API v2.0 <c>salesQuote</c> resource where one exists.
 /// </summary>
 [SessionKey(nameof(AccountId))]
 public abstract class BcSalesQuoteEvent : Event
@@ -24,7 +24,7 @@ public abstract class BcSalesQuoteEvent : Event
     public string QuoteNumber { get; set; } = string.Empty;
 
     [Required]
-    [Description("The CRM opportunity the quote was requested for (CRM reference field, AL extension).")]
+    [Description("The CRM opportunity the BC user linked the quote to (CRM reference field, AL extension).")]
     public Guid OpportunityId { get; set; }
 
     [Description("salesQuote.externalDocumentNumber: the CRM opportunity number.")]
@@ -72,7 +72,7 @@ public abstract class BcSalesQuoteEvent : Event
     public DateTimeOffset ChangedAt { get; set; }
 }
 
-[Description("Published by Business Central when it creates a sales quote for a CRM opportunity. CRM links the quote to the opportunity and shows it read-only.")]
+[Description("Published by Business Central when a BC user creates a sales quote linked to a CRM opportunity. From its first quote the account is managed in Business Central: CRM locks its master data, links the quote to the opportunity and shows it read-only.")]
 public class BcSalesQuoteCreated : BcSalesQuoteEvent
 {
     public static readonly BcSalesQuoteCreated Example = new()
@@ -95,7 +95,7 @@ public class BcSalesQuoteCreated : BcSalesQuoteEvent
     };
 }
 
-[Description("Published by Business Central when a sales quote changes: prices or lines edited, sent to the customer, or accepted when it becomes an order. CRM updates the opportunity's estimated revenue and quote status from it.")]
+[Description("Published by Business Central when a sales quote linked to a CRM opportunity changes: lines or prices edited, sent to the customer, or accepted when it becomes an order. CRM shows the quote status on the opportunity and closes the opportunity as won when the quote is accepted.")]
 public class BcSalesQuoteUpdated : BcSalesQuoteEvent
 {
     public static readonly BcSalesQuoteUpdated Example = new()

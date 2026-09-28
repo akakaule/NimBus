@@ -30,6 +30,9 @@ public static class AppEndpoints
             var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
             var quotes = await db.SalesQuotes.AsNoTracking().ToListAsync(ct);
             var orders = await db.SalesOrders.AsNoTracking().ToListAsync(ct);
+            var quotedOpportunities = quotes.Where(q => q.CrmOpportunityId != null).Select(q => q.CrmOpportunityId!.Value).ToHashSet();
+            var openOpportunities = await db.CrmOpportunities.AsNoTracking()
+                .Where(o => o.Status == CrmOpportunityStatus.Open).Select(o => o.Id).ToListAsync(ct);
             var recentQuotes = quotes.Select(q => new RecentDocument("Sales Quote", q.Id, q.Number, q.SellToName, q.Status, q.TotalAmountExcludingTax, q.CurrencyCode, q.LastModifiedDateTime));
             var recentOrders = orders.Select(o => new RecentDocument("Sales Order", o.Id, o.Number, o.CustomerName, o.Status, o.TotalAmountExcludingTax, o.CurrencyCode, o.LastModifiedDateTime));
 
@@ -42,12 +45,59 @@ public static class AppEndpoints
                 ordersValueThisMonth = orders.Where(o => o.OrderDate >= monthStart).Sum(o => o.TotalAmountExcludingTax),
                 customers = await db.Customers.CountAsync(ct),
                 customersBlocked = await db.Customers.CountAsync(c => c.Blocked != string.Empty, ct),
-                prospects = await db.Contacts.CountAsync(c => c.CustomerId == null, ct),
+                prospects = await db.Contacts.CountAsync(c => c.Type == ContactType.Company && c.CustomerId == null, ct),
+                crmOpportunitiesWithoutQuote = openOpportunities.Count(id => !quotedOpportunities.Contains(id)),
                 recentDocuments = recentQuotes.Concat(recentOrders).OrderByDescending(d => d.LastModified).Take(8),
             });
         });
 
+        // ---- CRM opportunities (AL extension) ----------------------------------------------------
+
+        api.MapGet("/crm-opportunities", async (BcDbContext db, CancellationToken ct) =>
+        {
+            var opportunities = await db.CrmOpportunities.AsNoTracking().OrderByDescending(o => o.LastModifiedDateTime).ToListAsync(ct);
+            var quotes = await db.SalesQuotes.AsNoTracking().Where(q => q.CrmOpportunityId != null)
+                .OrderByDescending(q => q.LastModifiedDateTime).ToListAsync(ct);
+            var quotesByOpportunity = quotes.GroupBy(q => q.CrmOpportunityId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+            var categories = await db.ItemCategories.AsNoTracking().ToDictionaryAsync(c => c.Code, c => c.DisplayName, ct);
+            var customerAccounts = (await db.Customers.AsNoTracking().Where(c => c.CrmAccountId != null)
+                .Select(c => c.CrmAccountId!.Value).ToListAsync(ct)).ToHashSet();
+
+            return Results.Ok(opportunities.Select(o =>
+            {
+                var linked = quotesByOpportunity.GetValueOrDefault(o.Id) ?? [];
+                var latest = linked.FirstOrDefault();
+                return new
+                {
+                    o.Id,
+                    o.Number,
+                    o.Name,
+                    o.CrmAccountId,
+                    o.AccountName,
+                    accountType = o.CustomerId is not null || customerAccounts.Contains(o.CrmAccountId) ? "Customer" : "Prospect",
+                    o.SalespersonCode,
+                    o.EstimatedValue,
+                    o.CurrencyCode,
+                    o.EstimatedCloseDate,
+                    productGroupCode = o.ItemCategoryCode,
+                    productGroupName = o.ItemCategoryCode is null ? null : categories.GetValueOrDefault(o.ItemCategoryCode),
+                    o.Status,
+                    lastModified = o.LastModifiedDateTime,
+                    quoteCount = linked.Count,
+                    quoteId = latest?.Id,
+                    quoteNumber = latest?.Number,
+                    quoteStatus = latest?.Status,
+                };
+            }));
+        });
+
         // ---- Sales quotes ---------------------------------------------------------------------
+
+        api.MapPost("/quotes", async (NewQuoteBody body, BcUnitOfWork uow, SalesService sales, BcDbContext db, CancellationToken ct) =>
+        {
+            var quote = await uow.RunAsync(events => sales.CreateQuoteFromOpportunityAsync(body.CrmOpportunityId, events, ct), ct);
+            return Results.Created($"/api/app/quotes/{quote.Id}", await QuoteDetailAsync(db, quote.Id, ct));
+        });
 
         api.MapGet("/quotes", async (BcDbContext db, CancellationToken ct) =>
             Results.Ok((await db.SalesQuotes.AsNoTracking().Include(q => q.Lines)
@@ -103,7 +153,38 @@ public static class AppEndpoints
             Results.Ok(await uow.RunAsync(events => sales.UpdateCustomerAsync(id, edit, events, ct), ct)));
 
         api.MapGet("/contacts", async (BcDbContext db, CancellationToken ct) =>
-            Results.Ok(await db.Contacts.AsNoTracking().OrderByDescending(c => c.Number).ToListAsync(ct)));
+        {
+            var contacts = await db.Contacts.AsNoTracking().OrderByDescending(c => c.Number).ToListAsync(ct);
+            var names = contacts.ToDictionary(c => c.Id, c => c.DisplayName);
+            return Results.Ok(contacts.Select(c => new
+            {
+                c.Id,
+                c.Number,
+                c.Type,
+                c.DisplayName,
+                c.CompanyContactId,
+                companyName = c.CompanyContactId is Guid companyId ? names.GetValueOrDefault(companyId) : null,
+                c.FirstName,
+                c.Surname,
+                c.JobTitle,
+                c.Email,
+                c.AddressLine1,
+                c.City,
+                c.PostalCode,
+                c.CountryCode,
+                c.PhoneNumber,
+                c.Website,
+                c.VatRegistrationNumber,
+                c.ContactPersonName,
+                c.ContactPersonEmail,
+                c.ContactPersonPhone,
+                c.CustomerTemplateCode,
+                c.CrmAccountId,
+                c.CustomerId,
+                c.CustomerNumber,
+                c.LastModifiedDateTime,
+            }));
+        });
 
         api.MapGet("/salespeople", async (BcDbContext db, CancellationToken ct) =>
             Results.Ok(await db.Salespeople.AsNoTracking().OrderBy(s => s.Code).ToListAsync(ct)));
@@ -158,6 +239,7 @@ public static class AppEndpoints
         q.DocumentDate,
         q.ValidUntilDate,
         q.OrderNumber,
+        q.CrmOpportunityId,
         lineCount = q.Lines.Count,
         lastModified = q.LastModifiedDateTime,
     };
@@ -172,6 +254,10 @@ public static class AppEndpoints
             : null;
         var customer = quote.CustomerId is Guid customerId
             ? await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId, ct)
+            : null;
+        var crmOpportunity = quote.CrmOpportunityId is Guid opportunityId
+            ? await db.CrmOpportunities.AsNoTracking().Where(o => o.Id == opportunityId)
+                .Select(o => new { o.Id, o.Number, o.Name, o.Status }).FirstOrDefaultAsync(ct)
             : null;
 
         return new
@@ -192,6 +278,7 @@ public static class AppEndpoints
             quote.SellToName,
             quote.CrmOpportunityId,
             quote.CrmAccountId,
+            crmOpportunity,
             quote.LastModifiedDateTime,
             sellToType = customer is null ? "Contact" : "Customer",
             contact,
@@ -203,6 +290,8 @@ public static class AppEndpoints
 
     private sealed record RecentDocument(string Type, Guid Id, string Number, string Name, string Status, decimal Amount, string CurrencyCode, DateTimeOffset LastModified);
 }
+
+public sealed record NewQuoteBody(Guid CrmOpportunityId);
 
 public sealed record QuoteLinesBody(IReadOnlyList<QuoteLineEdit> Lines);
 

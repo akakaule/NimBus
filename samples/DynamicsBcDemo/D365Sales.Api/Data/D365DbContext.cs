@@ -5,12 +5,11 @@ namespace D365Sales.Api.Data;
 public class D365DbContext(DbContextOptions<D365DbContext> options) : DbContext(options)
 {
     public DbSet<SystemUser> SystemUsers => Set<SystemUser>();
-    public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductGroup> ProductGroups => Set<ProductGroup>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Contact> Contacts => Set<Contact>();
     public DbSet<Lead> Leads => Set<Lead>();
     public DbSet<Opportunity> Opportunities => Set<Opportunity>();
-    public DbSet<OpportunityProduct> OpportunityProducts => Set<OpportunityProduct>();
     public DbSet<BcQuoteMirror> BcQuotes => Set<BcQuoteMirror>();
     public DbSet<TimelineEntry> Timeline => Set<TimelineEntry>();
 
@@ -23,10 +22,10 @@ public class D365DbContext(DbContextOptions<D365DbContext> options) : DbContext(
     {
         modelBuilder.Entity<SystemUser>(e => e.HasKey(x => x.SystemUserId));
 
-        modelBuilder.Entity<Product>(e =>
+        modelBuilder.Entity<ProductGroup>(e =>
         {
-            e.HasKey(x => x.ProductId);
-            e.HasIndex(x => x.ProductNumber).IsUnique();
+            e.HasKey(x => x.ProductGroupId);
+            e.HasIndex(x => x.CsCode).IsUnique();
         });
 
         modelBuilder.Entity<Account>(e =>
@@ -39,6 +38,7 @@ public class D365DbContext(DbContextOptions<D365DbContext> options) : DbContext(
         {
             e.HasKey(x => x.ContactId);
             e.Ignore(x => x.FullName);
+            e.HasIndex(x => x.CsBcContactId).IsUnique().HasFilter("[CsBcContactId] IS NOT NULL");
         });
 
         modelBuilder.Entity<Lead>(e => e.HasKey(x => x.LeadId));
@@ -47,10 +47,7 @@ public class D365DbContext(DbContextOptions<D365DbContext> options) : DbContext(
         {
             e.HasKey(x => x.OpportunityId);
             e.HasIndex(x => x.CsNumber).IsUnique();
-            e.HasMany(x => x.Lines).WithOne().HasForeignKey(l => l.OpportunityId).OnDelete(DeleteBehavior.Cascade);
         });
-
-        modelBuilder.Entity<OpportunityProduct>(e => e.HasKey(x => x.OpportunityProductId));
 
         modelBuilder.Entity<BcQuoteMirror>(e =>
         {

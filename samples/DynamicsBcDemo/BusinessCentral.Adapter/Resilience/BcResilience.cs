@@ -32,7 +32,12 @@ public sealed class BcResilienceOptions
 
     public double CircuitFailurePercentageThreshold { get; set; } = 50;
 
-    public int CircuitSamplingWindowSeconds { get; set; } = 60;
+    /// <summary>
+    /// How far back the circuit breaker looks when it computes the failure rate. Short on stage, so a
+    /// burst during an update window opens the circuit even right after a busy scene: older
+    /// successful calls must not dilute the outage. Production would use minutes.
+    /// </summary>
+    public int CircuitSamplingWindowSeconds { get; set; } = 10;
 
     public int CircuitBreakDurationSeconds { get; set; } = 10;
 

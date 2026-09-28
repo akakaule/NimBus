@@ -52,18 +52,3 @@ public class ContactPersonDetails
     [Description("Phone number of the contact person.")]
     public string? Phone { get; set; }
 }
-
-/// <summary>One product line of a quote request.</summary>
-public class QuoteRequestLine
-{
-    [Required]
-    [Description("The BC item number.")]
-    public string ItemNumber { get; set; } = string.Empty;
-
-    [Description("Line description as the seller entered it.")]
-    public string? Description { get; set; }
-
-    [Range(0.0001, 1_000_000)]
-    [Description("Quantity in the item's base unit of measure.")]
-    public decimal Quantity { get; set; }
-}

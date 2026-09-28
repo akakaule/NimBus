@@ -5,7 +5,7 @@ using DynamicsBcDemo.Contracts.Http;
 namespace D365Sales.Adapter.Clients;
 
 /// <summary>
-/// The Dataverse Web API calls the adapter makes: PATCH by id, upsert by alternate key, and the
+/// The Dataverse Web API calls the adapter makes: PATCH by id, upserts by alternate key, and the
 /// WinOpportunity action. Column names are Dataverse logical names; lookups use <c>@odata.bind</c>.
 /// Pointing it at a real environment means adding an access token (client credentials for an
 /// application user) and the org URL.
@@ -23,6 +23,12 @@ public interface IDataverseClient
 
     /// <summary><c>PATCH cs_bcquotes(cs_bcquoteid={bcQuoteId})</c> — upsert of the quote mirror.</summary>
     Task UpsertBcQuoteAsync(Guid bcQuoteId, IDictionary<string, object?> columns, CancellationToken cancellationToken);
+
+    /// <summary><c>PATCH contacts(cs_bccontactid={bcContactId})</c> — upsert of a contact Business Central owns.</summary>
+    Task UpsertContactByBcContactIdAsync(Guid bcContactId, IDictionary<string, object?> columns, CancellationToken cancellationToken);
+
+    /// <summary><c>PATCH cs_productgroups(cs_productgroupid={productGroupId})</c> — upsert of a product group.</summary>
+    Task UpsertProductGroupAsync(Guid productGroupId, IDictionary<string, object?> columns, CancellationToken cancellationToken);
 
     /// <summary><c>POST WinOpportunity</c>.</summary>
     Task WinOpportunityAsync(Guid opportunityId, decimal actualRevenue, DateTime actualEnd, string subject, CancellationToken cancellationToken);
@@ -44,6 +50,12 @@ public sealed class DataverseClient(HttpClient http) : IDataverseClient
 
     public Task UpsertBcQuoteAsync(Guid bcQuoteId, IDictionary<string, object?> columns, CancellationToken cancellationToken) =>
         PatchAsync($"{Root}/cs_bcquotes(cs_bcquoteid={bcQuoteId})", columns, $"Upsert the mirror of Business Central quote {bcQuoteId}", cancellationToken);
+
+    public Task UpsertContactByBcContactIdAsync(Guid bcContactId, IDictionary<string, object?> columns, CancellationToken cancellationToken) =>
+        PatchAsync($"{Root}/contacts(cs_bccontactid={bcContactId})", columns, $"Upsert the contact for Business Central contact {bcContactId}", cancellationToken);
+
+    public Task UpsertProductGroupAsync(Guid productGroupId, IDictionary<string, object?> columns, CancellationToken cancellationToken) =>
+        PatchAsync($"{Root}/cs_productgroups(cs_productgroupid={productGroupId})", columns, $"Upsert product group {productGroupId}", cancellationToken);
 
     public async Task WinOpportunityAsync(Guid opportunityId, decimal actualRevenue, DateTime actualEnd, string subject, CancellationToken cancellationToken)
     {

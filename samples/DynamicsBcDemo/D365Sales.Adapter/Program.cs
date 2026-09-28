@@ -4,7 +4,7 @@ using NimBus.Core.Extensions;
 using NimBus.Core.Pipeline;
 using NimBus.SDK.Extensions;
 
-// Dynamics 365 Sales adapter: receives Business Central's customer, quote and order events on
+// Dynamics 365 Sales adapter: receives Business Central's customer, contact, product-group and quote events on
 // D365SalesEndpoint and writes them to Dataverse (here the simulator's Dataverse-shaped API).
 // Messages about one customer share a session, so they are applied in the order BC raised them.
 var builder = Host.CreateApplicationBuilder(args);

@@ -12,8 +12,8 @@ namespace D365Sales.Api.Endpoints;
 
 /// <summary>
 /// The plain JSON surface of the Sales Hub look-alike. Only writes made here — by a seller — are
-/// published to NimBus. Writes made by the integration arrive on the Dataverse-shaped API and are
-/// never published back, which is what prevents echo loops.
+/// published to NimBus (<see cref="CrmChangePublisher"/>). Writes made by the integration arrive on the
+/// Dataverse-shaped API and are never published back, which is what prevents echo loops.
 /// </summary>
 public static class AppEndpoints
 {
@@ -26,8 +26,8 @@ public static class AppEndpoints
         api.MapGet("/users", async (D365DbContext db, CancellationToken ct) =>
             Results.Ok(await db.SystemUsers.AsNoTracking().OrderBy(u => u.FullName).ToListAsync(ct)));
 
-        api.MapGet("/products", async (D365DbContext db, CancellationToken ct) =>
-            Results.Ok(await db.Products.AsNoTracking().OrderBy(p => p.ProductNumber).ToListAsync(ct)));
+        api.MapGet("/productgroups", async (D365DbContext db, CancellationToken ct) =>
+            Results.Ok(await db.ProductGroups.AsNoTracking().OrderBy(g => g.Name).ToListAsync(ct)));
 
         api.MapGet("/dashboard", async (D365DbContext db, CancellationToken ct) =>
         {
@@ -71,9 +71,13 @@ public static class AppEndpoints
             return Results.Ok(new { lead, timeline });
         });
 
-        api.MapPost("/leads/{id:guid}/qualify", async (Guid id, UserBody body, SalesService sales, CancellationToken ct) =>
+        // Qualifying sends the new prospect, then its opportunity, to Business Central — in the
+        // account's session, so BC always knows the prospect before the opportunity arrives.
+        api.MapPost("/leads/{id:guid}/qualify", async (Guid id, UserBody body, SalesService sales, CrmChangePublisher changes, CancellationToken ct) =>
         {
             var opportunity = await sales.QualifyLeadAsync(id, body.UserId, ct);
+            await changes.PublishProspectAsync(opportunity.CustomerId, ct);
+            await changes.PublishOpportunityAsync(opportunity.OpportunityId, ct);
             return Results.Ok(new { opportunityId = opportunity.OpportunityId, accountId = opportunity.CustomerId });
         });
 
@@ -104,29 +108,11 @@ public static class AppEndpoints
             });
         });
 
-        api.MapPut("/accounts/{id:guid}", async (Guid id, AccountEdit edit, SalesService sales, IPublisherClient publisher, ILoggerFactory lf, CancellationToken ct) =>
+        api.MapPut("/accounts/{id:guid}", async (Guid id, AccountEdit edit, SalesService sales, CrmChangePublisher changes, CancellationToken ct) =>
         {
             var (account, notifyBc) = await sales.UpdateAccountAsync(id, edit, ct);
             if (notifyBc)
-            {
-                await publisher.Publish(new D365ProspectUpdated
-                {
-                    AccountId = account.AccountId,
-                    Prospect = new ProspectDetails
-                    {
-                        Name = account.Name,
-                        VatRegistrationNumber = account.CsVatNumber,
-                        AddressLine1 = account.Address1Line1,
-                        City = account.Address1City,
-                        PostalCode = account.Address1PostalCode,
-                        CountryCode = account.Address1Country ?? string.Empty,
-                        Phone = account.Telephone1,
-                        Website = account.WebsiteUrl,
-                    },
-                    UpdatedAt = account.ModifiedOn,
-                });
-                lf.CreateLogger("D365Sales.Api.Accounts").LogInformation("Published D365ProspectUpdated for {AccountName}", account.Name);
-            }
+                await changes.PublishProspectAsync(account.AccountId, ct);
 
             return Results.Ok(account);
         });
@@ -183,39 +169,38 @@ public static class AppEndpoints
         {
             var users = await db.SystemUsers.AsNoTracking().ToDictionaryAsync(u => u.SystemUserId, u => u.FullName, ct);
             var accounts = await db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.AccountId, a => a.Name, ct);
+            var groups = await db.ProductGroups.AsNoTracking().ToDictionaryAsync(g => g.ProductGroupId, g => g.Name, ct);
             var opportunities = await db.Opportunities.AsNoTracking().OrderBy(o => o.StateCode).ThenByDescending(o => o.ModifiedOn).ToListAsync(ct);
             return Results.Ok(opportunities.Select(o => new
             {
                 opportunity = o,
                 account = accounts.GetValueOrDefault(o.CustomerId),
                 owner = users.GetValueOrDefault(o.OwnerId),
+                productGroup = o.CsProductGroupId is Guid groupId ? groups.GetValueOrDefault(groupId) : null,
             }));
         });
 
         api.MapGet("/opportunities/{id:guid}", async (Guid id, D365DbContext db, CancellationToken ct) =>
         {
-            var opportunity = await db.Opportunities.AsNoTracking().Include(o => o.Lines).FirstOrDefaultAsync(o => o.OpportunityId == id, ct);
+            var opportunity = await db.Opportunities.AsNoTracking().FirstOrDefaultAsync(o => o.OpportunityId == id, ct);
             if (opportunity is null) return Results.NotFound();
-            opportunity.Lines = opportunity.Lines.OrderBy(l => l.Sequence).ToList();
 
             var account = await db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.AccountId == opportunity.CustomerId, ct);
             var owner = await db.SystemUsers.AsNoTracking().FirstOrDefaultAsync(u => u.SystemUserId == opportunity.OwnerId, ct);
+            var productGroup = opportunity.CsProductGroupId is Guid groupId
+                ? await db.ProductGroups.AsNoTracking().FirstOrDefaultAsync(g => g.ProductGroupId == groupId, ct)
+                : null;
             var quotes = await db.BcQuotes.AsNoTracking().Where(q => q.OpportunityId == id).OrderByDescending(q => q.LastSyncedOn).ToListAsync(ct);
             var timeline = await db.Timeline.AsNoTracking().Where(t => t.RegardingId == id).OrderByDescending(t => t.CreatedOn).ToListAsync(ct);
-            return Results.Ok(new { opportunity, account, owner, bcQuotes = quotes, timeline });
+            return Results.Ok(new { opportunity, account, owner, productGroup, bcQuotes = quotes, timeline });
         });
 
-        api.MapPut("/opportunities/{id:guid}", async (Guid id, OpportunityEdit edit, SalesService sales, CancellationToken ct) =>
-            Results.Ok(await sales.UpdateOpportunityAsync(id, edit, ct)));
-
-        api.MapPut("/opportunities/{id:guid}/lines", async (Guid id, LinesBody body, SalesService sales, CancellationToken ct) =>
+        api.MapPut("/opportunities/{id:guid}", async (Guid id, OpportunityEdit edit, SalesService sales, CrmChangePublisher changes, CancellationToken ct) =>
         {
-            var opportunity = await sales.SetLinesAsync(id, body.Lines, ct);
-            return Results.Ok(new { opportunity.OpportunityId, opportunity.CsLinesRevision, opportunity.EstimatedValue });
+            var opportunity = await sales.UpdateOpportunityAsync(id, edit, ct);
+            await changes.PublishOpportunityAsync(opportunity.OpportunityId, ct);
+            return Results.Ok(opportunity);
         });
-
-        api.MapPost("/opportunities/{id:guid}/request-quote", async (Guid id, UserBody body, QuoteRequestPublisher quotes, CancellationToken ct) =>
-            Results.Accepted($"/api/app/opportunities/{id}", await quotes.RequestAsync(id, body.UserId, ct)));
     }
 
     private static async ValueTask<object?> RuleFilter(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -232,5 +217,3 @@ public static class AppEndpoints
 }
 
 public sealed record UserBody(Guid UserId);
-
-public sealed record LinesBody(IReadOnlyList<OpportunityLineEdit> Lines);

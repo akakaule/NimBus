@@ -5,18 +5,16 @@ using NimBus.Core.Endpoints;
 namespace DynamicsBcDemo.Contracts.Endpoints;
 
 /// <summary>
-/// Dynamics 365 Sales. Owns leads, opportunities and the pipeline — everything until a prospect
-/// becomes a buying customer. Asks Business Central for quotes and credit status, and mirrors the
-/// customer, quote and order data that Business Central owns.
+/// Dynamics 365 Sales. Creates prospects and opportunities and owns the pipeline. Sends prospects
+/// and opportunities to Business Central, where the quotes are made, asks it for credit status, and
+/// mirrors the customers, contacts, product groups and quote statuses Business Central owns.
 /// </summary>
 public class D365SalesEndpoint : Endpoint
 {
     public D365SalesEndpoint()
     {
-        // Command with exactly one consumer (BusinessCentralEndpoint); platform validation fails
-        // provisioning if a second endpoint ever declares it consumed.
-        Produces<CreateBcSalesQuote>();
         Produces<D365ProspectUpdated>();
+        Produces<D365OpportunityUpdated>();
 
         // Request/reply request, answered on the auto-provisioned D365SalesEndpoint-reply
         // subscription.
@@ -26,13 +24,14 @@ public class D365SalesEndpoint : Endpoint
         Consumes<BcSalesQuoteUpdated>();
         Consumes<BcCustomerCreated>();
         Consumes<BcCustomerUpdated>();
-        Consumes<BcSalesOrderCreated>();
+        Consumes<BcContactUpdated>();
+        Consumes<BcItemCategoryUpdated>();
     }
 
     public override ISystem System => new D365SalesSystem();
 
     public override string Description =>
-        "Dynamics 365 Sales adapter endpoint. CRM owns leads, opportunities and the pipeline; it sends quote requests to Business Central and mirrors the customers, quotes and orders Business Central owns.";
+        "Dynamics 365 Sales adapter endpoint. CRM creates prospects and opportunities and sends them to Business Central, where the quotes are made; it mirrors the customers, contacts, product groups and quote statuses Business Central owns.";
 }
 
 internal sealed class D365SalesSystem : ISystem

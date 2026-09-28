@@ -5,90 +5,156 @@ using Microsoft.EntityFrameworkCore;
 namespace BusinessCentral.Api.Domain;
 
 /// <summary>
-/// The Business Central rules the demo shows: quotes are made in BC, a prospect is quoted as a
-/// contact, and the customer only comes into existence when a quote becomes an order. Every
-/// operation records the events it raises in an <see cref="EventBuffer"/>, in publish order; the
-/// caller saves and publishes them in one outbox transaction.
+/// The Business Central rules the demo shows: CRM's prospects and opportunities are kept in BC,
+/// quotes are made in BC and linked to a CRM opportunity, a prospect is quoted as a contact, and the
+/// customer only comes into existence when a quote becomes an order. Every operation records the
+/// events it raises in an <see cref="EventBuffer"/>, in publish order; the caller saves and publishes
+/// them in one outbox transaction.
 /// </summary>
 public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProvider clock)
 {
     private const int QuoteValidityDays = 30;
 
     /// <summary>
-    /// Creates the quote for a CRM opportunity. Idempotent per opportunity: while the opportunity
-    /// has an open quote, a repeat of the same request revision changes nothing, and a newer
-    /// revision re-quotes the draft.
+    /// Keeps CRM's prospect as a company contact, so a BC user can quote it: creates the contact the
+    /// first time and updates it after that. Once the prospect has become a customer BC owns the data
+    /// and refuses with 409 — the ownership rule, enforced where the data lives.
     /// </summary>
-    public async Task<QuoteRequestResult> HandleQuoteRequestAsync(QuoteRequest request, EventBuffer events, CancellationToken cancellationToken = default)
+    public async Task<ProspectUpsertOutcome> UpsertProspectAsync(Guid crmAccountId, ProspectData prospect, ContactPersonData? contactPerson, CancellationToken cancellationToken = default)
     {
-        if (request.Lines.Count == 0)
-            throw new BcBusinessRuleException("Application_NoLines", $"The quote request for {request.OpportunityNumber} has no lines.");
+        var contact = await db.Contacts.FirstOrDefaultAsync(c => c.CrmAccountId == crmAccountId, cancellationToken);
+        if (contact is null)
+        {
+            contact = new Contact
+            {
+                Id = Guid.NewGuid(),
+                Number = await numbers.NextAsync(NumberSeriesKind.Contact, cancellationToken),
+                Type = ContactType.Company,
+                CrmAccountId = crmAccountId,
+                CustomerTemplateCode = CustomerTemplates.DefaultFor(prospect.CountryCode).Code,
+            };
+            ApplyProspect(contact, prospect, contactPerson);
+            db.Contacts.Add(contact);
+            return ProspectUpsertOutcome.Created;
+        }
 
-        var salesperson = await FindSalespersonAsync(request.SellerEmail, cancellationToken)
+        if (contact.CustomerId is not null)
+        {
+            throw new BcBusinessRuleException(
+                "Application_OwnedByBusinessCentral",
+                $"'{contact.DisplayName}' became customer {contact.CustomerNumber} in Business Central, which now owns its master data.",
+                StatusCodes.Status409Conflict);
+        }
+
+        ApplyProspect(contact, prospect, contactPerson);
+        return ProspectUpsertOutcome.Updated;
+    }
+
+    /// <summary>
+    /// Keeps a CRM opportunity so a BC user can create a quote for it and link the two. The opportunity's
+    /// seller must exist as a salesperson (matched by e-mail), because the quote gets that salesperson: a
+    /// missing one is a data problem an operator fixes in BC, then resubmits the message. When CRM says
+    /// the account is a BC customer that isn't linked to CRM yet (loaded at go-live), BC links it now.
+    /// </summary>
+    public async Task<CrmOpportunityUpsertOutcome> UpsertCrmOpportunityAsync(Guid crmOpportunityId, CrmOpportunityData data, CancellationToken cancellationToken = default)
+    {
+        var salesperson = await FindSalespersonAsync(data.SellerEmail, cancellationToken)
             ?? throw new BcBusinessRuleException(
                 "Application_SalespersonNotFound",
-                $"No salesperson with e-mail '{request.SellerEmail}' exists in Business Central. " +
+                $"No salesperson with e-mail '{data.SellerEmail}' exists in Business Central. " +
                 "Add the seller under Salespeople in Business Central, then resubmit the message.");
 
-        var items = await LoadQuotableItemsAsync(request.Lines.Select(l => l.ItemNumber), cancellationToken);
-
-        var existing = await db.SalesQuotes
-            .Include(q => q.Lines)
-            .Where(q => q.CrmOpportunityId == request.CrmOpportunityId
-                && (q.Status == QuoteStatus.Draft || q.Status == QuoteStatus.Sent))
-            .OrderByDescending(q => q.LastModifiedDateTime)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (existing is not null)
+        Guid? customerId;
+        if (data.BcCustomerId is Guid bcCustomerId)
         {
-            if (existing.Status == QuoteStatus.Draft && request.RequestRevision > existing.CrmRequestRevision)
+            var customer = await db.Customers.FirstOrDefaultAsync(c => c.Id == bcCustomerId, cancellationToken)
+                ?? throw new BcBusinessRuleException(
+                    "Application_CustomerNotFound",
+                    $"Customer {bcCustomerId} does not exist in Business Central.");
+            if (customer.CrmAccountId is null)
             {
-                ReplaceLines(existing, request.Lines.Select(l => ToLine(l, items[l.ItemNumber])));
-                existing.CrmRequestRevision = request.RequestRevision;
-                existing.SalespersonCode = salesperson.Code;
-                Touch(existing);
-                events.Add(BcEvents.QuoteUpdated(existing));
-                return new QuoteRequestResult(existing, QuoteRequestOutcome.Updated);
+                customer.CrmAccountId = data.CrmAccountId;
+                Touch(customer);
             }
 
-            return new QuoteRequestResult(existing, QuoteRequestOutcome.AlreadyExists);
+            customerId = customer.Id;
+        }
+        else
+        {
+            customerId = await db.Customers
+                .Where(c => c.CrmAccountId == data.CrmAccountId)
+                .Select(c => (Guid?)c.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var opportunity = await db.CrmOpportunities.FirstOrDefaultAsync(o => o.Id == crmOpportunityId, cancellationToken);
+        var outcome = CrmOpportunityUpsertOutcome.Updated;
+        if (opportunity is null)
+        {
+            opportunity = new CrmOpportunity { Id = crmOpportunityId };
+            db.CrmOpportunities.Add(opportunity);
+            outcome = CrmOpportunityUpsertOutcome.Created;
+        }
+
+        opportunity.Number = data.Number;
+        opportunity.Name = data.Name;
+        opportunity.CrmAccountId = data.CrmAccountId;
+        opportunity.AccountName = data.AccountName;
+        opportunity.CustomerId = customerId ?? opportunity.CustomerId;
+        opportunity.SalespersonCode = salesperson.Code;
+        opportunity.EstimatedValue = data.EstimatedValue;
+        opportunity.CurrencyCode = data.CurrencyCode;
+        opportunity.EstimatedCloseDate = data.EstimatedCloseDate;
+        opportunity.ItemCategoryCode = string.IsNullOrWhiteSpace(data.ProductGroupCode) ? null : data.ProductGroupCode;
+        // BC marks the opportunity Won itself when a linked quote is accepted; CRM never echoes that
+        // win back, so an older "Open" from CRM must not undo it.
+        if (opportunity.Status != CrmOpportunityStatus.Won)
+            opportunity.Status = data.Status;
+        opportunity.LastModifiedDateTime = clock.GetUtcNow();
+        return outcome;
+    }
+
+    /// <summary>
+    /// Creates a draft sales quote for a CRM opportunity — the BC user's "Create sales quote". The quote is
+    /// linked to the opportunity (AL extension fields), made out to the customer when the account is one
+    /// and otherwise to the prospect contact, gets the opportunity's salesperson, and starts without lines.
+    /// </summary>
+    public async Task<SalesQuote> CreateQuoteFromOpportunityAsync(Guid crmOpportunityId, EventBuffer events, CancellationToken cancellationToken = default)
+    {
+        var opportunity = await db.CrmOpportunities.FirstOrDefaultAsync(o => o.Id == crmOpportunityId, cancellationToken)
+            ?? throw new BcBusinessRuleException("Internal_RecordNotFound", $"CRM opportunity {crmOpportunityId} does not exist in Business Central.", StatusCodes.Status404NotFound);
+
+        if (opportunity.Status != CrmOpportunityStatus.Open)
+        {
+            throw new BcBusinessRuleException(
+                "Application_OpportunityClosed",
+                $"CRM opportunity {opportunity.Number} is {opportunity.Status}; quotes are made for open opportunities only.",
+                StatusCodes.Status409Conflict);
         }
 
         Customer? customer = null;
         Contact? contact = null;
-        if (!string.IsNullOrWhiteSpace(request.CustomerNumber))
+        if (opportunity.CustomerId is Guid customerId)
         {
-            customer = await db.Customers.FirstOrDefaultAsync(c => c.Number == request.CustomerNumber, cancellationToken)
-                ?? throw new BcBusinessRuleException(
-                    "Application_CustomerNotFound",
-                    $"Customer {request.CustomerNumber} does not exist in Business Central.");
+            customer = await db.Customers.SingleAsync(c => c.Id == customerId, cancellationToken);
         }
         else
         {
-            contact = await db.Contacts.FirstOrDefaultAsync(c => c.CrmAccountId == request.CrmAccountId, cancellationToken);
-            if (contact?.CustomerId is Guid convertedCustomerId)
+            customer = await db.Customers.FirstOrDefaultAsync(c => c.CrmAccountId == opportunity.CrmAccountId, cancellationToken);
+            if (customer is null)
             {
-                // The prospect already bought once: BC owns it now, so quote the customer and ignore
-                // CRM's copy of the master data.
-                customer = await db.Customers.SingleAsync(c => c.Id == convertedCustomerId, cancellationToken);
-                contact = null;
-            }
-            else if (contact is null)
-            {
-                contact = new Contact
+                contact = await db.Contacts.FirstOrDefaultAsync(c => c.CrmAccountId == opportunity.CrmAccountId, cancellationToken);
+                if (contact?.CustomerId is Guid convertedCustomerId)
                 {
-                    Id = Guid.NewGuid(),
-                    Number = await numbers.NextAsync(NumberSeriesKind.Contact, cancellationToken),
-                    CrmAccountId = request.CrmAccountId,
-                    CustomerTemplateCode = CustomerTemplates.DefaultFor(request.Prospect.CountryCode).Code,
-                };
-                ApplyProspect(contact, request.Prospect, request.ContactPerson);
-                db.Contacts.Add(contact);
-            }
-            else
-            {
-                // Still a prospect: CRM owns the master data, so take its latest copy.
-                ApplyProspect(contact, request.Prospect, request.ContactPerson);
+                    customer = await db.Customers.SingleAsync(c => c.Id == convertedCustomerId, cancellationToken);
+                    contact = null;
+                }
+                else if (contact is null)
+                {
+                    throw new BcBusinessRuleException(
+                        "Application_ProspectNotFound",
+                        $"Business Central has no contact for {opportunity.AccountName} yet. The prospect arrives from Dynamics 365 when it is created there; check the integration in NimBus.");
+                }
             }
         }
 
@@ -97,8 +163,8 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
         {
             Id = Guid.NewGuid(),
             Number = await numbers.NextAsync(NumberSeriesKind.SalesQuote, cancellationToken),
-            ExternalDocumentNumber = request.OpportunityNumber,
-            Description = request.OpportunityName,
+            ExternalDocumentNumber = opportunity.Number,
+            Description = opportunity.Name,
             DocumentDate = today,
             ValidUntilDate = today.AddDays(QuoteValidityDays),
             CustomerId = customer?.Id,
@@ -106,19 +172,17 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
             SellToContactId = contact?.Id,
             SellToContactNumber = contact?.Number,
             SellToName = customer?.DisplayName ?? contact!.DisplayName,
-            SalespersonCode = salesperson.Code,
+            SalespersonCode = opportunity.SalespersonCode,
             Status = QuoteStatus.Draft,
-            CurrencyCode = request.CurrencyCode,
-            CrmOpportunityId = request.CrmOpportunityId,
-            CrmAccountId = request.CrmAccountId,
-            CrmRequestRevision = request.RequestRevision,
+            CurrencyCode = opportunity.CurrencyCode,
+            CrmOpportunityId = opportunity.Id,
+            CrmAccountId = opportunity.CrmAccountId,
         };
-        ReplaceLines(quote, request.Lines.Select(l => ToLine(l, items[l.ItemNumber])));
         Touch(quote);
         db.SalesQuotes.Add(quote);
 
-        events.Add(BcEvents.QuoteCreated(quote));
-        return new QuoteRequestResult(quote, QuoteRequestOutcome.Created);
+        RaiseQuoteCreated(events, quote);
+        return quote;
     }
 
     /// <summary>Replaces the quote's lines with the ones edited on the quote card.</summary>
@@ -138,7 +202,7 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
             DiscountPercent = e.DiscountPercent,
         }));
         Touch(quote);
-        events.Add(BcEvents.QuoteUpdated(quote));
+        RaiseQuoteUpdated(events, quote);
         return quote;
     }
 
@@ -146,22 +210,24 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
     public async Task<SalesQuote> SendAsync(Guid quoteId, EventBuffer events, CancellationToken cancellationToken = default)
     {
         var quote = await LoadOpenQuoteAsync(quoteId, cancellationToken);
+        EnsureHasLines(quote);
         quote.Status = QuoteStatus.Sent;
         quote.SentDate = clock.GetUtcNow();
         Touch(quote);
-        events.Add(BcEvents.QuoteUpdated(quote));
+        RaiseQuoteUpdated(events, quote);
         return quote;
     }
 
     /// <summary>
-    /// Converts the quote to a sales order (salesQuote action <c>makeOrder</c>). A prospect contact
-    /// is converted to a customer first, from the chosen customer template — the moment BC takes
-    /// ownership of the buying customer. Raises, in this order: customer created (if converted),
-    /// quote accepted, order created.
+    /// Converts the quote to a sales order (salesQuote action <c>makeOrder</c>). A prospect contact is
+    /// converted to a customer first, from the chosen customer template. Raises, in this order: customer
+    /// created (if converted), then quote accepted, which CRM uses to close the opportunity as won. The
+    /// order itself stays in BC: CRM doesn't need order history.
     /// </summary>
     public async Task<MakeOrderResult> MakeOrderAsync(Guid quoteId, string? customerTemplateCode, EventBuffer events, CancellationToken cancellationToken = default)
     {
         var quote = await LoadOpenQuoteAsync(quoteId, cancellationToken);
+        EnsureHasLines(quote);
         var now = clock.GetUtcNow();
 
         Customer customer;
@@ -252,8 +318,15 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
         quote.OrderNumber = order.Number;
         Touch(quote);
 
-        events.Add(BcEvents.QuoteUpdated(quote));
-        events.Add(BcEvents.OrderCreated(order));
+        if (quote.CrmOpportunityId is Guid crmOpportunityId
+            && await db.CrmOpportunities.FirstOrDefaultAsync(o => o.Id == crmOpportunityId, cancellationToken) is { } opportunity)
+        {
+            opportunity.Status = CrmOpportunityStatus.Won;
+            opportunity.CustomerId = customer.Id;
+            opportunity.LastModifiedDateTime = now;
+        }
+
+        RaiseQuoteUpdated(events, quote);
         return new MakeOrderResult(order, customer, customerCreated);
     }
 
@@ -289,25 +362,42 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
     }
 
     /// <summary>
-    /// Applies CRM's changes to a prospect contact. Once the prospect has become a customer BC owns
-    /// the data and refuses with 409 — the ownership rule, enforced where the data lives.
+    /// The go-live initial sync: raises every item category (CRM's product groups), then every customer,
+    /// then every person contact of a customer, so CRM starts with BC's customer base. Each contact
+    /// travels in its customer's session, after the customer. CRM upserts, so running it again changes
+    /// nothing. People at prospects are left out: CRM owns prospects.
     /// </summary>
-    public async Task<ProspectUpdateOutcome> UpdateProspectAsync(Guid crmAccountId, ProspectData prospect, ContactPersonData? contactPerson, CancellationToken cancellationToken = default)
+    public async Task<InitialSyncResult> BuildInitialSyncAsync(EventBuffer events, CancellationToken cancellationToken = default)
     {
-        var contact = await db.Contacts.FirstOrDefaultAsync(c => c.CrmAccountId == crmAccountId, cancellationToken);
-        if (contact is null)
-            return ProspectUpdateOutcome.NotFound;
+        var categories = await db.ItemCategories.OrderBy(c => c.Code).ToListAsync(cancellationToken);
+        foreach (var category in categories)
+            events.Add(BcEvents.ItemCategoryUpdated(category));
 
-        if (contact.CustomerId is not null)
+        var customers = await db.Customers.OrderBy(c => c.Number).ToListAsync(cancellationToken);
+        foreach (var customer in customers)
+            events.Add(BcEvents.CustomerUpdated(customer));
+
+        var customersById = customers.ToDictionary(c => c.Id);
+        var customerCompanies = await db.Contacts
+            .Where(c => c.Type == ContactType.Company && c.CustomerId != null)
+            .ToDictionaryAsync(c => c.Id, cancellationToken);
+        var people = await db.Contacts
+            .Where(c => c.Type == ContactType.Person && c.CompanyContactId != null)
+            .OrderBy(c => c.Number)
+            .ToListAsync(cancellationToken);
+
+        var contacts = 0;
+        foreach (var person in people)
         {
-            throw new BcBusinessRuleException(
-                "Application_OwnedByBusinessCentral",
-                $"'{contact.DisplayName}' became customer {contact.CustomerNumber} in Business Central, which now owns its master data.",
-                StatusCodes.Status409Conflict);
+            if (customerCompanies.TryGetValue(person.CompanyContactId!.Value, out var company)
+                && customersById.TryGetValue(company.CustomerId!.Value, out var customer))
+            {
+                events.Add(BcEvents.ContactUpdated(person, company, customer));
+                contacts++;
+            }
         }
 
-        ApplyProspect(contact, prospect, contactPerson);
-        return ProspectUpdateOutcome.Updated;
+        return new InitialSyncResult(categories.Count, customers.Count, contacts);
     }
 
     private async Task<Salesperson?> FindSalespersonAsync(string email, CancellationToken cancellationToken)
@@ -331,7 +421,7 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
             throw new BcBusinessRuleException(
                 "Application_ItemBlocked",
                 $"Item {blocked.Number} ({blocked.DisplayName}) is blocked in Business Central and can't be quoted. " +
-                "Unblock the item or quote a replacement, then resubmit.");
+                "Unblock the item or quote a replacement.");
         }
 
         return items;
@@ -353,14 +443,24 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
         return quote;
     }
 
-    private static SalesQuoteLine ToLine(QuoteRequestLine requested, Item item) => new()
+    private static void EnsureHasLines(SalesQuote quote)
     {
-        ItemNumber = item.Number,
-        Description = item.DisplayName,
-        Quantity = requested.Quantity,
-        UnitPrice = item.UnitPrice,
-        DiscountPercent = 0m,
-    };
+        if (quote.Lines.Count == 0)
+            throw new BcBusinessRuleException("Application_NoLines", $"Sales quote {quote.Number} has no lines yet. Add lines before sending it or making an order.");
+    }
+
+    // Only quotes linked to a CRM opportunity concern CRM; quotes BC makes on its own stay in BC.
+    private static void RaiseQuoteCreated(EventBuffer events, SalesQuote quote)
+    {
+        if (quote.CrmOpportunityId is not null)
+            events.Add(BcEvents.QuoteCreated(quote));
+    }
+
+    private static void RaiseQuoteUpdated(EventBuffer events, SalesQuote quote)
+    {
+        if (quote.CrmOpportunityId is not null)
+            events.Add(BcEvents.QuoteUpdated(quote));
+    }
 
     private void ReplaceLines(SalesQuote quote, IEnumerable<SalesQuoteLine> lines)
     {
@@ -387,7 +487,7 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
         quote.TotalAmountExcludingTax = quote.Lines.Sum(l => l.AmountExcludingTax);
     }
 
-    private static void ApplyProspect(Contact contact, ProspectData prospect, ContactPersonData? person)
+    private void ApplyProspect(Contact contact, ProspectData prospect, ContactPersonData? person)
     {
         contact.DisplayName = prospect.Name;
         contact.VatRegistrationNumber = prospect.VatRegistrationNumber;
@@ -404,7 +504,7 @@ public sealed class SalesService(BcDbContext db, INumberSeries numbers, TimeProv
             contact.ContactPersonPhone = person.Phone;
         }
 
-        contact.LastModifiedDateTime = DateTimeOffset.UtcNow;
+        contact.LastModifiedDateTime = clock.GetUtcNow();
     }
 
     private static string NormalizeBlocked(string? blocked)

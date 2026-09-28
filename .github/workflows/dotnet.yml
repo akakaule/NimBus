@@ -66,6 +66,12 @@ jobs:
         node-version: 22
     - name: Restore dependencies
       run: dotnet restore src/NimBus.sln
+    - name: Prepare the Aspire CLI bundle
+      # CrmErpDemo.AppHost and DynamicsBcDemo.AppHost set AspireUseCliBundle. On a runner
+      # without the bundle, each runs this same setup into ~/.aspire during the parallel
+      # build, and the one that loses the race fails with ASPIRE009. Preparing it once
+      # here lets both resolve it. Keep the version in step with Aspire.AppHost.Sdk.
+      run: dotnet dnx --yes aspire.cli@13.5.4 -- setup --install-path "$HOME/.aspire"
     - name: Build
       run: dotnet build src/NimBus.sln --no-restore --configuration Release
     - name: Wait for Cosmos DB emulator

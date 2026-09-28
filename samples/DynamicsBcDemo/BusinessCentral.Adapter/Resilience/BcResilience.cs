@@ -18,9 +18,9 @@ public sealed class BcResilienceOptions
     public int ThrottledMaxRetries { get; set; } = 5;
 
     /// <summary>
-    /// First retry delay after a 503. Longer than the demo's update window on purpose: the circuit
-    /// breaker counts a failed retry as a success (a known NimBus gap), so retries must land after
-    /// BC is back for the half-open probe to be meaningful.
+    /// First retry delay after a 503. Longer than the demo's update window on purpose: the first
+    /// retry lands after BC is back, so it succeeds and the scene ends on its own. A retry inside
+    /// the window would fail again and count against the circuit breaker.
     /// </summary>
     public int UnavailableBaseDelaySeconds { get; set; } = 30;
 

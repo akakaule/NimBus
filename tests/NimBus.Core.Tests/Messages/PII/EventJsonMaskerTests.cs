@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.Endpoints;
@@ -489,6 +490,41 @@ public class EventJsonMaskerTests
 
         StringAssert.Contains(ex.Message, "PartialReveal");
         StringAssert.Contains(ex.Message, nameof(BadPartialEvent.Phone));
+    }
+
+    public class NegativeRevealEvent : Event
+    {
+        [Sensitive(Mode = MaskMode.PartialReveal, Reveal = -2)]
+        public string? Phone { get; set; }
+    }
+
+    private sealed class NegativeRevealEndpoint : Endpoint
+    {
+        public NegativeRevealEndpoint() { Produces<NegativeRevealEvent>(); }
+    }
+
+    private sealed class NegativeRevealPlatform : Platform
+    {
+        public NegativeRevealPlatform() { AddEndpoint(new NegativeRevealEndpoint()); }
+    }
+
+    [TestMethod]
+    public void Constructor_Error_Formats_Reveal_Independently_Of_The_Host_Culture()
+    {
+        // sv-SE formats a negative int with U+2212 (minus sign) instead of an ASCII hyphen.
+        var hostCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("sv-SE");
+        try
+        {
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(
+                () => new EventJsonMasker(new NegativeRevealPlatform()));
+
+            StringAssert.Contains(ex.Message, "Reveal=-2.", StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = hostCulture;
+        }
     }
 
     // -------- TryCollectSensitiveValues (diagnostic scrubbing) --------

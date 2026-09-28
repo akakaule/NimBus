@@ -183,9 +183,9 @@ shows who did what."
 1. Cockpit → **Start 20 s throttling**.
 2. **Signed in as** *Maya Lindqvist* → *OPP-10012* (Northwind Ocean Survey, an existing customer) →
    **Request quote in Business Central**.
-3. nimbus-ops shows it failing with *429 Too Many Requests* and retrying with growing delays. It
-   completes by itself in about 20 seconds. The circuit stays **Closed**: throttling is paced, not
-   an outage.
+3. nimbus-ops shows it failing with *429 Too Many Requests* and retrying with growing delays (about
+   5, 10 and 20 s). It completes by itself within about 40 seconds, on the first retry after the
+   window. The circuit stays **Closed**: throttling is paced, not an outage.
 
 *Say:* "Business Central limits requests per user. Backoff is the right answer to that, and here
 it is policy, not code in every integration."

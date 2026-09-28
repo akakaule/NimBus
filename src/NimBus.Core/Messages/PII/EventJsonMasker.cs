@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -378,9 +379,10 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             var attr = p.GetCustomAttribute<SensitiveAttribute>(inherit: true);
             if (attr != null && attr.Mode == MaskMode.PartialReveal && attr.Reveal <= 0)
             {
-                throw new InvalidOperationException(
+                throw new InvalidOperationException(string.Create(
+                    CultureInfo.InvariantCulture,
                     $"[Sensitive] on {t.FullName}.{p.Name} uses PartialReveal but Reveal={attr.Reveal}. " +
-                    $"PartialReveal requires Reveal > 0; otherwise use MaskMode.Redact explicitly.");
+                    $"PartialReveal requires Reveal > 0; otherwise use MaskMode.Redact explicitly."));
             }
 
             var propType = p.PropertyType;

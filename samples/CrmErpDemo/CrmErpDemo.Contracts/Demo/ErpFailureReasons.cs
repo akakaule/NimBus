@@ -62,9 +62,9 @@ public static class ErpFailureReasons
         new(
             "contract_schema",
             "Schema mismatch (contract)",
-            "The payload fails deserialization: CountryCode carries a full country name instead of an ISO 3166-1 alpha-2 code. NimBus dead-letters FormatException immediately, so this one lands in the DLQ.",
+            "The payload fails deserialization: CountryCode carries a full country name instead of an ISO 3166-1 alpha-2 code. It is not dead-lettered: that needs a permanent-failure classifier, which the ERP adapter does not register.",
             "contract_schema",
-            "DeadLettered"),
+            "Failed"),
         new(
             "business_rule",
             "Customer closed (business rule)",

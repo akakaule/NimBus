@@ -10,8 +10,8 @@ namespace CrmErpDemo.AppHost.Tests;
 /// <summary>
 /// The erp-web error-mode dropdown exists to feed Integration Intelligence distinct,
 /// realistic failures. These pin the properties the showcase depends on: every reason maps
-/// to an exception, the advertised NimBus disposition matches what the default classifier
-/// actually does, and the recorded message carries a cue for its target category.
+/// to an exception, the advertised NimBus disposition matches what the ERP adapter's failure
+/// handling actually does, and the recorded message carries a cue for its target category.
 /// </summary>
 [TestClass]
 public sealed class ErpFailureReasonsTests
@@ -42,17 +42,22 @@ public sealed class ErpFailureReasonsTests
     }
 
     [TestMethod]
-    public void EveryReason_DispositionMatchesDefaultPermanentFailureClassifier()
+    public void EveryReason_DispositionMatchesTheErpAdaptersFailureHandling()
     {
-        var classifier = new DefaultPermanentFailureClassifier();
+        // Erp.Adapter.Functions registers no failure disposition classifier, so StrictMessageHandler
+        // falls back to DefaultFailureDispositionClassifier; with no retry policy either, a failure
+        // it does not dead-letter is recorded as Failed.
+        var classifier = new DefaultFailureDispositionClassifier();
         foreach (var reason in ErpFailureReasons.All)
         {
             var ex = ErpFailureReasons.CreateException(reason.Id, "CrmAccountCreated");
-            var expectedPermanent = reason.Disposition == "DeadLettered";
+            var expected = classifier.Classify(ex, "CrmAccountCreated", "ErpEndpoint") == FailureDisposition.DeadLetter
+                ? "DeadLettered"
+                : "Failed";
             Assert.AreEqual(
-                expectedPermanent,
-                classifier.IsPermanentFailure(ex),
-                $"{reason.Id} advertises {reason.Disposition} but the classifier disagrees for {ex.GetType().Name}");
+                expected,
+                reason.Disposition,
+                $"{reason.Id} advertises {reason.Disposition} but the ERP adapter records {expected} for {ex.GetType().Name}");
         }
     }
 

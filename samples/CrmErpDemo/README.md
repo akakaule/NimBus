@@ -382,7 +382,7 @@ In Cosmos mode Aspire skips provisioning the `nimbus` SQL database; the Resolver
 
 1. In the Aspire dashboard, **stop `erp-api`**.
 2. Create another account in **crm-web**.
-3. The `erp-adapter` Function fires, the HTTP call to `erp-api` fails, NimBus retries, then dead-letters the message and **blocks the session**.
+3. The `erp-adapter` Function fires and the HTTP call to `erp-api` fails. The adapter registers no retry policy, so NimBus records the message as **Failed** without retrying it and **blocks the session**.
 4. **nimbus-ops** shows the blocked session.
 5. Restart `erp-api` from the Aspire dashboard.
 6. From **nimbus-ops**, resubmit the failed message → flow completes; the link-erp callback updates the account.
@@ -451,8 +451,11 @@ erp-web (Error mode / Service mode toggle)
 3. In **erp-web**, flip **Error mode** ON (header toggle): every inbound ERP handler now throws.
    The dropdown next to it picks *which* failure is simulated (see [Failure reasons](#failure-reasons-integration-intelligence-showcase)).
 4. Within a few seconds the **Notification alerts** panel shows an **Error** alert
-   ("Message failed: …") and, once retries are exhausted, a **Critical** **dead-lettered** alert.
-   Flipping **Service mode** ON instead produces **Error** alerts as inbound messages are rejected.
+   ("Message failed: …"). Handler failures are not retried: the message is recorded as Failed and
+   its session blocks, so the next message on that session (for example an edit to the same
+   account) raises a **Critical** **session blocked** alert.
+   Flipping **Service mode** ON instead rejects inbound messages in middleware, which dead-letters
+   them immediately: each produces an **Error** alert and a **Critical** **dead-lettered** alert.
 5. Turn the toggles OFF to stop new alerts; click **Clear** to empty the panel.
 
 ### Failure reasons (Integration Intelligence showcase)
@@ -468,7 +471,7 @@ identifiers, the downstream system, and what would have to change.
 | Generic handler exception (default) | `HandlerErrorModeException` | Failed | `unknown` — the control case with no usable evidence |
 | Downstream timeout (transient) | `TimeoutException` 503 + connection reset | Failed | `transient_dependency` |
 | Expired credentials (auth/config) | `UnauthorizedAccessException` 401, expired secret | Failed | `authentication_configuration` |
-| Schema mismatch (contract) | `FormatException` on `CountryCode` | **DeadLettered** | `contract_schema` |
+| Schema mismatch (contract) | `FormatException` on `CountryCode` | Failed | `contract_schema` |
 | Customer closed (business rule) | `InvalidOperationException` rule ERP-CUST-017 | Failed | `business_rule` |
 | Customer not found (missing reference) | `KeyNotFoundException` for the CRM account | Failed | `missing_reference_data` |
 | Null reference (application defect) | `NullReferenceException` in the mapper | Failed | `application_defect` |

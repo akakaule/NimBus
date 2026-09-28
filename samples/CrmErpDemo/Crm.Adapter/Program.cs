@@ -110,11 +110,10 @@ builder.Services.AddNimBusReceiver(opts =>
 {
     opts.TopicName = "CrmEndpoint";
     opts.SubscriptionName = "CrmEndpoint";
-    // SDK default is 1, which makes the whole CrmEndpoint serial across every
-    // session and event type — far below the Erp.Adapter.Functions side which
+    // SDK default is 8 — well below the Erp.Adapter.Functions side, which
     // allows 200 concurrent sessions (host.json). 32 is a demo-friendly middle
-    // ground: 32× the current throughput with enough headroom that the shared
-    // SQL Server isn't fighting itself. Per-session ordering still holds.
+    // ground: more parallelism than the default, with enough headroom that the
+    // shared SQL Server isn't fighting itself. Per-session ordering still holds.
     opts.MaxConcurrentSessions = 32;
     if (E2eSettings.IsEnabled(builder.Configuration, builder.Environment))
         opts.MaxAutoLockRenewalDuration = TimeSpan.Zero;

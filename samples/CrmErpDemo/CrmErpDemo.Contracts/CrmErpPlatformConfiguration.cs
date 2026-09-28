@@ -7,7 +7,8 @@ namespace CrmErpDemo.Contracts;
 public class CrmErpPlatformConfiguration : Platform
 {
     // Dynamic event forwards: events with a string EventTypeId but no compiled IEvent class.
-    // Consumed by both EmulatorTopologyConfigBuilder and ServiceBusTopologyProvisioner (spec 022 D5).
+    // Consumed by ServiceBusTopologyProvisioner (spec 022 D5), which the demo's provisioner runs
+    // against both the NimBus emulator and real Azure.
     private static readonly IReadOnlyList<DynamicForward> _dynamicForwards =
     [
         // Spec 022: enriched CRM contacts flow from Agent Zone to DataPlatform.

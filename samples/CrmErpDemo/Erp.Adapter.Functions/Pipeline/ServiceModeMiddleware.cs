@@ -7,8 +7,8 @@ namespace Erp.Adapter.Functions.Pipeline;
 
 /// <summary>
 /// Demo-only switch: when ERP service mode is on, every inbound message is rejected with
-/// an exception. NimBus then runs its normal failure path (retry → dead-letter → block
-/// session), so this is the same shape as a real downstream outage.
+/// an exception. It is thrown from middleware, outside the handler, so NimBus dead-letters
+/// the message immediately: no retry and no session block.
 /// </summary>
 public sealed class ServiceModeMiddleware(IServiceModeClient client, ILogger<ServiceModeMiddleware> logger)
     : IMessagePipelineBehavior

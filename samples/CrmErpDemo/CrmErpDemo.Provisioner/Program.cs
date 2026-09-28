@@ -2,8 +2,8 @@ using Azure.Messaging.ServiceBus.Administration;
 using CrmErpDemo.Contracts;
 using NimBus.ServiceBus.Provisioning;
 
-// Partner-facing entities for the CloudEvents interop showcase (real Azure only; the
-// emulator gets the same entities from EmulatorTopologyConfigBuilder):
+// Partner-facing entities for the CloudEvents interop showcase (created here for both the
+// NimBus emulator and real Azure — the AppHost runs this provisioner in either mode):
 //  - PartnerInbound topic + session-required catch-all "CrmEndpoint" subscription: the
 //    external PartnerPortal publishes raw CloudEvents here, and Crm.Adapter drains it
 //    with a second receiver. Sessions are required because NimBus receivers are always

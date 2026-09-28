@@ -76,7 +76,10 @@ public interface IOutbox
     Task StoreBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retrieves pending (undispatched) messages for dispatch, ordered by creation time.
+    /// Retrieves pending (undispatched) messages for dispatch in creation order, oldest first.
+    /// Messages that share a <see cref="OutboxMessage.CreatedAtUtc"/> must come back in the order
+    /// they were stored: the dispatcher sends them in this order, which keeps each session's
+    /// messages first-in, first-out.
     /// </summary>
     /// <param name="batchSize">Maximum number of messages to retrieve.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

@@ -415,7 +415,8 @@ When `IOutbox` is registered, `AddNimBusPublisher` writes outgoing messages to
 the outbox instead of sending directly. The dispatcher reads committed outbox
 rows and sends them to Service Bus.
 
-Create the outbox table on startup for fresh databases:
+Create the outbox table on startup. The call is idempotent and also upgrades
+tables created by earlier NimBus versions:
 
 ```csharp
 var outbox = (SqlServerOutbox)host.Services.GetRequiredService<IOutbox>();

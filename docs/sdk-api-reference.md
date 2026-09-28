@@ -439,13 +439,22 @@ public interface IOutbox
 }
 ```
 
-Custom providers must return pending rows in creation order and implement both
-checkpoint overloads idempotently. Repeating a checkpoint—including after a
-partially committed batch—must succeed and preserve each row's original
-dispatch timestamp. Provider authors can execute this contract by deriving a
-test fixture from `NimBus.Testing.Conformance.OutboxConformanceTests`.
+Custom providers must return pending rows in creation order, and rows that
+share a `CreatedAtUtc` in the order they were stored: the dispatcher sends rows
+in exactly this order, so per-session FIFO depends on it. Providers must also
+implement both checkpoint overloads idempotently. Repeating a
+checkpoint—including after a partially committed batch—must succeed and
+preserve each row's original dispatch timestamp. Provider authors can execute
+this contract by deriving a test fixture from
+`NimBus.Testing.Conformance.OutboxConformanceTests`.
 
-SQL Server implementation: `NimBus.Outbox.SqlServer`. Register via:
+SQL Server implementation: `NimBus.Outbox.SqlServer`. It dispatches rows in the
+order they were stored, using a `SequenceNumber` that SQL Server assigns on
+insert, so the order never depends on publisher clocks. `EnsureTableExistsAsync`
+adds the column, its sequence and the dispatch-order index to tables created by
+earlier versions; rows already pending at the upgrade dispatch first, in their
+original order. If you manage the schema yourself, apply the DDL that
+`EnsureTableExistsAsync` runs. Register via:
 
 ```csharp
 services.AddNimBusSqlServerOutbox(options =>

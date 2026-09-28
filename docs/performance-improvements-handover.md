@@ -154,6 +154,12 @@ empty input returns early.
 *Porting math:* your chunk size = `floor(2100 / columns-per-row)` with headroom.
 If your outbox row has 20 columns, cap at ~100 rows anyway for plan-cache sanity.
 
+*Follow-up:* the chunk is now inserted as `INSERT ... SELECT ... FROM (VALUES ...)
+ORDER BY [Ordinal]`, because the outbox dispatches by a sequence-assigned
+`SequenceNumber` and SQL Server documents the order of generated values only for
+`INSERT ... SELECT ... ORDER BY`. Port that form if your outbox orders by an
+identity or sequence column.
+
 *Testing pattern worth copying:* DB-free unit tests assert the generated
 `CommandText` and parameter set exactly; a connection-string-gated integration
 suite covers 1/100/101/250 rows, duplicate-id atomic rollback, and ambient

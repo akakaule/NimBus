@@ -30,6 +30,7 @@ public sealed class InMemoryOutboxConformanceTests : OutboxConformanceTests
 internal sealed class ConformanceInMemoryOutbox : IOutbox
 {
     private readonly Dictionary<string, OutboxMessage> _messages = new(StringComparer.Ordinal);
+    private readonly List<OutboxMessage> _storeOrder = new();
     private DateTime _utcNow = new(2030, 1, 2, 0, 0, 0, DateTimeKind.Utc);
 
     public DateTime? GetDispatchedAtUtc(string id) => _messages[id].DispatchedAtUtc;
@@ -38,7 +39,7 @@ internal sealed class ConformanceInMemoryOutbox : IOutbox
 
     public Task StoreAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
-        _messages.Add(message.Id, message);
+        Store(message);
         return Task.CompletedTask;
     }
 
@@ -46,7 +47,7 @@ internal sealed class ConformanceInMemoryOutbox : IOutbox
     {
         foreach (var message in messages)
         {
-            _messages.Add(message.Id, message);
+            Store(message);
         }
 
         return Task.CompletedTask;
@@ -56,12 +57,19 @@ internal sealed class ConformanceInMemoryOutbox : IOutbox
         int batchSize,
         CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<OutboxMessage> pending = _messages.Values
+        // OrderBy is stable, so rows sharing a CreatedAtUtc keep their store order.
+        IReadOnlyList<OutboxMessage> pending = _storeOrder
             .Where(message => message.DispatchedAtUtc is null)
             .OrderBy(message => message.CreatedAtUtc)
             .Take(batchSize)
             .ToList();
         return Task.FromResult(pending);
+    }
+
+    private void Store(OutboxMessage message)
+    {
+        _messages.Add(message.Id, message);
+        _storeOrder.Add(message);
     }
 
     public Task MarkAsDispatchedAsync(string id, CancellationToken cancellationToken = default)

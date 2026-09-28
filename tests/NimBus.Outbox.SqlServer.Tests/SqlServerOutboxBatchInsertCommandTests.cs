@@ -14,7 +14,8 @@ namespace NimBus.Outbox.SqlServer.Tests;
 /// <summary>
 /// DB-free assertions on the multi-row INSERT command builder: one command per
 /// 100 messages, per-row suffixed parameters (12/row, under the 2,100 limit),
-/// and null-vs-value parameter mapping identical to the single-insert path.
+/// null-vs-value parameter mapping identical to the single-insert path, and
+/// rows inserted in list order.
 /// </summary>
 [TestClass]
 public sealed class SqlServerOutboxBatchInsertCommandTests
@@ -73,7 +74,24 @@ public sealed class SqlServerOutboxBatchInsertCommandTests
         Assert.AreEqual(DBNull.Value, command.Parameters["@To1"].Value, "Odd rows have null To -> DBNull.");
         Assert.AreEqual(DBNull.Value, command.Parameters["@CorrelationId0"].Value);
         Assert.AreEqual(DBNull.Value, command.Parameters["@ScheduledEnqueueTimeUtc1"].Value);
-        StringAssert.Contains(command.CommandText, "@TraceState1)");
+        StringAssert.Contains(command.CommandText, "@TraceState1, 1)");
+    }
+
+    [TestMethod]
+    public void Inserts_the_page_in_list_order()
+    {
+        // The rows' SequenceNumber values (the dispatch order) follow the list only because the
+        // page is inserted with INSERT ... SELECT ... ORDER BY: SQL Server documents the order of
+        // generated values for that form, not for a plain multi-row VALUES insert.
+        var outbox = CreateOutbox();
+        var messages = Enumerable.Range(0, 3).Select(NewMessage).ToList();
+
+        using var connection = new SqlConnection();
+        using var command = outbox.CreateBatchInsertCommand(connection, transaction: null!, messages, offset: 0, count: 3);
+
+        StringAssert.Contains(command.CommandText, "@TraceState0, 0)", StringComparison.Ordinal);
+        StringAssert.Contains(command.CommandText, "@TraceState2, 2)", StringComparison.Ordinal);
+        StringAssert.Matches(command.CommandText, new Regex(@"ORDER BY \[Ordinal\]\s*$"));
     }
 
     [TestMethod]

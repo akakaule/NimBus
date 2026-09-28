@@ -99,6 +99,59 @@ public abstract class OutboxConformanceTests
         Assert.AreEqual(0, (await outbox.GetPendingAsync(10)).Count);
     }
 
+    /// <summary>
+    /// Verifies that rows sharing a <see cref="OutboxMessage.CreatedAtUtc"/> come back in the order
+    /// they were stored, across single and batch stores. The dispatcher sends rows in this order,
+    /// so any other tiebreak reorders a session's messages.
+    /// </summary>
+    [TestMethod]
+    public async Task GetPendingAsync_returns_rows_sharing_CreatedAtUtc_in_store_order()
+    {
+        var outbox = await CreateOutboxAsync();
+        var stored = CreateSessionMessages(6);
+        await outbox.StoreAsync(stored[0]);
+        await outbox.StoreAsync(stored[1]);
+        await outbox.StoreBatchAsync(stored[2..5]);
+        await outbox.StoreAsync(stored[5]);
+
+        CollectionAssert.AreEqual(
+            stored.Select(message => message.Id).ToArray(),
+            (await outbox.GetPendingAsync(10)).Select(message => message.Id).ToArray());
+    }
+
+    /// <summary>
+    /// Verifies that a batch whose rows share a <see cref="OutboxMessage.CreatedAtUtc"/> comes back
+    /// in list order, including when the provider splits a large batch into several writes.
+    /// </summary>
+    [TestMethod]
+    public async Task GetPendingAsync_returns_a_batch_sharing_CreatedAtUtc_in_list_order()
+    {
+        var outbox = await CreateOutboxAsync();
+        var stored = CreateSessionMessages(250);
+        await outbox.StoreBatchAsync(stored);
+
+        CollectionAssert.AreEqual(
+            stored.Select(message => message.Id).ToArray(),
+            (await outbox.GetPendingAsync(stored.Length)).Select(message => message.Id).ToArray());
+    }
+
+    // One session's messages, all stamped with the same CreatedAtUtc like the rows of one publish
+    // batch. Ids sort opposite to store order, so a provider that breaks the tie by key fails.
+    private OutboxMessage[] CreateSessionMessages(int count) =>
+        Enumerable.Range(0, count)
+            .Select(position => new OutboxMessage
+            {
+                Id = $"{_scope}-fifo-{count - position:D4}",
+                MessageId = $"{_scope}-fifo-message-{position}",
+                To = "conformance-endpoint",
+                EventTypeId = "ConformanceEvent",
+                SessionId = "session-fifo",
+                CorrelationId = "correlation-fifo",
+                Payload = $"{{\"position\":{position}}}",
+                CreatedAtUtc = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            })
+            .ToArray();
+
     private OutboxMessage CreateMessage(string suffix, int order) => new()
     {
         Id = $"{_scope}-{suffix}",

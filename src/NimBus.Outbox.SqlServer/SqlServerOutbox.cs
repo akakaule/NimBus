@@ -10,8 +10,15 @@ namespace NimBus.Outbox.SqlServer;
 /// <summary>
 /// SQL Server implementation of the transactional outbox.
 /// </summary>
+/// <remarks>
+/// Pending rows are dispatched in the order they were stored. SQL Server stamps each row with
+/// a <c>SequenceNumber</c> from a sequence object as it is inserted; <see cref="OutboxMessage.CreatedAtUtc"/>
+/// cannot order rows because it comes from each publisher's clock and rows written together share it.
+/// </remarks>
 public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
 {
+    private const string InsertColumns = "[Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState]";
+
     private readonly SqlServerOutboxOptions _options;
 
     public SqlServerOutbox(SqlServerOutboxOptions options)
@@ -21,16 +28,26 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
         ValidateSqlIdentifier(_options.TableName, nameof(_options.TableName));
     }
 
+    private string SequenceName => $"[{_options.Schema}].[{_options.TableName}_SequenceNumber]";
+
     /// <summary>
     /// Ensures the outbox table exists. Call on startup if AutoCreateTable is enabled.
-    /// Also runs an idempotent column migration so deployments that pre-date the
-    /// W3C trace-context columns gain them on next startup.
+    /// Also runs idempotent migrations so deployments that pre-date the W3C trace-context
+    /// columns or the <c>SequenceNumber</c> dispatch order gain them on next startup.
     /// </summary>
     public async Task EnsureTableExistsAsync(CancellationToken cancellationToken = default)
     {
+        // SequenceNumber is nullable so adding it to an existing table is a metadata-only change
+        // (IDENTITY would rewrite every row, and the table keeps dispatched rows until purged).
+        // Rows stored before the upgrade keep NULL, which sorts first, so they drain before any
+        // later row. The dispatch-order index is created before the old pending index is dropped,
+        // so the pending query always has an index.
         var sql = $@"
                 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = @Schema)
                     EXEC('CREATE SCHEMA [{_options.Schema}]');
+
+                IF OBJECT_ID('{SequenceName}', 'SO') IS NULL
+                    CREATE SEQUENCE {SequenceName} AS BIGINT START WITH 1 INCREMENT BY 1;
 
                 IF NOT EXISTS (SELECT * FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE s.name = @Schema AND t.name = @TableName)
                 CREATE TABLE {_options.FullTableName} (
@@ -47,7 +64,7 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
                     [DispatchedAtUtc]     DATETIME2 NULL,
                     [TraceParent]         NVARCHAR(55) NULL,
                     [TraceState]          NVARCHAR(256) NULL,
-                    INDEX IX_OutboxMessages_Pending NONCLUSTERED ([DispatchedAtUtc], [CreatedAtUtc]) WHERE [DispatchedAtUtc] IS NULL
+                    [SequenceNumber]      BIGINT NULL CONSTRAINT [DF_{_options.TableName}_SequenceNumber] DEFAULT (NEXT VALUE FOR {SequenceName})
                 );
 
                 IF COL_LENGTH('{_options.FullTableName}', 'TraceParent') IS NULL
@@ -57,7 +74,17 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
                     ALTER TABLE {_options.FullTableName} ADD [TraceState] NVARCHAR(256) NULL;
 
                 IF COL_LENGTH('{_options.FullTableName}', 'To') IS NULL
-                    ALTER TABLE {_options.FullTableName} ADD [To] NVARCHAR(256) NULL;";
+                    ALTER TABLE {_options.FullTableName} ADD [To] NVARCHAR(256) NULL;
+
+                IF COL_LENGTH('{_options.FullTableName}', 'SequenceNumber') IS NULL
+                    ALTER TABLE {_options.FullTableName} ADD [SequenceNumber] BIGINT NULL
+                        CONSTRAINT [DF_{_options.TableName}_SequenceNumber] DEFAULT (NEXT VALUE FOR {SequenceName});
+
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID('{_options.FullTableName}') AND name = 'IX_OutboxMessages_DispatchOrder')
+                    CREATE NONCLUSTERED INDEX IX_OutboxMessages_DispatchOrder ON {_options.FullTableName} ([SequenceNumber], [CreatedAtUtc]) WHERE [DispatchedAtUtc] IS NULL;
+
+                IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID('{_options.FullTableName}') AND name = 'IX_OutboxMessages_Pending')
+                    DROP INDEX IX_OutboxMessages_Pending ON {_options.FullTableName};";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -71,7 +98,7 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
     {
         var sql = $@"
                 INSERT INTO {_options.FullTableName}
-                    ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
+                    ({InsertColumns})
                 VALUES
                     (@Id, @MessageId, @To, @EventTypeId, @SessionId, @CorrelationId, @Payload, @EnqueueDelayMinutes, @ScheduledEnqueueTimeUtc, @CreatedAtUtc, @TraceParent, @TraceState)";
 
@@ -156,26 +183,34 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
         for (var i = 0; i < count; i++)
         {
             var suffix = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            rows[i] = $"(@Id{suffix}, @MessageId{suffix}, @To{suffix}, @EventTypeId{suffix}, @SessionId{suffix}, @CorrelationId{suffix}, @Payload{suffix}, @EnqueueDelayMinutes{suffix}, @ScheduledEnqueueTimeUtc{suffix}, @CreatedAtUtc{suffix}, @TraceParent{suffix}, @TraceState{suffix})";
+            rows[i] = $"(@Id{suffix}, @MessageId{suffix}, @To{suffix}, @EventTypeId{suffix}, @SessionId{suffix}, @CorrelationId{suffix}, @Payload{suffix}, @EnqueueDelayMinutes{suffix}, @ScheduledEnqueueTimeUtc{suffix}, @CreatedAtUtc{suffix}, @TraceParent{suffix}, @TraceState{suffix}, {suffix})";
             AddOutboxMessageParameters(command, messages[offset + i], suffix);
         }
 
+        // Each row carries its list position. SQL Server generates the SequenceNumber default in
+        // ORDER BY order for INSERT ... SELECT ... ORDER BY; a plain multi-row VALUES insert has
+        // no documented order, and the rows' CreatedAtUtc values usually tie.
         command.CommandText = $@"
                 INSERT INTO {_options.FullTableName}
-                    ([Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [ScheduledEnqueueTimeUtc], [CreatedAtUtc], [TraceParent], [TraceState])
-                VALUES
-                    {string.Join(",\n                    ", rows)}";
+                    ({InsertColumns})
+                SELECT {InsertColumns}
+                FROM (VALUES
+                    {string.Join(",\n                    ", rows)}
+                ) AS [Rows] ({InsertColumns}, [Ordinal])
+                ORDER BY [Ordinal]";
 
         return command;
     }
 
     public async Task<IReadOnlyList<OutboxMessage>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default)
     {
+        // Store order: SequenceNumber is assigned as rows are inserted. Rows stored before the
+        // column existed have NULL, sort first, and keep their previous CreatedAtUtc order.
         var sql = $@"
                 SELECT TOP (@BatchSize) [Id], [MessageId], [To], [EventTypeId], [SessionId], [CorrelationId], [Payload], [EnqueueDelayMinutes], [CreatedAtUtc], [ScheduledEnqueueTimeUtc], [TraceParent], [TraceState]
                 FROM {_options.FullTableName} WITH (UPDLOCK, READPAST)
                 WHERE [DispatchedAtUtc] IS NULL
-                ORDER BY [CreatedAtUtc] ASC";
+                ORDER BY [SequenceNumber] ASC, [CreatedAtUtc] ASC";
 
         var result = new List<OutboxMessage>();
 
@@ -270,7 +305,8 @@ public class SqlServerOutbox : IOutbox, IOutboxCleanup, IOutboxMetricsQuery
 
     public async Task<DateTimeOffset?> GetOldestPendingEnqueuedAtUtcAsync(CancellationToken cancellationToken = default)
     {
-        var sql = $@"SELECT TOP 1 [CreatedAtUtc] FROM {_options.FullTableName} WHERE [DispatchedAtUtc] IS NULL ORDER BY [CreatedAtUtc] ASC";
+        // The next row to dispatch, in the same order as GetPendingAsync.
+        var sql = $@"SELECT TOP 1 [CreatedAtUtc] FROM {_options.FullTableName} WHERE [DispatchedAtUtc] IS NULL ORDER BY [SequenceNumber] ASC, [CreatedAtUtc] ASC";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);

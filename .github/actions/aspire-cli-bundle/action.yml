@@ -1,0 +1,22 @@
+name: Install the Aspire CLI bundle
+description: >
+  Prepares the Aspire CLI bundle (DCP + dashboard) in ~/.aspire once, before a solution build.
+  AppHosts with AspireUseCliBundle=true (CrmErpDemo, DynamicsBcDemo) otherwise each run
+  `aspire setup` into ~/.aspire from inside a parallel build, and the concurrent setups race:
+  one fails with ASPIRE009. With the bundle already in place, the build resolves it and skips
+  setup. Requires the .NET 10 SDK (for dnx) to be installed first.
+
+runs:
+  using: composite
+  steps:
+    - name: Install the Aspire CLI bundle
+      shell: bash
+      run: |
+        # Pair the CLI with the AppHost SDK version, as the SDK's own setup would.
+        version=$(sed -n 's/.*Sdk="Aspire.AppHost.Sdk\/\([0-9.]*\)".*/\1/p' \
+          samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj)
+        if [ -z "$version" ]; then
+          echo "::error::Could not read the Aspire.AppHost.Sdk version from CrmErpDemo.AppHost.csproj"
+          exit 1
+        fi
+        dnx --yes "aspire.cli@$version" -- setup --install-path "$HOME/.aspire"

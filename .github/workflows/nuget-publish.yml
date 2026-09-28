@@ -39,6 +39,9 @@ jobs:
       - name: Restore
         run: dotnet restore src/NimBus.sln
 
+      - name: Install the Aspire CLI bundle
+        uses: ./.github/actions/aspire-cli-bundle
+
       - name: Build
         run: dotnet build src/NimBus.sln -c Release --no-restore /p:Version=${{ steps.version.outputs.VERSION }}
 

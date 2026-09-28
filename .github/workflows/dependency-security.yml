@@ -98,6 +98,10 @@ jobs:
             echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Install the Aspire CLI bundle
+        if: steps.changes.outputs.has-changes == 'true'
+        uses: ./.github/actions/aspire-cli-bundle
+
       - name: Verify the bumped dependencies still build
         id: verify
         if: steps.changes.outputs.has-changes == 'true'

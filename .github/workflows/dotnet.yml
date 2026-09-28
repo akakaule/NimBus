@@ -66,6 +66,8 @@ jobs:
         node-version: 22
     - name: Restore dependencies
       run: dotnet restore src/NimBus.sln
+    - name: Install the Aspire CLI bundle
+      uses: ./.github/actions/aspire-cli-bundle
     - name: Build
       run: dotnet build src/NimBus.sln --no-restore --configuration Release
     - name: Wait for Cosmos DB emulator

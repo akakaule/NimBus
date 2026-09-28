@@ -321,7 +321,7 @@ tests/DynamicsBcDemo.Tests/      MSTest
 - Real BC or D365 connectors.
 - A Playwright suite/CI workflow, a film, Azure deployment.
 - Opportunity lost → quote archive; item/price and invoice sync.
-- A Danish talk track.
+- A translated talk track.
 
 Out-of-scope issues found and flagged as separate tasks:
 

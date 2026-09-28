@@ -54,7 +54,7 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
   React 19, TypeScript, Vite 8, Tailwind, Vitest), `NimBus.CommandLine` (`nb` CLI),
   `NimBus.Testing` (in-memory transport and storage conformance suite), `NimBus.Extensions.*`.
 - `tests/` — one `*.Tests` project per library (MSTest). `samples/` — AspirePubSub,
-  CloudEventsInterop, CrmErpDemo.
+  CloudEventsInterop, CrmErpDemo, DynamicsBcDemo.
 - `docs/` — guides, `docs/adr/` for design rationale, `docs/spec/` for specs and designs,
   `docs/plan/` for implementation plans and plan reviews. Do not create `docs/superpowers/`
   or `docs/specs/`.

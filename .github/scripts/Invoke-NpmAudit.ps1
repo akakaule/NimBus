@@ -6,7 +6,7 @@
 
 .DESCRIPTION
     Every tracked package-lock.json is one audit root (today: the WebApp ClientApp plus
-    the CrmErpDemo sample apps and its Playwright suite).
+    the CrmErpDemo and DynamicsBcDemo sample apps and CrmErpDemo's Playwright suite).
 
     Both the audit and the fix run with --package-lock-only, so nothing is installed and
     no postinstall script runs (which also keeps Playwright from downloading browsers).

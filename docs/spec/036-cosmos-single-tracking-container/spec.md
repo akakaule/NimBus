@@ -1,12 +1,14 @@
 # Spec 036 — One Cosmos DB tracking container for all endpoints
 
-Status: **proposed** (2026-09-26). Nothing is implemented. Decision record:
+Status: **proposed** (2026-09-26). The repo owner decided its open questions on 2026-09-28 (§13).
+Nothing is implemented. Target release: v5.0.0. Decision record:
 [ADR-017](../../adr/017-single-cosmos-tracking-container.md) (proposed), which supersedes ADR-008
 when accepted.
 Baseline: master `f16a0369`.
-Scope: `NimBus.MessageStore.CosmosDb`, the `nb` CLI (`topology apply`, `setup`, `container copy`
-and a new `container migrate`), the WebApp's Cosmos admin paths (purge, copy, storage containers),
-`deploy/bicep/templates/cosmosDB.bicep` and docs. Unchanged: the storage contracts in
+Scope: `NimBus.MessageStore.CosmosDb`, the `nb` CLI (`infra apply`, `topology apply`, `setup`,
+`container copy` and a new `container migrate`), the WebApp's Cosmos admin paths (purge, copy,
+storage containers) and its Cosmos request priority, `deploy/bicep/templates/cosmosDB.bicep` and
+docs. Unchanged: the storage contracts in
 `NimBus.MessageStore.Abstractions`, the SQL Server and in-memory providers, the `messages` and
 `audits` containers, the Service Bus topology and the message flow.
 Why: the per-endpoint layout (ADR-008) costs each endpoint a fixed minimum throughput. It needs a
@@ -27,8 +29,12 @@ one container, `unresolvedevents`:
   `c.endpointId = @endpointId` to every query.
 - **Provisioning.** Bicep declares the container once. Adding an endpoint no longer touches Cosmos.
 - **Purge.** Purging an endpoint deletes its rows instead of deleting a container.
-- **Migration.** Existing deployments migrate once and offline with `nb container migrate`, in a
-  major release. The legacy containers stay in place for rollback until an operator deletes them.
+- **Cross-endpoint search.** The failed-messages search and its histogram each become one query
+  over the requested endpoints, replacing today's per-container fan-out and merge.
+- **Priority.** The account turns on priority-based execution. The WebApp, purges and the migration
+  run at low priority, so the Resolver's writes go first when the shared budget runs short.
+- **Migration.** Existing deployments migrate once and offline with `nb container migrate`, in
+  v5.0.0. The legacy containers stay in place for rollback until an operator deletes them.
 
 The main costs are a shared throughput budget (noisy neighbours), isolation that now depends on
 code rather than on container boundaries, a purge that costs request units (RUs), a young
@@ -94,8 +100,8 @@ emulator feature and a short migration outage. §7 weighs them.
 | Id | `unresolvedevents`, in `MessageDatabase`. It mirrors the SQL Server table name |
 | Partition key | Hierarchical: `["/endpointId", "/id"]`, kind `MultiHash`, version 2 |
 | TTL | `defaultTtl: -1`, which turns TTL on with item-level expiry, exactly as endpoint containers have it today |
-| Throughput | Autoscale. The max comes from a new Bicep parameter, surfaced by `nb infra apply` the same way as the existing plan and SKU options. Proposed default: 4,000 RU/s (§13 item 3) |
-| Indexing | The default policy (all paths) plus composite indexes that mirror the SQL Server provider: `(endpointId, status)`, `(endpointId, sessionId, status)` and `(endpointId, event.UpdatedAt DESC)`. Phase 0 measures the final set on a live account, because the emulator ignores custom indexing policies (§14 item 5) |
+| Throughput | Autoscale. The max comes from a new Bicep parameter, surfaced by `nb infra apply` the same way as the existing plan and SKU options. Default: 4,000 RU/s (§13 item 3) |
+| Indexing | The default policy (all paths) plus composite indexes that mirror the SQL Server provider: `(endpointId, status)`, `(endpointId, sessionId, status)` and `(endpointId, event.UpdatedAt DESC)`. Phase 0 measures the final set on a live account, including whether the single failed-search query (§5.4) needs one on `updatedAtTicks`, because the emulator ignores custom indexing policies (§14 item 5) |
 
 Why `id` is the second level:
 
@@ -118,6 +124,11 @@ Three levels (`/endpointId`, `/sessionId`, `/id`) were rejected (§12).
 - `EventDbo` gains `[JsonProperty("endpointId")] string EndpointId`. The store sets it from the
   `endpointId` argument of every write, which is the value that selects the container today. It
   never takes it from `UnresolvedEvent.EndpointId`.
+- `EventDbo` also gains `[JsonProperty("updatedAtTicks")] long UpdatedAtTicks`, which is
+  `event.UpdatedAt` in ticks. The store sets it wherever it writes `event.UpdatedAt`. It exists for
+  the single failed-search query (§5.4). Cosmos sorts `event.UpdatedAt` as its ISO string, and the
+  default serializer trims trailing zeros from the fraction, so that order isn't chronological
+  within a second. Today's `FailedEventPageCursor` merge compares ticks instead.
 - The partition key is `new PartitionKeyBuilder().Add(endpointId).Add(id).Build()`.
 - The row id, the embedded `event` document and the server-side projections (`ProjectForSearch` and
   the paging projection) are unchanged. The projections already carry `event.EndpointId`.
@@ -159,6 +170,25 @@ internal sealed class EndpointScope
   scope sets it as a second, server-side fence (§14 item 4).
 - The endpoint id must be non-empty, as today. The reserved-name check is no longer needed.
 
+The cross-endpoint failed search and its histogram (§5.4) read several endpoints in one query. They
+use a set form of the scope, which has queries only:
+
+```csharp
+internal sealed class EndpointSetScope
+{
+    public IReadOnlyList<string> EndpointIds { get; }   // distinct, non-empty, at least one
+
+    public QueryDefinition Query(string select, string? where = null, string? orderBy = null);
+    public IQueryable<EventDbo> Rows(string? continuationToken = null, QueryRequestOptions? options = null);
+}
+```
+
+- `Query` emits `SELECT {select} FROM c WHERE ARRAY_CONTAINS(@__endpointIds, c.endpointId)
+  [AND ({where})] [ORDER BY {orderBy}]`, and `Rows` applies the same set filter through LINQ.
+- The match is exact: `ARRAY_CONTAINS` compares whole strings, so prefix siblings stay excluded.
+- The set holds exactly the endpoint ids the caller passed, which the WebApp has already filtered to
+  those the user may read.
+
 ### 5.4 Operation by operation
 
 | Store members | Today | Proposed |
@@ -171,7 +201,7 @@ internal sealed class EndpointScope
 | `GetEventsByIds` | `ReadManyItemsAsync` with `(id, key(id))` pairs | `(id, key(endpointId, id))` pairs |
 | `DownloadEndpointStateCount`, `DownloadEndpointStatePaging`, `GetEventsByFilter`, `GetCompletedEventsOnEndpoint`, `GetEndpointErrorList`, `GetInvalidEventsOnSession`, `GetPendingEventsOnSession`, `GetEvent(endpointId, eventId)`, `GetPendingHandoffByExternalJobId`, `GetNextPendingHandoffEvent` | Query over the whole endpoint container | The same query with the endpoint predicate, routed by prefix |
 | `DownloadEndpointSessionStateCount`, `DownloadEndpointSessionStateCountBatch`, `GetBlockedEventsOnSession`, `PurgeMessages(endpointId, sessionId)` | Query by `sessionId` | The same with the endpoint predicate |
-| `GetFailedEventsAcrossEndpoints`, `GetFailedEventHistogram` | One query per endpoint container, merged by `FailedEventPageCursor` | One prefix query per endpoint against the same container. The cursor is unchanged. Collapsing them into one query is a follow-up (§13 item 7) |
+| `GetFailedEventsAcrossEndpoints`, `GetFailedEventHistogram` | One query per endpoint container, eight at a time, merged by `FailedEventPageCursor` | One query each through an `EndpointSetScope` (§5.3). The search orders by `updatedAtTicks` descending (§5.2) and pages with the query's own continuation token. The histogram reads `endpointId` from the rows and keeps its 50,000-row cap. `FailedEventPageCursor`, its merge and the per-endpoint fan-out are deleted (§13 item 7) |
 | `PurgeMessages(endpointId)` | Deletes the container | §5.5 |
 
 Continuation tokens issued before the cutover are invalid afterwards, so open UI pages reload
@@ -190,8 +220,8 @@ contract says today, and a rerun deletes whatever is left.
   full key; a prefix delete errors
   ([delete by partition key](https://learn.microsoft.com/azure/cosmos-db/how-to-delete-by-partition-key)).
   Here that would delete one row per call.
-- **Cost.** Each delete is charged like a write and draws on the shared budget. With
-  priority-based execution enabled, purge requests run at low priority (§13 item 6). The endpoint
+- **Cost.** Each delete is charged like a write and draws on the shared budget. Both purge entry
+  points run in the WebApp, so their requests run at low priority (§5.10). The endpoint
   page's purge stays unavailable in Production and Staging. Admin → Delete all events stays
   available to site Owners everywhere; its confirmation should now say that the operation takes
   time and consumes throughput in proportion to the endpoint's rows.
@@ -207,8 +237,8 @@ contract says today, and a rerun deletes whatever is left.
   §14 item 3 confirms a real deployment.
 - **CLI.** `nb topology apply` and `nb setup` stop provisioning Cosmos containers, and
   `EndpointContainerProvisioner` is deleted. The `--storage-provider` option of `nb topology apply`
-  existed only for that step. It is still accepted for one major, with a deprecation warning, and
-  then removed.
+  existed only for that step. It is still accepted through v5.x, with a deprecation warning, and
+  removed in v6.0.0.
 - **Runtime.** `CosmosDbClient` resolves `unresolvedevents` through `GetCachedContainerAsync`, like
   every other platform container. Lazy creation still serves key-authenticated development and the
   emulator. `GetEndpointContainer`, its reserved-id rejection and the `_removeEndpointContainerCache`
@@ -243,20 +273,55 @@ contract says today, and a rerun deletes whatever is left.
   as migrated.
 - Once migrated, legacy containers show as outside the platform, and the existing audited delete
   removes them. That is the cleanup path after a migration.
-- The WebApp's Cosmos DB Operator role exists for this page. When the legacy containers are gone,
-  orphaned endpoint containers can no longer appear. Retiring the page and the role is §13 item 5.
+- The WebApp's managed identity holds the Azure Cosmos DB Operator role on `MessageDatabase` only
+  for this page. The `CosmosAccountResourceId` setting, which selects `ArmCosmosContainerAdmin`,
+  exists for the same reason. When the legacy containers are gone, orphaned endpoint containers
+  can no longer appear.
+- **Retirement (§13 item 5).** A later 5.x minor removes the page, its
+  `/api/admin/storage/cosmos/containers` endpoint, the role assignment and the setting from the
+  Bicep. Its release notes list the removed page under Compatibility. The public
+  `ICosmosContainerAdmin` and `CosmosContainerAdmin` in `NimBus.MessageStore.CosmosDb` become
+  `[Obsolete]` in that minor and are deleted in v6.0.0 ([versioning](../../versioning.md)).
+  Deployments don't delete role assignments that the template stops declaring, so operators remove
+  the existing one themselves. Legacy containers left after that are deleted in the Azure portal or
+  with `az cosmosdb sql container delete`.
 
 ### 5.9 Public API and configuration
 
 - `CosmosContainerDefaults` (public) gains `TrackingContainerId`, `TrackingPartitionKeyPaths` and
   `TrackingContainer()`.
 - `EndpointPartitionKeyPath`, `EndpointContainer(string)` and `EnsureNotReservedEndpointId(string)`
-  become `[Obsolete]`, with their current behaviour as the bridge, and are removed in the following
-  major ([versioning](../../versioning.md)). `EndpointContainerDefaultTimeToLive` keeps its value
+  become `[Obsolete]`, with their current behaviour as the bridge, and are removed in v6.0.0
+  ([versioning](../../versioning.md)). `EndpointContainerDefaultTimeToLive` keeps its value
   and also serves the tracking container.
 - The migration logic is a public, documented type in `NimBus.MessageStore.CosmosDb` (§6.1).
-- Unchanged: `IMessageTrackingStore` and every other storage contract, `api-spec.yaml`, the
-  configuration keys and `CosmosDbMessageStoreOptions`.
+- `CosmosDbMessageStoreOptions` gains `RequestPriority` (`PriorityLevel?`). When it is unset, the
+  account default applies, which is High. The store copies it into
+  `CosmosClientOptions.PriorityLevel` when it creates its client, and the WebApp sets it to `Low`
+  (§5.10). It binds from `NimBus:Cosmos` like the other options.
+- Unchanged: `IMessageTrackingStore` and every other storage contract, `api-spec.yaml` and the
+  existing configuration keys.
+
+### 5.10 Priority-based execution
+
+Decided in §13 item 6. It softens the noisy-neighbour loss (§7.2).
+
+- **Account.** `cosmosDB.bicep` sets `enablePriorityBasedExecution: true` on the account and leaves
+  `defaultPriorityLevel` at High, so `nb infra apply` turns the feature on. The GA ARM API versions
+  carry both properties from `2025-10-15`
+  ([change log](https://learn.microsoft.com/azure/templates/microsoft.documentdb/change-log/databaseaccounts)),
+  so the account resource moves there from `2022-05-15`. §14 item 8 checks that move.
+- **Who runs low.** The WebApp's client sets `RequestPriority = Low` (§5.9), so its page reads,
+  both purges and its other requests yield to the Resolver. `nb container migrate` creates its
+  client at low priority too. The Resolver sets nothing and runs at High.
+- **Scope.** The setting covers every container in the account, so WebApp reads of `messages` and
+  `audits` also yield to Resolver traffic.
+- **Limits.** The feature is best effort, with no SLA. Under load, Cosmos throttles low-priority
+  requests first and the SDK retries them, so WebApp pages can slow down during Resolver bursts. It
+  isn't supported on serverless accounts and is unpredictable on shared database throughput; NimBus
+  uses neither. Once it is on, Data Explorer runs at low priority by default
+  ([priority-based execution](https://learn.microsoft.com/azure/cosmos-db/priority-based-execution)).
+  The ARM reference still describes the account property as a preview feature.
 
 ## 6. Migration
 
@@ -281,6 +346,7 @@ The command takes the same connection options as the other `nb container` comman
 3. **Copy.** For each container it streams `SELECT * FROM c` and transforms each row:
    - drops the system properties (`_rid`, `_self`, `_etag`, `_attachments`, `_ts`);
    - sets `endpointId` to the container id;
+   - sets `updatedAtTicks` from `event.UpdatedAt` (§5.2);
    - converts a positive `ttl` into the remaining lifetime, `ttl - (now - _ts)`, and skips rows
      whose TTL has already elapsed but which Cosmos hasn't deleted yet. It keeps `-1` and a missing
      `ttl` as they are;
@@ -308,15 +374,16 @@ Implementation notes:
 ### 6.2 Cutover runbook
 
 1. Read the release notes. Confirm that no endpoint is named `unresolvedevents`.
-2. Upgrade `nb` and run `nb infra apply`. It creates `unresolvedevents` and leaves the existing
-   containers alone. The old apps keep running.
+2. Upgrade `nb` and run `nb infra apply`. It creates `unresolvedevents`, turns on priority-based
+   execution (§5.10) and leaves the existing containers alone. The old apps keep running.
 3. Stop the Resolver Function App and the WebApp. Service Bus holds Resolver-bound messages in the
    Resolver subscription, within the message TTL. Adapters keep processing their own subscriptions.
 4. Run `nb container migrate --dry-run`, then `nb container migrate`.
 5. Deploy the new version with `nb deploy apps` and start both apps. The Resolver drains its
    backlog.
 6. Compare the Monitor counts with the migration report.
-7. After a soak period, delete the legacy containers from Admin → Storage containers.
+7. After a soak period, delete the legacy containers from Admin → Storage containers. Once a later
+   5.x minor retires that page (§5.8), delete them in the Azure portal instead.
 
 External readers of endpoint containers must switch to `unresolvedevents` and filter on
 `endpointId`. That includes change-feed consumers, saved Data Explorer queries and ops tools such
@@ -333,10 +400,11 @@ as the Cosmos repair tool Spec 032 used as its reference implementation.
 
 Downtime ≈ rows ÷ (available RU/s ÷ RU per create). Worked example (every input is an assumption
 until Phase 0 measures it): 1,000,000 rows at about 10 RU per create, with the autoscale max raised
-to 10,000 RU/s for the run, is about 1,000 creates per second, or roughly 17 minutes. Most rows in
-a busy deployment are terminal (Completed or Skipped, 30-day TTL). §13 item 4 offers a shorter
-outage: copy only non-terminal rows during the outage and backfill terminal rows after the start.
-Because the backfill only creates, rows the Resolver has written since always win.
+to 10,000 RU/s for the run, is about 1,000 creates per second, or roughly 17 minutes. The
+migration copies every row during the outage, terminal ones included (§13 item 4). Most rows in a
+busy deployment are terminal (Completed or Skipped, 30-day TTL), so they set most of the copy time,
+and the autoscale max is the lever that shortens it. The command's low priority (§5.10) doesn't
+slow the copy: with both apps stopped, nothing competes with it.
 
 ## 7. Evaluation
 
@@ -376,8 +444,9 @@ throughput and $0.012 for autoscale
 - **Pooled capacity.** Idle endpoints' capacity is available to busy ones, and autoscale absorbs
   bursts. Today a busy endpoint throttles at its own 400 RU/s even when every other endpoint is
   idle.
-- **Cross-endpoint queries.** They hit one container instead of N, so the per-container overhead
-  goes away. Collapsing them into a single query is a follow-up.
+- **Cross-endpoint queries.** Each is one query against one container instead of N queries merged
+  in memory (§5.4), so the per-container overhead goes away. Its RU cost is part of the Phase 0
+  comparison (§14 item 5).
 
 **Neutral, pending measurement:**
 
@@ -394,7 +463,7 @@ throughput and $0.012 for autoscale
   path behind the Spec 030 incident. Spec 030's guard makes the stale copies harmless, but every
   endpoint is delayed. Mitigations:
   - autoscale;
-  - priority-based execution, with WebApp reads, purge and migration at low priority (§13 item 6);
+  - priority-based execution, with the WebApp, purges and the migration at low priority (§5.10);
   - Spec 031's capacity controls. Spec 031's capacity visibility also gets simpler: one container's
     metrics instead of N.
 - **Hot-endpoint ceiling.** With tens of endpoints, the first key level has low cardinality. One
@@ -436,13 +505,18 @@ throughput and $0.012 for autoscale
 - `GetEndpointContainer`, the reserved-endpoint-id checks at five call sites and the
   container-cache eviction on purge;
 - the per-container TTL mode juggling;
+- `FailedEventPageCursor`, its tests and the per-endpoint fan-out of the failed search;
 - two operator procedures in `docs/storage-providers.md`: turning on TTL for old endpoint containers,
-  and backfilling each container.
+  and backfilling each container;
+- in a later 5.x minor, Admin → Storage containers and the WebApp's control-plane Cosmos role
+  (§5.8).
 
 **Added:**
 
 - one Bicep resource;
-- `EndpointScope`;
+- `EndpointScope` and `EndpointSetScope`;
+- the stamped `updatedAtTicks` (§5.2);
+- the account's `enablePriorityBasedExecution` in Bicep and the `RequestPriority` option (§5.10);
 - the migration command, kept at least one major so late upgraders can migrate;
 - tests.
 
@@ -472,17 +546,23 @@ throughput and $0.012 for autoscale
 **Unit, in `tests/NimBus.MessageStore.CosmosDb.Tests`, extending `RecordingCosmosAdapters`:**
 
 - Every point operation passes the key `(endpointId, id)`.
-- Every query the tracking store issues carries `c.endpointId = @…` bound to the scope's endpoint.
-  LINQ queries are checked through `ToQueryDefinition()`. No query uses `STARTSWITH` on
-  `endpointId`.
+- Every query the tracking store issues carries `c.endpointId = @…` bound to the scope's endpoint,
+  except the failed search and histogram. Those carry the set filter bound to exactly the requested
+  endpoint ids. LINQ queries are checked through `ToQueryDefinition()`. No query uses `STARTSWITH`
+  on `endpointId`.
 - Written rows carry `endpointId` equal to the argument, even when `UnresolvedEvent.EndpointId`
-  differs.
+  differs, and `updatedAtTicks` equal to `event.UpdatedAt`.
+- The failed search orders by `updatedAtTicks` and is one query per page.
+  `FailedEventPageCursorTests` goes with the cursor.
+- The store's client takes `RequestPriority` as `CosmosClientOptions.PriorityLevel`, and the
+  WebApp's registration sets `Low`.
 - Purge pages ids by endpoint and deletes each with the full key. This replaces the
   container-delete expectation in `CosmosDbClientPurgeTests`.
 - The client creates `unresolvedevents` with the `MultiHash` paths and TTL on. This replaces
   `CosmosDbEndpointContainerTtlTests`.
 - `CosmosBicepContainerSyncTests` parses hierarchical keys and checks `unresolvedevents` against
   its expected path list (§5.6).
+- A template test checks that `cosmosDB.bicep` sets `enablePriorityBasedExecution: true` (§5.10).
 
 **Conformance, for every provider, in `src/NimBus.Testing/Conformance/MessageTrackingStoreConformanceTests.cs`.**
 New cross-endpoint isolation tests write the same `eventId` and `sessionId` to endpoints `A` and
@@ -494,14 +574,16 @@ New cross-endpoint isolation tests write the same `eventId` and `sessionId` to e
 - counts, paging, blocked and invalid lists stay per endpoint;
 - the failed search returns only the requested endpoints.
 
-No existing test covers this.
+No existing test covers this. The existing
+`GetFailedEventsAcrossEndpoints_pages_every_row_exactly_once_newest_first` already pins the single
+query's order: every row once, newest first by ticks.
 
 **Migration, against the emulator, in the Cosmos test project.** Seed two legacy containers with
 unresolved rows, terminal rows carrying a TTL, soft-deleted rows, rows with `ttl: -1` and rows
 without `ttl`. Migrate, then assert:
 
 - the counts;
-- the stamped `endpointId`;
+- the stamped `endpointId` and `updatedAtTicks`;
 - the remaining TTLs;
 - an idempotent rerun;
 - refusal while a writer is active;
@@ -509,7 +591,7 @@ without `ttl`. Migrate, then assert:
 
 **CLI (`tests/NimBus.CommandLine.Tests`):** `EndpointContainerProvisionerTests` goes;
 `nb topology apply` no longer calls `az cosmosdb sql container create`; `nb container migrate`
-parses its options.
+parses its options and creates its client at low priority.
 
 **WebApp (`tests/NimBus.WebApp.Tests/AdminCosmosContainerTests.cs`):** `unresolvedevents` is
 protected, and legacy endpoint containers stay protected until the marker lists them.
@@ -526,9 +608,15 @@ rehearsal on a production-sized copy.
 | Phase | Content | Exit |
 |---|---|---|
 | 0 | Prove the platform. Nothing ships | Every item in §14 answered, with results added to this folder |
-| 1 | Store, Bicep, CLI, WebApp, migration command, tests, docs | Release build green; Cosmos and SQL conformance run without skips |
+| 1 | v5.0.0: store, Bicep, CLI, WebApp, migration command, priority-based execution, the single-query failed search, tests, docs | Release build green; Cosmos and SQL conformance run without skips |
 | 2 | Rehearse, then migrate each Cosmos deployment; delete legacy containers after the soak | Migration reports reconciled; no unmigrated legacy containers left |
-| 3 | The following major: remove the obsolete `CosmosContainerDefaults` members and `--storage-provider` on `nb topology apply` | — |
+| 3 | A later 5.x minor: retire Admin → Storage containers, its endpoint, the WebApp's Cosmos DB Operator role assignment and `CosmosAccountResourceId`; mark `ICosmosContainerAdmin` and `CosmosContainerAdmin` `[Obsolete]` (§5.8) | — |
+| 4 | v6.0.0: remove the obsolete `CosmosContainerDefaults` members, `ICosmosContainerAdmin`, `CosmosContainerAdmin` and `--storage-provider` on `nb topology apply` | — |
+
+**Sequencing.** v4.0.0 was tagged on 2026-09-28 at `0acf1778`, so Phase 1 here can merge to master
+without shipping in v4 (§13 item 1). Once it merges, master is v5.0.0-bound. Releases are tagged
+on master ([versioning](../../versioning.md)), so any 4.x release after that point needs a
+maintenance branch.
 
 ## 10. Documentation
 
@@ -537,18 +625,20 @@ rehearsal on a production-sized copy.
 - `docs/storage-providers.md`: the Cosmos layout, purge semantics, and a replacement for the
   per-container TTL sections.
 - `docs/azure-requirements.md`: the container list; drop "per-endpoint containers are created at
-  runtime".
+  runtime"; say that `nb infra apply` turns on priority-based execution.
+- In the 5.x minor that retires Admin → Storage containers: drop the Cosmos DB Operator grant from
+  `docs/azure-requirements.md` and `docs/deployment.md`.
 - `docs/cli.md`: `container migrate`, the note on `container copy`, and the `topology apply`
   deprecation.
 - Other ADR-008 references: `docs/adr/002-centralized-resolver.md`,
   `docs/adr/010-pluggable-message-storage.md`, and the two CrmErpDemo adapter `docs/TDD.md` files.
-- Release notes: an ⚠️ Breaking entry that links the runbook (§6.2).
+- v5.0.0 release notes: an ⚠️ Breaking entry that links the runbook (§6.2).
 
 ## 11. Residual risks
 
 1. **Noisy neighbour** (§7.2). Mitigated, not removed. The sharpest case is Admin → Delete all
    events on a large endpoint in production, which competes with the Resolver until it finishes
-   (§5.5).
+   (§5.5). Low priority (§5.10) helps on a best-effort basis, with no SLA.
 2. **Isolation bypass.** A future query that reaches the container without `EndpointScope` would
    bypass isolation. The structure and the recorded-query test make that visible in review.
 3. **Emulator maturity.** Its hierarchical-key support is recent, so CI may fail spuriously or pass
@@ -568,29 +658,35 @@ rehearsal on a production-sized copy.
 | One container, partition key `/id` with the endpoint folded into the row id | Rejected. Changes ids that the API and UI expose, and every endpoint query fans out to all physical partitions |
 | One container, three levels: `/endpointId`, `/sessionId`, `/id` | Rejected. `GetEventById` and `GetEventsByIds` receive only the composite row id, and an event id may contain `_`, so the session can't be recovered reliably. Sessions can be null. No routing gain while an endpoint fits in one physical partition |
 | Purge with delete by partition key | Rejected. Preview, needs an account capability, and supports only full keys on hierarchical containers |
-| Opt-in dual layout in a 4.x minor, default in the next major | Viable, but it runs two layouts and two conformance passes for a release cycle. §13 item 2 |
+| Opt-in dual layout in a 4.x minor, default in the next major | Rejected (§13 item 2). It runs two layouts and two conformance passes for a release cycle |
+| Copy only non-terminal rows during the outage; backfill terminal rows after the start | Rejected (§13 item 4). A shorter outage, but a second copy pass runs alongside the live Resolver. Copying everything during the outage is simpler |
+| Keep the per-endpoint merge for the failed search, one prefix query per endpoint | Rejected (§13 item 7). One query does the same work, and its continuation token replaces `FailedEventPageCursor` |
 | Zero-downtime migration through the change feed | Rejected. Much more machinery to save a planned outage of minutes |
 | Azure container copy jobs for the migration | Rejected. Copy jobs copy documents unchanged, and the rows need a new top-level `endpointId` |
 
-## 13. Open decisions for the repo owner
+## 13. Decisions
 
-1. **Release vehicle.** v4.0.0 is untagged and held for Spec 035 Phase 1. Landing this on master
-   before the tag makes it part of v4.0.0; otherwise it is v5.0.0. Recommendation: don't hold v4.0.0
-   for it.
-2. **Migration style.** A one-shot migration in a major (recommended; simplest code) or an opt-in
-   dual layout (§12).
-3. **Default autoscale max** for `unresolvedevents`: 4,000 RU/s proposed, so a deployment with up to
-   ten endpoints keeps at least its current total tracking capacity. Phase 0 confirms it.
-4. **Outage length.** Copy everything during the outage (simplest), or only non-terminal rows and
-   backfill the rest after the start (shorter outage).
-5. **Storage containers page.** Retire the Admin → Storage containers page and the WebApp's Cosmos DB
-   Operator role in a later major, once legacy containers are gone.
-6. **Priority-based execution.** Enable it on the account, with WebApp reads, purge and migration at
-   low priority. It is a best-effort feature with no SLA
-   ([priority-based execution](https://learn.microsoft.com/azure/cosmos-db/priority-based-execution)).
-7. **Failed search.** Collapse the cross-endpoint failed search into one
-   `ARRAY_CONTAINS(@endpoints, c.endpointId)` query and retire the per-endpoint merge in
-   `FailedEventPageCursor`.
+The repo owner decided these on 2026-09-28. The first draft listed them as open.
+
+1. **Release vehicle: v5.0.0.** v4.0.0 didn't wait for this spec; it was tagged on 2026-09-28
+   (§9).
+2. **Migration style: one-shot.** Existing deployments migrate once, offline, in v5.0.0 (§6). The
+   opt-in dual layout is rejected (§12).
+3. **Default autoscale max: 4,000 RU/s** for `unresolvedevents`, so a deployment with up to ten
+   endpoints keeps at least its current total tracking capacity (§5.1, §7.1). The Bicep parameter
+   still lets a deployment choose another max.
+4. **Outage: copy everything.** The migration copies every row during the outage, terminal rows
+   included (§6.4). The shorter variant that backfills terminal rows after the start is rejected
+   (§12).
+5. **Storage containers page: retire it in a later 5.x minor**, together with the WebApp's Cosmos DB
+   Operator role assignment, which exists only for this page. The public container-admin types go
+   through the obsolete cycle and are deleted in v6.0.0 (§5.8).
+6. **Priority-based execution: on.** The account turns it on; the WebApp, purges and the migration
+   run at low priority. It is best effort, with no SLA (§5.10).
+7. **Failed search: one query.** The cross-endpoint failed search and its histogram each become one
+   `ARRAY_CONTAINS(@endpointIds, c.endpointId)` query, and `FailedEventPageCursor` goes (§5.3,
+   §5.4). The search orders by the stamped `updatedAtTicks`, because the string order of
+   `event.UpdatedAt` isn't chronological within a second (§5.2).
 
 ## 14. Facts to verify before implementing (Phase 0)
 
@@ -601,7 +697,9 @@ rehearsal on a production-sized copy.
    - read, create, upsert, `IfMatch` replace, patch and delete with the full key;
    - `ReadManyItemsAsync` with full keys;
    - SQL and LINQ queries with the endpoint predicate, including `GROUP BY`, `ORDER BY`,
-     `OFFSET`/`LIMIT`, `TOP`, `ARRAY_CONTAINS`, `STARTSWITH(…, true)` and continuation tokens.
+     `OFFSET`/`LIMIT`, `TOP`, `ARRAY_CONTAINS`, `STARTSWITH(…, true)` and continuation tokens;
+   - the set query of §5.3 ordered by `updatedAtTicks`, paged across endpoints;
+   - requests that carry a priority level (§5.10).
 
    Issue [#346](https://github.com/Azure/azure-cosmos-db-emulator-docker/issues/346) (hierarchical
    container creation failing, opened 2026-08-28) is closed, but it was reported against the Java
@@ -616,12 +714,19 @@ rehearsal on a production-sized copy.
    composite indexes:
    - operations: the guarded upsert path, a terminal upsert, a patch;
    - queries: `DownloadEndpointStateCount`, `DownloadEndpointStatePaging`, `GetEventsByFilter`, the
-     failed search, the session counts.
+     single failed-search query (with and without an index on `updatedAtTicks`), the session counts.
 
-   The results decide the indexing policy and the default throughput.
+   The results decide the indexing policy. They also check that the 4,000 RU/s default (§13 item 3)
+   carries today's load.
 6. **Today's purge.** Whether `PurgeMessages(endpointId)` fails on a managed-identity deployment.
    This affects only the claim in §2.2.
 7. **Quiet-check cost.** The RU cost of `SELECT VALUE MAX(c._ts)` on a large legacy container.
+8. **Priority-based execution** on a live account (§5.10):
+   - moving the account resource from API version `2022-05-15` to `2025-10-15` changes nothing
+     unintended (`az deployment group what-if` before the first apply), and the property turns the
+     feature on;
+   - whether the feature is still in preview, as the ARM reference's wording suggests;
+   - the account's metrics show the WebApp's requests at low priority and the Resolver's at high.
 
 ## 15. References
 
@@ -639,7 +744,13 @@ Microsoft documentation:
 - [Linux vNext emulator](https://learn.microsoft.com/azure/cosmos-db/emulator-linux): feature table;
   no .NET bulk. Also the
   [GA announcement](https://devblogs.microsoft.com/cosmosdb/announcing-general-availability-of-the-azure-cosmos-db-vnext-emulator/).
-- [Priority-based execution](https://learn.microsoft.com/azure/cosmos-db/priority-based-execution).
+- [Priority-based execution](https://learn.microsoft.com/azure/cosmos-db/priority-based-execution):
+  best effort, no SLA; requests default to high priority; enabled per account; not for serverless
+  accounts.
+- [Database account API change log](https://learn.microsoft.com/azure/templates/microsoft.documentdb/change-log/databaseaccounts):
+  `enablePriorityBasedExecution` and `defaultPriorityLevel` appear in `2025-05-01-preview` and stay
+  in the GA versions from `2025-10-15`
+  ([account ARM schema, 2025-10-15](https://learn.microsoft.com/azure/templates/microsoft.documentdb/2025-10-15/databaseaccounts)).
 - [Change capacity mode](https://learn.microsoft.com/azure/cosmos-db/how-to-change-capacity-mode):
   serverless to provisioned only.
 - [Data-plane role-based access](https://learn.microsoft.com/azure/cosmos-db/nosql/security/how-to-grant-data-plane-role-based-access):
@@ -652,10 +763,16 @@ Repo:
 - ADR-008, ADR-010, Spec 026 (roles), Spec 030 (stale-write guard), Spec 031 (capacity controls),
   Spec 032 (stale-pending repair), Spec 034 (private networking).
 - `src/NimBus.MessageStore.CosmosDb/` (`CosmosDbClient.cs`, `CosmosContainerDefaults.cs`,
-  `CosmosDbMessageTrackingStore.*.cs`).
-- `src/NimBus.CommandLine/EndpointContainerProvisioner.cs`.
+  `CosmosDbMessageTrackingStore.*.cs`, `FailedEventPageCursor.cs`,
+  `CosmosDbMessageStoreBuilderExtensions.cs`, `ICosmosContainerAdmin.cs`).
+- `src/NimBus.CommandLine/EndpointContainerProvisioner.cs`, `InfrastructureDeployer.cs`.
 - `deploy/bicep/templates/cosmosDB.bicep`.
 
 ## 16. Review trail
 
 - 2026-09-26: drafted from an investigation of the per-endpoint layout. Not yet reviewed.
+- 2026-09-28: the repo owner decided §13: v5.0.0, a one-shot migration, a 4,000 RU/s default, a
+  full copy during the outage, the Storage containers page retired in a later 5.x minor,
+  priority-based execution on, and one query for the failed search. The spec now designs items 5
+  to 7 (§5.2, §5.3, §5.4, §5.8, §5.10). It also adds the Phase 3 and 4 rows and the sequencing
+  note (§9), and §14 item 8.

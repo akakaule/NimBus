@@ -2,6 +2,7 @@
 
 ## Status
 Proposed (2026-09). Supersedes [ADR-008](008-per-endpoint-cosmos-containers.md) when accepted.
+Target release: v5.0.0. The repo owner settled the open questions on 2026-09-28 (Spec 036 §13).
 The design, migration and evaluation are in
 [Spec 036](../spec/036-cosmos-single-tracking-container/spec.md).
 
@@ -49,23 +50,32 @@ Options considered:
 ## Decision
 
 - **One container.** `unresolvedevents` holds every endpoint's tracking rows. Bicep declares it
-  with TTL on (`defaultTtl: -1`, item-level expiry, as before) and autoscale throughput. The name
-  matches the SQL Server table.
+  with TTL on (`defaultTtl: -1`, item-level expiry, as before) and autoscale throughput, with a
+  default max of 4,000 RU/s. The name matches the SQL Server table.
 - **Partition key.** The container uses the hierarchical key `/endpointId` then `/id`. Every row
   carries a top-level `endpointId`, which the store writes from the `endpointId` argument. Row ids
   (`{eventId}_{sessionId}`) are unchanged.
 - **Endpoint-scoped access.** The store reaches the container only through an endpoint-scoped
   accessor. The accessor builds the full key for point operations and adds `c.endpointId =
-  @endpointId` to every query. The predicate is equality, never a prefix match.
+  @endpointId` to every query. The predicate is equality, never a prefix match. The failed search
+  and its histogram read several endpoints in one query through a set form of the accessor,
+  `ARRAY_CONTAINS(@endpointIds, c.endpointId)`, ordered by a stamped `updatedAtTicks`. That
+  replaces the per-endpoint merge.
 - **Purge.** Purging an endpoint deletes its rows through a paged query and paced deletes. Delete by
   partition key is in preview and accepts only full keys on hierarchical containers.
 - **Provisioning.** `nb topology apply` and `nb setup` stop provisioning Cosmos containers.
   Endpoint ids no longer need to avoid container names.
-- **Migration.** Existing Cosmos deployments migrate once, offline, in a major release, with
-  `nb container migrate`. The command copies and verifies rows and never touches the legacy
-  containers, which stay in place for rollback until an operator deletes them.
+- **Priority.** The account turns on priority-based execution. The WebApp, purges and the migration
+  run at low priority, so the Resolver's writes go first when the shared budget runs short.
+- **Migration.** Existing Cosmos deployments migrate once, offline, in v5.0.0, with
+  `nb container migrate`. The command copies every row during the outage, verifies them and never
+  touches the legacy containers, which stay in place for rollback until an operator deletes them.
+- **Storage containers page.** Admin → Storage containers stays so operators can delete migrated
+  legacy containers. A later 5.x minor retires it, together with the WebApp's Cosmos DB Operator
+  role assignment.
 - **Out of scope.** The `messages` and `audits` containers, the other platform containers, the SQL
-  Server and in-memory providers, the storage contracts and the WebApp API are unchanged.
+  Server and in-memory providers and the storage contracts are unchanged. So is the WebApp API in
+  v5.0.0.
 
 ## Consequences
 
@@ -74,7 +84,10 @@ Options considered:
   the reserved-name rules go away.
 - Tracking throughput cost follows aggregate load. With 20 endpoints, a fixed ~$467 a month at the
   400 RU/s minimum becomes one autoscale container at ~$35 to ~$350 a month (US list prices).
-- Idle endpoints' capacity is available to busy ones, and cross-endpoint queries read one container.
+- Idle endpoints' capacity is available to busy ones, and the cross-endpoint failed search is one
+  query against one container.
+- Once the Storage containers page is retired, the WebApp no longer needs a control-plane Cosmos
+  role.
 - Endpoint-scoped queries stay routed to the endpoint's partitions as the container grows, and no
   endpoint can hit the 20 GB logical partition limit.
 - Purge works under data-plane RBAC.
@@ -83,8 +96,8 @@ Options considered:
 
 ### Negative
 - **Shared budget.** A burst on one endpoint, a large WebApp scan or a purge can throttle Resolver
-  writes for every endpoint. Mitigations: autoscale, paced purges, and optionally priority-based
-  execution.
+  writes for every endpoint. Mitigations: autoscale, paced purges, and priority-based execution
+  with the WebApp, purges and the migration at low priority, which is best effort with no SLA.
 - **Isolation in code.** Endpoint isolation depends on the scoped accessor. A unit test over every
   recorded query and cross-endpoint conformance tests guard it.
 - **Lost options.** It gives up per-endpoint data-plane role assignments and resource tokens (unused
@@ -95,6 +108,7 @@ Options considered:
   10,000 RU/s until its data splits. Before, the ceiling was its container's provisioned RU/s.
 - **Emulator dependence.** CI depends on the emulator's hierarchical-key support, which is recent.
   Spec 036 Phase 0 verifies it before any code lands.
-- **Migration outage.** Existing deployments take a planned outage for the migration.
+- **Migration outage.** Existing deployments take a planned outage while the migration copies
+  every row.
 - **Divergence from DIS.** Cosmos store changes from DIS, which keeps per-endpoint containers, no
   longer port mechanically.

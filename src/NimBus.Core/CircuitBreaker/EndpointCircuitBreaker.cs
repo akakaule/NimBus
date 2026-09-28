@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using NimBus.Core.Diagnostics;
 
 namespace NimBus.Core.CircuitBreaker;
@@ -175,7 +176,9 @@ public sealed class EndpointCircuitBreaker : IEndpointCircuitBreaker
         _openedAt = now;
         return TransitionLocked(
             CircuitState.Open,
-            $"Failure rate {failurePercentage:F1}% ({failures}/{_outcomes.Count}) reached the configured threshold.",
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Failure rate {failurePercentage:F1}% ({failures}/{_outcomes.Count}) reached the configured threshold."),
             now);
     }
 

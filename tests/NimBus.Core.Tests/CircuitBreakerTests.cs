@@ -10,6 +10,7 @@ using NimBus.Core.Messages.Exceptions;
 using NimBus.SDK.EventHandlers;
 using NimBus.Testing;
 using NimBus.Testing.Extensions;
+using System.Globalization;
 
 namespace NimBus.Core.Tests;
 
@@ -203,6 +204,33 @@ public sealed class CircuitBreakerTests
         breaker.RecordFailure(new TransientException("down"));
 
         Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
+    [TestMethod]
+    public void Open_reason_formats_the_failure_rate_independently_of_the_host_culture()
+    {
+        // The reason reaches operators through notifications and receiver logs; formatted
+        // with the host culture, a da-DK host reported "66,7%" where others report "66.7%".
+        var hostCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("da-DK");
+        try
+        {
+            var breaker = CreateBreaker(minimumThroughput: 3, failurePercentage: 50);
+            CircuitStateChange? opened = null;
+            breaker.StateChanged += change => opened = change;
+
+            breaker.RecordSuccess();
+            breaker.RecordFailure(new TransientException("down"));
+            breaker.RecordFailure(new TransientException("down"));
+
+            Assert.IsNotNull(opened);
+            Assert.AreEqual(CircuitState.Open, opened.To);
+            StringAssert.Contains(opened.Reason, "66.7%", StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = hostCulture;
+        }
     }
 
     private static EndpointCircuitBreaker CreateBreaker(

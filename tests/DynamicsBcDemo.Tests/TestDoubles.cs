@@ -12,6 +12,16 @@ internal sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     public override DateTimeOffset GetUtcNow() => now;
 }
 
+/// <summary>A clock the test moves forward.</summary>
+internal sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
+{
+    private DateTimeOffset _now = start;
+
+    public override DateTimeOffset GetUtcNow() => _now;
+
+    public void Advance(TimeSpan by) => _now += by;
+}
+
 /// <summary>BC number series without SQL sequences, starting where the SQL sequences start.</summary>
 internal sealed class InMemoryNumberSeries : INumberSeries
 {

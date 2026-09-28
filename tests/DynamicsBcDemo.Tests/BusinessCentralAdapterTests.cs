@@ -4,7 +4,9 @@ using System.Text;
 using BusinessCentral.Adapter.Clients;
 using BusinessCentral.Adapter.Resilience;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 
 namespace DynamicsBcDemo.Tests;
 
@@ -43,7 +45,7 @@ public sealed class BusinessCentralAdapterTests
     {
         var client = ClientReturning(HttpStatusCode.UnprocessableEntity, """{"error":{"code":"Application_SalespersonNotFound","message":"No salesperson with e-mail 'robin.hale@contososubsea.example'"}}""");
 
-        var ex = await Assert.ThrowsExactlyAsync<BcRequestRejectedException>(() => client.CreateQuoteRequestAsync(QuoteRequest(), CancellationToken.None));
+        var ex = await Assert.ThrowsExactlyAsync<BcRequestRejectedException>(() => client.UpsertCrmOpportunityAsync(Guid.NewGuid(), Opportunity(), CancellationToken.None));
 
         Assert.AreEqual(422, ex.StatusCode);
         Assert.AreEqual("Application_SalespersonNotFound", ex.ErrorCode);
@@ -62,13 +64,14 @@ public sealed class BusinessCentralAdapterTests
     }
 
     [TestMethod]
-    public async Task ProspectUpdate_MapsNotFoundAndConflict_ToOutcomesNotFailures()
+    [DataRow(HttpStatusCode.Created, ProspectUpsertResult.Created)]
+    [DataRow(HttpStatusCode.OK, ProspectUpsertResult.Updated)]
+    [DataRow(HttpStatusCode.Conflict, ProspectUpsertResult.OwnedByBusinessCentral)]
+    public async Task ProspectUpsert_MapsTheAnswer_ToAnOutcomeNotAFailure(HttpStatusCode status, ProspectUpsertResult expected)
     {
-        var unknown = await ClientReturning(HttpStatusCode.NotFound, "{}").UpdateProspectAsync(Guid.NewGuid(), ProspectPatch(), CancellationToken.None);
-        var owned = await ClientReturning(HttpStatusCode.Conflict, "{}").UpdateProspectAsync(Guid.NewGuid(), ProspectPatch(), CancellationToken.None);
+        var result = await ClientReturning(status, "{}").UpsertProspectAsync(Guid.NewGuid(), Prospect(), CancellationToken.None);
 
-        Assert.AreEqual(ProspectUpdateResult.NotInBusinessCentral, unknown);
-        Assert.AreEqual(ProspectUpdateResult.OwnedByBusinessCentral, owned);
+        Assert.AreEqual(expected, result);
     }
 
     [TestMethod]
@@ -78,10 +81,10 @@ public sealed class BusinessCentralAdapterTests
         var policies = new DefaultRetryPolicyProvider();
         BcResilience.ConfigureRetries(policies, options);
 
-        var throttled = policies.GetRetryPolicy("CreateBcSalesQuote", MatchedText(new BcThrottledException("GET … → 429 Too Many Requests.", null)));
-        var unavailable = policies.GetRetryPolicy("CreateBcSalesQuote", MatchedText(new BcUnavailableException("POST … → 503 Service Unavailable.")));
+        var throttled = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcThrottledException("PUT … → 429 Too Many Requests.", null)));
+        var unavailable = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcUnavailableException("PUT … → 503 Service Unavailable.")));
         // A rejection whose body happens to mention 429 and 503 must still not be retried.
-        var rejected = policies.GetRetryPolicy("CreateBcSalesQuote", MatchedText(new BcRequestRejectedException("POST … → 422. Body: limits 429/503 apply", 422, "Application_ItemBlocked")));
+        var rejected = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcRequestRejectedException("PUT … → 422. Body: limits 429/503 apply", 422, "Application_SalespersonNotFound")));
 
         Assert.IsNotNull(throttled);
         Assert.AreEqual(TimeSpan.FromSeconds(options.ThrottledBaseDelaySeconds), throttled.BaseDelay);
@@ -94,15 +97,36 @@ public sealed class BusinessCentralAdapterTests
     [TestMethod]
     public void UnavailableRetries_LandAfterTheDemoUpdateWindow()
     {
-        // Failed retries count as circuit-breaker successes, so the first outage retry must come
-        // after the demo's default 20 s update window; otherwise a probe could close the circuit
-        // while Business Central is still down.
+        // The first outage retry comes after the demo's default 20 s update window, so it succeeds and
+        // the scene ends on its own; a retry inside the window would fail again and count against the
+        // circuit breaker.
         var policies = new DefaultRetryPolicyProvider();
         BcResilience.ConfigureRetries(policies, new BcResilienceOptions());
 
-        var first = policies.GetRetryPolicy("CreateBcSalesQuote", MatchedText(new BcUnavailableException("503")))!.GetDelay(0);
+        var first = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcUnavailableException("503")))!.GetDelay(0);
 
         Assert.IsTrue(first > TimeSpan.FromSeconds(20), $"First retry after {first}.");
+    }
+
+    [TestMethod]
+    public void AnUpdateWindowBurst_OpensTheCircuit_EvenRightAfterABusyScene()
+    {
+        // Scene 6b follows scene 6a, so the adapter has just made several successful calls. During
+        // the window only one call per burst account fails — its opportunity waits behind it — so the
+        // sampling window must be short enough that the earlier successes don't dilute the outage.
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 9, 29, 10, 0, 0, TimeSpan.Zero));
+        var options = new CircuitBreakerOptions();
+        BcResilience.ConfigureCircuitBreaker(options, new BcResilienceOptions());
+        var breaker = new EndpointCircuitBreaker("BusinessCentralEndpoint", options, clock);
+
+        for (var i = 0; i < 7; i++)
+            breaker.RecordSuccess();
+        clock.Advance(TimeSpan.FromSeconds(15));
+        // What the circuit-breaker recorder sees: the handler's exception, wrapped by the pipeline.
+        for (var i = 0; i < 6; i++)
+            breaker.RecordFailure(new EventContextHandlerException(new BcUnavailableException("PUT … → 503 Service Unavailable.")));
+
+        Assert.AreEqual(CircuitState.Open, breaker.State);
     }
 
     /// <summary>The text NimBus matches retry rules against: "{inner} {wrapper}", stack traces included.</summary>
@@ -120,11 +144,10 @@ public sealed class BusinessCentralAdapterTests
             BaseAddress = new Uri("http://bc.test"),
         });
 
-    private static QuoteRequestBody QuoteRequest() => new(
-        Guid.NewGuid(), Guid.NewGuid(), "OPP-10016", "Launch and recovery system", 1, null,
-        new ProspectBody("Trey Research Vessels", null, null, "Seattle", null, "US", null, null),
-        null, "robin.hale@contososubsea.example", "EUR", [new QuoteRequestLineBody("LARS-AF5", 1, null)]);
+    private static CrmOpportunityBody Opportunity() => new(
+        "OPP-10029", "Connectors for offshore wind export cable", Guid.NewGuid(), "City Power & Light", null,
+        "robin.hale@contososubsea.example", 60000m, "EUR", null, "CONNECT", "Open");
 
-    private static ProspectPatchBody ProspectPatch() =>
-        new(new ProspectBody("Trey Research Vessels", null, null, "Seattle", null, "US", null, null), null);
+    private static ProspectUpsertBody Prospect() =>
+        new(new ProspectBody("City Power & Light", null, null, "Gothenburg", null, "SE", null, null), null);
 }

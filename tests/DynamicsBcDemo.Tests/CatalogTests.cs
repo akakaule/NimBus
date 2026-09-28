@@ -1,7 +1,9 @@
 #pragma warning disable CA1707, CA2007
+using System.Globalization;
 using System.Reflection;
 using CrmErpDemo.Contracts;
 using DynamicsBcDemo.Contracts;
+using DynamicsBcDemo.Contracts.BusinessCentral;
 using DynamicsBcDemo.Contracts.D365Sales;
 using DynamicsBcDemo.Contracts.Demo;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -14,7 +16,6 @@ namespace DynamicsBcDemo.Tests;
 public sealed class CatalogTests
 {
     private static readonly DynamicsBcPlatformConfiguration Platform = new();
-    private static readonly string[] BusinessCentralOnly = ["BusinessCentralEndpoint"];
 
     private static IEnumerable<Type> MessageTypes() =>
         Platform.EventTypes.Select(t => t.GetEventClassType()).OfType<Type>();
@@ -28,16 +29,34 @@ public sealed class CatalogTests
     }
 
     [TestMethod]
-    public void CreateBcSalesQuote_IsACommandConsumedOnlyByBusinessCentral()
+    [DataRow(nameof(D365ProspectUpdated), "BusinessCentralEndpoint")]
+    [DataRow(nameof(D365OpportunityUpdated), "BusinessCentralEndpoint")]
+    [DataRow(nameof(D365CreditCheckRequested), "BusinessCentralEndpoint")]
+    [DataRow(nameof(BcCustomerCreated), "D365SalesEndpoint")]
+    [DataRow(nameof(BcCustomerUpdated), "D365SalesEndpoint")]
+    [DataRow(nameof(BcContactUpdated), "D365SalesEndpoint")]
+    [DataRow(nameof(BcItemCategoryUpdated), "D365SalesEndpoint")]
+    [DataRow(nameof(BcSalesQuoteCreated), "D365SalesEndpoint")]
+    [DataRow(nameof(BcSalesQuoteUpdated), "D365SalesEndpoint")]
+    public void EachFlow_ReachesTheOtherSystem(string eventTypeId, string consumer)
     {
-        var command = Platform.EventTypes.Single(t => t.Id == nameof(CreateBcSalesQuote));
+        var eventType = Platform.EventTypes.Single(t => t.Id == eventTypeId);
 
-        Assert.IsTrue(typeof(Command).IsAssignableFrom(command.GetEventClassType()));
-        CollectionAssert.AreEqual(BusinessCentralOnly, Platform.GetConsumers(command).Select(e => e.Id).ToList());
+        CollectionAssert.AreEqual(new[] { consumer }, Platform.GetConsumers(eventType).Select(e => e.Id).ToArray());
     }
 
     [TestMethod]
-    public void EveryEventAndCommand_IsOrderedPerCrmAccount_ExceptTheCreditCheckRequest()
+    public void Catalog_HasNoQuoteRequestAndNoOrderMessages()
+    {
+        // Quotes are made in Business Central, and order history stays there.
+        var ids = Platform.EventTypes.Select(t => t.Id).ToList();
+
+        Assert.AreEqual(9, ids.Count, string.Join(", ", ids));
+        Assert.IsFalse(MessageTypes().Any(t => typeof(Command).IsAssignableFrom(t)), "CRM no longer commands Business Central to quote.");
+    }
+
+    [TestMethod]
+    public void EveryMessage_IsOrderedPerCrmAccount_ExceptTheCreditCheckAndProductGroups()
     {
         foreach (var type in MessageTypes())
         {
@@ -46,6 +65,10 @@ public sealed class CatalogTests
             {
                 // A read-only request must never block the customer's session.
                 Assert.IsNull(sessionKey, $"{type.Name} must not share the customer's session.");
+            }
+            else if (type == typeof(BcItemCategoryUpdated))
+            {
+                Assert.AreEqual(nameof(BcItemCategoryUpdated.Code), sessionKey?.PropertyName, "A product group belongs to no account; it is ordered per category.");
             }
             else
             {
@@ -62,13 +85,7 @@ public sealed class CatalogTests
         {
             var prefix = endpoint.Id == "D365SalesEndpoint" ? "D365" : "Bc";
             foreach (var produced in endpoint.EventTypesProduced)
-            {
-                var type = produced.GetEventClassType()!;
-                if (typeof(Command).IsAssignableFrom(type))
-                    continue; // Commands are named imperatively after their target (CreateBcSalesQuote).
-
                 StringAssert.StartsWith(produced.Id, prefix, $"{produced.Id} is produced by {endpoint.Id}.");
-            }
         }
     }
 
@@ -100,27 +117,34 @@ public sealed class CatalogTests
     [TestMethod]
     public void SeedData_IsConsistentAcrossBothSystems()
     {
-        var itemNumbers = SeedData.Items.Select(i => i.Number).ToHashSet();
         var accountIds = SeedData.Accounts.Select(a => a.AccountId).ToHashSet();
-        var sellerIds = SeedData.Sellers.Select(s => s.SystemUserId).ToHashSet();
+        var categoryCodes = SeedData.ItemCategories.Select(c => c.Code).ToHashSet();
 
-        Assert.AreEqual(1, SeedData.Sellers.Count(s => s.BcSalespersonCode is null), "Exactly one seller is deliberately missing in BC (scene 7a).");
+        Assert.AreEqual(1, SeedData.Sellers.Count(s => s.BcSalespersonCode is null), "Exactly one seller is deliberately missing in BC (scene 6a).");
         Assert.AreEqual(SeedData.Sellers.Count(s => s.BcSalespersonCode is not null), SeedData.Sellers.Select(s => s.BcSalespersonCode).OfType<string>().Distinct().Count());
+        Assert.IsTrue(SeedData.Items.All(i => categoryCodes.Contains(i.CategoryCode)), "Every item belongs to a product group.");
 
         foreach (var opportunity in SeedData.Opportunities)
         {
-            Assert.IsTrue(accountIds.Contains(opportunity.AccountId), opportunity.Number);
-            Assert.IsTrue(sellerIds.Contains(opportunity.OwnerId), opportunity.Number);
-            Assert.IsTrue(opportunity.Lines.All(l => itemNumbers.Contains(l.ItemNumber)), opportunity.Number);
-            if (opportunity.Quote is not null)
-            {
-                var account = SeedData.Accounts.Single(a => a.AccountId == opportunity.AccountId);
-                Assert.IsNotNull(account.BcCustomer, $"The seeded quote {opportunity.Quote.Number} must belong to a BC customer.");
-            }
+            var account = SeedData.Accounts.Single(a => a.AccountId == opportunity.AccountId);
+            Assert.IsTrue(account.InCrm, $"{opportunity.Number} belongs to an account CRM holds.");
+            var owner = SeedData.Sellers.Single(s => s.SystemUserId == opportunity.OwnerId);
+            Assert.IsNotNull(owner.BcSalespersonCode, $"{opportunity.Number} is in BC too, so its seller must be a BC salesperson.");
         }
+
+        var bcQuoteAccount = SeedData.Accounts.Single(a => a.AccountId == SeedData.LitwareFrameworkQuote.AccountId);
+        Assert.IsNotNull(bcQuoteAccount.BcCustomer, "The BC-only quote belongs to a BC customer.");
+
+        // Seeded BC contacts must never collide with the numbers BC's Contact series hands out (from CT000101).
+        var contactNumbers = SeedData.Accounts
+            .SelectMany(a => a.OtherContacts.Prepend(a.PrimaryContact).Select(p => p.BcContactNumber).Append(a.BcCompanyContactNumber))
+            .ToList();
+        Assert.AreEqual(contactNumbers.Count, contactNumbers.Distinct().Count(), string.Join(", ", contactNumbers));
+        Assert.IsTrue(contactNumbers.All(n => int.Parse(n[2..], CultureInfo.InvariantCulture) < 101), string.Join(", ", contactNumbers));
 
         var qualifiedAccounts = SeedData.Leads.Select(l => l.QualifiedAccountId).ToList();
         Assert.AreEqual(qualifiedAccounts.Count, qualifiedAccounts.Distinct().Count());
         Assert.IsFalse(qualifiedAccounts.Any(accountIds.Contains), "A lead must qualify into a new account.");
+        Assert.AreEqual(SeedData.RobinHale.SystemUserId, SeedData.CityPower.OwnerId, "Scene 6a qualifies the lead of the seller who is missing in BC.");
     }
 }

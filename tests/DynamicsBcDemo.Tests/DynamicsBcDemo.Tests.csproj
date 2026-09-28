@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\samples\DynamicsBcDemo\BusinessCentral.Api\BusinessCentral.Api.csproj" />
     <ProjectReference Include="..\..\samples\DynamicsBcDemo\BusinessCentral.Adapter\BusinessCentral.Adapter.csproj" />
     <ProjectReference Include="..\..\samples\DynamicsBcDemo\D365Sales.Api\D365Sales.Api.csproj" />
+    <ProjectReference Include="..\..\samples\DynamicsBcDemo\D365Sales.Adapter\D365Sales.Adapter.csproj" />
     <!-- Other catalogs that may share a Service Bus namespace with this sample: EventTypeIds are
          global to a namespace, so the tests check that none collide. -->
     <ProjectReference Include="..\..\samples\CrmErpDemo\CrmErpDemo.Contracts\CrmErpDemo.Contracts.csproj" />

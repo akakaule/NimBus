@@ -6,8 +6,8 @@ export type Guid = string;
 
 export type TimelineSource = 'User' | 'Integration' | 'System';
 
-/** cs_bcquotestatus: CRM's "Requested", then Business Central's own quote status. */
-export type BcQuoteStatus = 'Requested' | 'Draft' | 'Sent' | 'Accepted' | 'Expired';
+/** cs_bcquotestatus: the status of the Business Central quote linked to the opportunity. */
+export type BcQuoteStatus = 'Draft' | 'Sent' | 'Accepted' | 'Expired';
 
 export interface SystemUser {
   systemUserId: Guid;
@@ -15,12 +15,13 @@ export interface SystemUser {
   internalEmailAddress: string;
 }
 
-export interface Product {
-  productId: Guid;
-  productNumber: string;
+/** cs_productgroup: a product group, mirrored from a Business Central item category. */
+export interface ProductGroup {
+  productGroupId: Guid;
+  /** The item category code, e.g. WINCH. */
+  csCode: string;
   name: string;
-  price: number;
-  defaultUnit: string;
+  lastSyncedOn: string;
 }
 
 export interface Account {
@@ -42,6 +43,7 @@ export interface Account {
   ownerId: Guid;
   primaryContactId: Guid | null;
   csBcCustomerId: Guid | null;
+  /** The Business Central prospect contact number, for a prospect Business Central knows. */
   csBcContactNumber: string | null;
   csBcBlocked: string | null;
   csBcBalanceDue: number | null;
@@ -88,17 +90,6 @@ export interface Lead {
   qualifiedOpportunityNumber: string | null;
 }
 
-export interface OpportunityLine {
-  opportunityProductId: Guid;
-  opportunityId: Guid;
-  sequence: number;
-  productNumber: string;
-  description: string;
-  quantity: number;
-  pricePerUnit: number;
-  extendedAmount: number;
-}
-
 export interface Opportunity {
   opportunityId: Guid;
   /** cs_number, e.g. OPP-10025. */
@@ -107,6 +98,7 @@ export interface Opportunity {
   /** The account. */
   customerId: Guid;
   parentContactId: Guid | null;
+  /** The seller's estimate. */
   estimatedValue: number | null;
   estimatedCloseDate: string | null;
   closeProbability: number;
@@ -117,16 +109,14 @@ export interface Opportunity {
   actualValue: number | null;
   actualCloseDate: string | null;
   ownerId: Guid;
+  /** The product group (a Business Central item category). */
+  csProductGroupId: Guid | null;
+  /** The latest Business Central quote linked to the opportunity. */
   csBcQuoteId: Guid | null;
   csBcQuoteNumber: string | null;
   csBcQuoteStatus: BcQuoteStatus | null;
-  csBcOrderNumber: string | null;
-  csLinesRevision: number;
-  csQuoteRequestRevision: number;
-  csQuoteRequestedOn: string | null;
   createdOn: string;
   modifiedOn: string;
-  lines: OpportunityLine[];
 }
 
 /** A read-only mirror of a Business Central sales quote. */
@@ -196,12 +186,15 @@ export interface OpportunityRow {
   opportunity: Opportunity;
   account: string | null;
   owner: string | null;
+  /** The product group's name. */
+  productGroup: string | null;
 }
 
 export interface OpportunityDetail {
   opportunity: Opportunity;
   account: Account | null;
   owner: SystemUser | null;
+  productGroup: ProductGroup | null;
   bcQuotes: BcQuote[];
   timeline: TimelineEntry[];
 }
@@ -229,24 +222,8 @@ export interface OpportunityEdit {
   estimatedCloseDate: string | null;
   closeProbability: number;
   stepName: string;
-}
-
-export interface OpportunityLineEdit {
-  productNumber: string;
-  quantity: number;
-}
-
-export interface SetLinesResult {
-  opportunityId: Guid;
-  csLinesRevision: number;
   estimatedValue: number | null;
-}
-
-export interface QuoteRequestResult {
-  messageId: string;
-  revision: number;
-  /** True when this lines revision was requested before: same MessageId, so BC's inbox skips it. */
-  repeat: boolean;
+  productGroupId: Guid | null;
 }
 
 export type CreditStatusValue = 'Ok' | 'NotFound' | 'Unavailable';
@@ -343,16 +320,19 @@ const id = (value: string) => encodeURIComponent(value);
 
 export const api = {
   users: (signal?: AbortSignal) => get<SystemUser[]>('/api/app/users', signal),
-  products: (signal?: AbortSignal) => get<Product[]>('/api/app/products', signal),
+  /** Empty until Business Central's initial sync has run. */
+  productGroups: (signal?: AbortSignal) => get<ProductGroup[]>('/api/app/productgroups', signal),
   dashboard: (signal?: AbortSignal) => get<Dashboard>('/api/app/dashboard', signal),
 
   leads: (signal?: AbortSignal) => get<LeadRow[]>('/api/app/leads', signal),
   lead: (leadId: Guid, signal?: AbortSignal) => get<LeadDetail>(`/api/app/leads/${id(leadId)}`, signal),
+  /** Creates the account, contact and opportunity, and sends the prospect and the opportunity to Business Central. */
   qualifyLead: (leadId: Guid, userId: Guid) =>
     send<QualifyResult>('POST', `/api/app/leads/${id(leadId)}/qualify`, { userId }),
 
   accounts: (signal?: AbortSignal) => get<AccountRow[]>('/api/app/accounts', signal),
   account: (accountId: Guid, signal?: AbortSignal) => get<AccountDetail>(`/api/app/accounts/${id(accountId)}`, signal),
+  /** Saves the account; while Dynamics 365 owns it, the prospect is also sent to Business Central. */
   updateAccount: (accountId: Guid, edit: AccountEdit) =>
     send<Account>('PUT', `/api/app/accounts/${id(accountId)}`, edit),
   checkCredit: (accountId: Guid, userId: Guid) =>
@@ -361,10 +341,7 @@ export const api = {
   opportunities: (signal?: AbortSignal) => get<OpportunityRow[]>('/api/app/opportunities', signal),
   opportunity: (opportunityId: Guid, signal?: AbortSignal) =>
     get<OpportunityDetail>(`/api/app/opportunities/${id(opportunityId)}`, signal),
+  /** Saves the opportunity and sends the change to Business Central. */
   updateOpportunity: (opportunityId: Guid, edit: OpportunityEdit) =>
     send<Opportunity>('PUT', `/api/app/opportunities/${id(opportunityId)}`, edit),
-  setLines: (opportunityId: Guid, lines: OpportunityLineEdit[]) =>
-    send<SetLinesResult>('PUT', `/api/app/opportunities/${id(opportunityId)}/lines`, { lines }),
-  requestQuote: (opportunityId: Guid, userId: Guid) =>
-    send<QuoteRequestResult>('POST', `/api/app/opportunities/${id(opportunityId)}/request-quote`, { userId }),
 };

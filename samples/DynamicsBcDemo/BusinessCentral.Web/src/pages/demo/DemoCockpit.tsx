@@ -1,7 +1,9 @@
 import { Button, Link, makeStyles, mergeClasses, tokens } from '@fluentui/react-components';
 import {
   Alert20Regular,
+  ArrowRepeatAll20Regular,
   Broom20Regular,
+  Flag20Regular,
   Open16Regular,
   PeopleTeam20Regular,
   PlugDisconnected20Regular,
@@ -18,6 +20,8 @@ import { chrome } from '../../theme';
 import { BurstPanel } from './BurstPanel';
 import { CircuitPanel } from './CircuitPanel';
 import { FaultControl } from './FaultControl';
+import { InitialSyncPanel } from './InitialSyncPanel';
+import { RedeliverPanel } from './RedeliverPanel';
 
 const useStyles = makeStyles({
   page: {
@@ -166,7 +170,7 @@ const openLinks = [
   { label: '#integration-alerts', hint: 'Teams channel (simulated)', href: '/demo/alerts' },
 ];
 
-/** Hidden presenter page (/demo): failure modes, circuit state, burst, alerts and links. */
+/** Hidden presenter page (/demo): go-live sync, failure modes, burst, redelivery, circuit state, alerts and links. */
 export default function DemoCockpit() {
   const styles = useStyles();
   useDocumentTitle('Demo cockpit · Contoso Subsea');
@@ -210,6 +214,10 @@ export default function DemoCockpit() {
 
       <div className={styles.columns}>
         <div className={styles.column}>
+          <Section title="Go-live" icon={<Flag20Regular />} testId="section-golive">
+            <InitialSyncPanel />
+          </Section>
+
           <Section title="Business Central environment" icon={<Server20Regular />} testId="section-environment">
             <FaultControl
               kind="maintenance"
@@ -264,6 +272,10 @@ export default function DemoCockpit() {
         <div className={styles.column}>
           <Section title="NimBus · Business Central adapter circuit" icon={<PlugDisconnected20Regular />} testId="section-circuit">
             <CircuitPanel circuit={state.data?.circuit} />
+          </Section>
+
+          <Section title="Delivery" icon={<ArrowRepeatAll20Regular />} testId="section-delivery">
+            <RedeliverPanel />
           </Section>
 
           <Section title="Open" icon={<WindowNew20Regular />} testId="section-links">

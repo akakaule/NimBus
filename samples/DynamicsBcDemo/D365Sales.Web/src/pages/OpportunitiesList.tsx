@@ -31,6 +31,7 @@ function BcQuoteCell({ row }: { row: OpportunityRow }) {
   );
 }
 
+// Fixed widths fit their content, so the topic keeps a usable share of narrower screens.
 const columns: GridColumn<OpportunityRow>[] = [
   { id: 'number', header: 'Opportunity no.', width: '118px', render: (row) => row.opportunity.csNumber },
   {
@@ -44,21 +45,28 @@ const columns: GridColumn<OpportunityRow>[] = [
   {
     id: 'account',
     header: 'Account',
-    width: '16%',
+    width: '13%',
     title: (row) => row.account,
     render: (row) =>
       row.account ? <RecordLink to={`/accounts/${row.opportunity.customerId}`}>{row.account}</RecordLink> : '—',
+  },
+  {
+    id: 'productGroup',
+    header: 'Product group',
+    width: '11%',
+    title: (row) => row.productGroup,
+    render: (row) => orDash(row.productGroup),
   },
   { id: 'stage', header: 'Stage', width: '80px', render: (row) => stageLabel(row.opportunity.stepName) },
   {
     id: 'value',
     header: 'Est. revenue',
     numeric: true,
-    width: '112px',
+    width: '104px',
     render: (row) => formatMoney(row.opportunity.estimatedValue),
   },
-  { id: 'quote', header: 'BC quote', width: '172px', render: (row) => <BcQuoteCell row={row} /> },
-  { id: 'owner', header: 'Owner', width: '124px', title: (row) => row.owner, render: (row) => orDash(row.owner) },
+  { id: 'quote', header: 'BC quote', width: '150px', render: (row) => <BcQuoteCell row={row} /> },
+  { id: 'owner', header: 'Owner', width: '110px', title: (row) => row.owner, render: (row) => orDash(row.owner) },
   {
     id: 'status',
     header: 'Status',
@@ -84,6 +92,7 @@ export function OpportunitiesList() {
           row.opportunity.csNumber,
           row.opportunity.name,
           row.account,
+          row.productGroup,
           stageLabel(row.opportunity.stepName),
           row.opportunity.csBcQuoteNumber,
           row.opportunity.csBcQuoteStatus,

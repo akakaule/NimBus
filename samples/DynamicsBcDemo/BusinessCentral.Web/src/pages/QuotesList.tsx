@@ -1,4 +1,5 @@
 import { makeStyles, tokens } from '@fluentui/react-components';
+import { DocumentAdd20Regular } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, type QuoteSummary } from '../api';
@@ -6,7 +7,8 @@ import { ProspectTag, QuoteStatusBadge } from '../components/Badges';
 import { BcTable, type Column } from '../components/BcTable';
 import { ListToolbar, PageBody, Panel } from '../components/Layout';
 import { FilterChip, RecordCount, SearchInput } from '../components/ListControls';
-import { PageHeader } from '../components/PageHeader';
+import { NewQuoteDialog } from '../components/NewQuoteDialog';
+import { ActionButton, PageHeader } from '../components/PageHeader';
 import { RouterLink } from '../components/RouterLink';
 import { LoadError, Loading, StaleNotice } from '../components/States';
 import { formatDate, formatMoney } from '../format';
@@ -74,12 +76,13 @@ function matches(quote: QuoteSummary, search: string): boolean {
   return text.includes(search.toLowerCase());
 }
 
-/** Sales Quotes list. */
+/** Sales Quotes list, with New (a quote for a CRM opportunity). */
 export default function QuotesList() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const status = params.get('status');
   const [search, setSearch] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
   const { data, error, refresh } = usePolling((signal) => api.quotes(signal), 3000);
 
   const rows = useMemo(
@@ -89,7 +92,14 @@ export default function QuotesList() {
 
   return (
     <>
-      <PageHeader title="Sales Quotes" />
+      <PageHeader
+        title="Sales Quotes"
+        actions={
+          <ActionButton icon={<DocumentAdd20Regular />} onClick={() => setDialogOpen(true)} data-testid="new-quote">
+            New
+          </ActionButton>
+        }
+      />
       <PageBody>
         {!data ? (
           error ? <LoadError error={error} onRetry={refresh} /> : <Loading />
@@ -110,15 +120,16 @@ export default function QuotesList() {
                 rowKey={(q) => q.id}
                 onRowClick={(q) => navigate(`/quotes/${q.id}`)}
                 empty={
-                  data.length === 0
-                    ? 'No sales quotes yet. They appear here when a seller requests a quote in Dynamics 365.'
-                    : 'No sales quotes match the filter.'
+                  data.length === 0 ? 'No sales quotes yet. Create one from a CRM opportunity.' : 'No sales quotes match the filter.'
                 }
               />
             </Panel>
           </>
         )}
       </PageBody>
+      {/* Mounted only while open, like the Salespeople dialog: a closed Fluent Dialog that goes
+          through StrictMode's double mount can make keyborg log "disposed incorrectly". */}
+      {dialogOpen && <NewQuoteDialog open onClose={() => setDialogOpen(false)} />}
     </>
   );
 }

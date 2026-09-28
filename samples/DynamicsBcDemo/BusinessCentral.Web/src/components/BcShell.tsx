@@ -112,6 +112,7 @@ const navigation = [
   { to: '/', label: 'Home', end: true },
   { to: '/customers', label: 'Customers', end: false },
   { to: '/contacts', label: 'Contacts', end: false },
+  { to: '/crm-opportunities', label: 'CRM Opportunities', end: false },
   { to: '/quotes', label: 'Sales Quotes', end: false },
   { to: '/orders', label: 'Sales Orders', end: false },
   { to: '/salespeople', label: 'Salespeople', end: false },

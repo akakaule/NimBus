@@ -34,7 +34,7 @@ export function IntegrationTrailMenu({ accountId }: { accountId: string }) {
               icon={<ArrowRouting20Regular />}
               secondaryContent={<Open16Regular />}
             >
-              Requests to Business Central
+              Changes sent to Business Central
             </MenuItemLink>
             <MenuItemLink
               href={nimbusEndpointUrl('D365SalesEndpoint', accountId)}

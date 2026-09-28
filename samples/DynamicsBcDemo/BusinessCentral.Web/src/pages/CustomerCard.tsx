@@ -226,9 +226,8 @@ function CustomerCardView({ detail, error, onSaved }: CustomerCardViewProps) {
       setNotice({
         intent: 'success',
         title: `Customer ${saved.number} saved`,
-        message: customer.crmAccountId
-          ? 'The changes are on their way to the account in Dynamics 365 through NimBus.'
-          : 'This customer is not linked to a Dynamics 365 account.',
+        // Unlinked customers reach Dynamics 365 too: it upserts them by the BC customer id (go-live).
+        message: 'The changes are on their way to the account in Dynamics 365 through NimBus.',
       });
     } catch (e) {
       setNotice({ intent: 'error', title: 'Business Central', message: errorMessage(e) });

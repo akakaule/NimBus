@@ -1,7 +1,7 @@
 import { makeStyles, tokens } from '@fluentui/react-components';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, type Contact } from '../api';
+import { api, type Contact, type ContactListRow } from '../api';
 import { ProspectTag } from '../components/Badges';
 import { BcTable, type Column } from '../components/BcTable';
 import { ListToolbar, PageBody, Panel } from '../components/Layout';
@@ -30,12 +30,17 @@ function CrmAccountId({ id }: { id: string | null }) {
   );
 }
 
-const columns: Column<Contact>[] = [
+/** A CRM prospect: a company contact that isn't a customer yet. */
+const isProspect = (c: Contact) => c.type === 'Company' && !c.customerId;
+
+const columns: Column<ContactListRow>[] = [
   { key: 'number', header: 'No.', width: '100px', render: (c) => c.number },
   { key: 'name', header: 'Name', render: (c) => c.displayName },
   { key: 'type', header: 'Type', width: '90px', render: (c) => c.type },
-  { key: 'city', header: 'City', width: '120px', render: (c) => c.city },
-  { key: 'country', header: 'Country/Region', width: '120px', render: (c) => c.countryCode },
+  { key: 'company', header: 'Company Name', render: (c) => c.companyName },
+  { key: 'jobTitle', header: 'Job Title', width: '150px', render: (c) => c.jobTitle },
+  { key: 'city', header: 'City', width: '110px', render: (c) => c.city },
+  { key: 'country', header: 'Country/Region', width: '110px', render: (c) => c.countryCode },
   { key: 'crm', header: 'CRM Account ID', width: '130px', render: (c) => <CrmAccountId id={c.crmAccountId} /> },
   {
     key: 'customer',
@@ -44,23 +49,32 @@ const columns: Column<Contact>[] = [
     render: (c) =>
       c.customerId && c.customerNumber ? (
         <RouterLink to={`/customers/${c.customerId}`}>{c.customerNumber}</RouterLink>
-      ) : (
+      ) : isProspect(c) ? (
         <ProspectTag />
-      ),
+      ) : null,
   },
-  { key: 'template', header: 'Customer Template', width: '140px', render: (c) => c.customerTemplateCode },
   { key: 'modified', header: 'Last Modified', width: '170px', render: (c) => formatDateTime(c.lastModifiedDateTime) },
 ];
 
-function matches(contact: Contact, search: string): boolean {
-  return [contact.number, contact.displayName, contact.city, contact.countryCode, contact.customerNumber, contact.crmAccountId]
+function matches(contact: ContactListRow, search: string): boolean {
+  return [
+    contact.number,
+    contact.displayName,
+    contact.companyName,
+    contact.jobTitle,
+    contact.email,
+    contact.city,
+    contact.countryCode,
+    contact.customerNumber,
+    contact.crmAccountId,
+  ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
     .includes(search.toLowerCase());
 }
 
-/** Contacts (read-only): the prospects BC quotes before they buy. */
+/** Contacts (read-only): companies (customers and CRM prospects) and the people who work for them. */
 export default function ContactsList() {
   const [params, setParams] = useSearchParams();
   const prospectsOnly = params.get('prospects') === '1';
@@ -68,7 +82,7 @@ export default function ContactsList() {
   const { data, error, refresh } = usePolling((signal) => api.contacts(signal), 3000);
 
   const rows = useMemo(
-    () => (data ?? []).filter((c) => (!prospectsOnly || !c.customerId) && (!search || matches(c, search))),
+    () => (data ?? []).filter((c) => (!prospectsOnly || isProspect(c)) && (!search || matches(c, search))),
     [data, prospectsOnly, search],
   );
 
@@ -93,11 +107,7 @@ export default function ContactsList() {
                 columns={columns}
                 rows={rows}
                 rowKey={(c) => c.id}
-                empty={
-                  data.length === 0
-                    ? 'No contacts yet. Business Central creates one when Dynamics 365 asks to quote a new prospect.'
-                    : 'No contacts match the filter.'
-                }
+                empty={data.length === 0 ? 'No contacts yet.' : 'No contacts match the filter.'}
               />
             </Panel>
           </>

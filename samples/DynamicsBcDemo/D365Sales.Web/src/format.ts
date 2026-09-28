@@ -94,6 +94,18 @@ export function toDateInputValue(value: string | null | undefined): string {
   return value && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : '';
 }
 
+/**
+ * Reads an amount typed into a text input: "250000", "250000.50", "250,000" (commas grouping
+ * thousands) or "250000,50" (a decimal comma). Blank is no amount; NaN when the text is not an
+ * amount. String(n) of any stored amount reads back exactly.
+ */
+export function parseAmount(text: string): number | null {
+  const compact = text.replace(/[\s€]/g, '');
+  if (!compact) return null;
+  const normalized = /^\d{1,3}(,\d{3})+(\.\d*)?$/.test(compact) ? compact.replace(/,/g, '') : compact.replace(',', '.');
+  return /^\d+(\.\d*)?$/.test(normalized) ? Number(normalized) : Number.NaN;
+}
+
 /** A blank-safe display value. */
 export function orDash(value: string | null | undefined): string {
   return value && value.trim() ? value : EMPTY;

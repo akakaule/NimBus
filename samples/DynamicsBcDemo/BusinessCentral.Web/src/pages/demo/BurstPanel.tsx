@@ -18,7 +18,7 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
   },
   count: {
-    width: '120px',
+    width: '176px',
   },
   result: {
     marginTop: tokens.spacingVerticalM,
@@ -34,7 +34,7 @@ const useStyles = makeStyles({
     padding: 0,
     listStyleType: 'none',
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
     gap: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalL}`,
     fontSize: tokens.fontSizeBase200,
   },
@@ -44,6 +44,10 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
     padding: `${tokens.spacingVerticalXXS} 0`,
     borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+  },
+  number: {
+    fontWeight: tokens.fontWeightSemibold,
+    whiteSpace: 'nowrap',
   },
   seller: {
     color: tokens.colorNeutralForeground3,
@@ -57,7 +61,7 @@ const useStyles = makeStyles({
 const MIN = 1;
 const MAX = 24;
 
-/** The pilot sales office: many sellers request quotes at the same moment. */
+/** The pilot sales office: many sellers create prospects and opportunities at the same moment. */
 export function BurstPanel() {
   const styles = useStyles();
   const [count, setCount] = useState('6');
@@ -84,8 +88,8 @@ export function BurstPanel() {
   return (
     <div>
       <p className={styles.description}>
-        Each request creates a new prospect with an opportunity in Dynamics 365 and asks Business Central for a quote —
-        from different sellers, all at once. Every prospect is its own session, so one failure never holds up the others.
+        Each seller creates a new prospect with an opportunity in Dynamics 365, and both go to Business Central at once.
+        Every prospect is its own session, so one failure never holds up the others.
       </p>
       <div className={styles.actions}>
         <Input
@@ -94,8 +98,8 @@ export function BurstPanel() {
           min={MIN}
           max={MAX}
           value={count}
-          contentAfter="quotes"
-          aria-label="Number of quote requests (1–24)"
+          contentAfter="opportunities"
+          aria-label="Number of opportunities (1–24)"
           onChange={(_, data) => setCount(data.value)}
         />
         <Button
@@ -105,7 +109,7 @@ export function BurstPanel() {
           disabled={busy || !valid}
           data-testid="burst"
         >
-          Request quotes now
+          Create opportunities now
         </Button>
       </div>
       {error && (
@@ -116,12 +120,15 @@ export function BurstPanel() {
       {result && (
         <div className={styles.result} data-testid="burst-result">
           <div className={styles.resultTitle}>
-            {result.burst.count} quote {result.burst.count === 1 ? 'request' : 'requests'} sent at {formatTime(result.at)}
+            {result.burst.count} {result.burst.count === 1 ? 'opportunity' : 'opportunities'} created at{' '}
+            {formatTime(result.at)}
           </div>
           <ul className={styles.list}>
             {result.burst.created.map((prospect) => (
               <li key={prospect.opportunityId} className={styles.item}>
-                <span>{prospect.name}</span>
+                <span>
+                  <span className={styles.number}>{prospect.number}</span> · {prospect.name}
+                </span>
                 <span className={styles.seller}>{prospect.seller}</span>
               </li>
             ))}

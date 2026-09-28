@@ -16,6 +16,7 @@ import { d365OpportunityUrl } from '../config';
 import { formatDate, formatDateTime, formatMoney } from '../format';
 import { useIdByNumber } from '../hooks/useIdByNumber';
 import { usePolling } from '../hooks/usePolling';
+import { useRouteNotice } from '../hooks/useRouteNotice';
 
 const useStyles = makeStyles({
   sellTo: {
@@ -73,7 +74,9 @@ interface QuoteCardViewProps {
 
 function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProps) {
   const styles = useStyles();
-  const [notice, setNotice] = useState<NoticeState | null>(null);
+  // e.g. "Sales quote … created", passed by Create sales quote.
+  const arrivalNotice = useRouteNotice();
+  const [notice, setNotice] = useState<NoticeState | null>(arrivalNotice);
   const [sending, setSending] = useState(false);
   const [editingLines, setEditingLines] = useState(false);
   const [makeOrderOpen, setMakeOrderOpen] = useState(false);
@@ -82,9 +85,13 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
 
   const editable = quote.status === 'Draft' || quote.status === 'Sent';
   const actionsDisabled = !editable || sending || editingLines;
+  // A new quote starts without lines; Business Central won't send it or make an order from it yet.
+  const needsLines = editable && quote.lines.length === 0;
   const salesperson = salespeople?.find((s) => s.code === quote.salespersonCode);
   const isContact = quote.sellToType === 'Contact';
   const sellToNumber = isContact ? quote.contact?.number : quote.customer?.number;
+  const opportunity = quote.crmOpportunity;
+  const linked = Boolean(quote.crmOpportunityId);
 
   const send = async () => {
     setSending(true);
@@ -95,7 +102,9 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
       setNotice({
         intent: 'success',
         title: `Sales quote ${updated.number} sent`,
-        message: 'Its status is now Sent. NimBus passes the change on to the opportunity in Dynamics 365.',
+        message: linked
+          ? `Its status is now Sent. NimBus passes the change on to ${opportunity ? `opportunity ${opportunity.number}` : 'the opportunity'} in Dynamics 365.`
+          : 'Its status is now Sent.',
       });
     } catch (e) {
       setNotice({ intent: 'error', title: 'Business Central', message: errorMessage(e) });
@@ -114,6 +123,12 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
           {result.customerCreated && (
             <div>
               Customer {result.customerNumber} created from contact {quote.contact?.number ?? ''}.
+            </div>
+          )}
+          {linked && (
+            <div>
+              Quote {quote.number} is accepted: Dynamics 365 closes{' '}
+              {opportunity ? `opportunity ${opportunity.number}` : 'the opportunity'} as won.
             </div>
           )}
           <div className={styles.noticeLinks}>
@@ -136,10 +151,13 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
         badges={<QuoteStatusBadge status={quote.status} size="large" data-testid="quote-status" />}
         actions={
           <>
+            {/* Focusable while waiting for lines, so the "Add lines first" tooltip still shows. */}
             <ActionButton
               icon={sending ? <Spinner size="tiny" /> : <Send20Regular />}
               onClick={send}
               disabled={actionsDisabled}
+              disabledFocusable={needsLines}
+              title={needsLines ? 'Add lines first' : undefined}
               data-testid="quote-send"
             >
               Send
@@ -148,6 +166,8 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
               icon={<DocumentArrowRight20Regular />}
               onClick={() => setMakeOrderOpen(true)}
               disabled={actionsDisabled}
+              disabledFocusable={needsLines}
+              title={needsLines ? 'Add lines first' : undefined}
               data-testid="make-order"
             >
               Make Order
@@ -166,7 +186,13 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
             )}
           </>
         }
-        aside={editingLines ? 'Save or cancel the line changes to use the actions.' : undefined}
+        aside={
+          editingLines
+            ? 'Save or cancel the line changes to use the actions.'
+            : needsLines
+              ? 'Add lines to send the quote or make an order.'
+              : undefined
+        }
       />
 
       <PageBody>
@@ -229,11 +255,20 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
           <FastTab
             title="CRM link"
             caption="AL extension fields"
-            summary={quote.crmOpportunityId ? 'Linked to a Dynamics 365 opportunity' : 'Not linked to Dynamics 365'}
+            summary={
+              opportunity
+                ? `Linked to CRM opportunity ${opportunity.number}`
+                : linked
+                  ? 'Linked to a Dynamics 365 opportunity'
+                  : 'Not linked to Dynamics 365'
+            }
             data-testid="fasttab-crm"
           >
             <FieldGrid>
               <FieldColumn>
+                <FieldRow label="CRM Opportunity" data-testid="crm-opportunity">
+                  <Value>{opportunity && `${opportunity.number} · ${opportunity.name} (${opportunity.status})`}</Value>
+                </FieldRow>
                 <FieldRow label="CRM Opportunity ID">
                   <Value mono>{quote.crmOpportunityId}</Value>
                 </FieldRow>
@@ -243,24 +278,30 @@ function QuoteCardView({ quote, error, onChanged, onRefresh }: QuoteCardViewProp
               </FieldColumn>
               <FieldColumn>
                 <p className={styles.explain}>
-                  Standard Business Central has no fields for CRM references. A small AL table extension adds them, so
-                  NimBus can route every change to this quote back to the right opportunity in Dynamics 365.
+                  {linked
+                    ? 'Standard Business Central has no fields for CRM references; a small AL table extension adds them. This quote was made for the CRM opportunity, so NimBus sends its status back to that opportunity in Dynamics 365.'
+                    : 'This quote is not linked to a CRM opportunity, so it stays in Business Central. Quotes created from a CRM opportunity are linked through a small AL table extension.'}
                 </p>
               </FieldColumn>
             </FieldGrid>
           </FastTab>
 
-          <FastTab title="Lines" summary={`${quote.lines.length} ${quote.lines.length === 1 ? 'line' : 'lines'}`} data-testid="fasttab-lines">
+          <FastTab
+            title="Lines"
+            summary={quote.lines.length === 0 ? 'No lines yet' : `${quote.lines.length} ${quote.lines.length === 1 ? 'line' : 'lines'}`}
+            data-testid="fasttab-lines"
+          >
             <QuoteLinesPart
               quote={quote}
               editable={editable}
               onEditingChange={setEditingLines}
               onSaved={(updated) => {
                 onChanged(updated);
+                const total = formatMoney(updated.totalAmountExcludingTax, updated.currencyCode);
                 setNotice({
                   intent: 'success',
                   title: `Lines saved on ${updated.number}`,
-                  message: `The new total, ${formatMoney(updated.totalAmountExcludingTax, updated.currencyCode)}, is on its way to Dynamics 365 through NimBus.`,
+                  message: linked ? `The new total, ${total}, is on its way to Dynamics 365 through NimBus.` : `The new total is ${total}.`,
                 });
               }}
             />

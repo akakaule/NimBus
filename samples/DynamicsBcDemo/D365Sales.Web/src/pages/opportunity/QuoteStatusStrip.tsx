@@ -5,20 +5,18 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Spinner,
   tokens,
 } from '@fluentui/react-components';
-import { DocumentText20Regular, Warning16Filled } from '@fluentui/react-icons';
-import type { Opportunity } from '../../api';
+import { DocumentText20Regular } from '@fluentui/react-icons';
+import type { BcQuote, Opportunity } from '../../api';
 import { QuoteStatusBadge, quoteStatusColor } from '../../components/StatusBadges';
 import { ExternalLink } from '../../components/ui';
-import { bcQuoteUrl } from '../../config';
-import { formatDateTime, formatMoney } from '../../format';
+import { BC_CRM_OPPORTUNITIES_URL, bcQuoteUrl } from '../../config';
+import { formatMoney } from '../../format';
 import { useChangeHighlight } from '../../hooks/useHighlight';
-import { isOpen, linesChangedSinceRequest, StateCode } from '../../model';
+import { isOpen, StateCode } from '../../model';
 
 const ACCENTS: Record<string, string> = {
-  warning: tokens.colorPaletteMarigoldBorderActive,
   brand: tokens.colorBrandStroke1,
   success: tokens.colorPaletteGreenBorderActive,
   danger: tokens.colorPaletteRedBorderActive,
@@ -79,58 +77,53 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground3,
   },
-  changed: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    color: tokens.colorPaletteMarigoldForeground1,
-    fontWeight: tokens.fontWeightSemibold,
-  },
 });
 
 interface QuoteStatusStripProps {
   opportunity: Opportunity;
+  /** The Business Central quotes linked to the opportunity (for the linked quote's total). */
+  quotes: BcQuote[];
 }
 
-/** Where the Business Central quote stands, updated live as the integration reports back. */
-export function QuoteStatusStrip({ opportunity: o }: QuoteStatusStripProps) {
+/**
+ * Where the Business Central quote stands, updated live as the integration reports back. A
+ * Business Central user makes the quote from the opportunity and links it; accepting it wins the deal.
+ */
+export function QuoteStatusStrip({ opportunity: o, quotes }: QuoteStatusStripProps) {
   const styles = useStyles();
   const status = o.csBcQuoteStatus;
   const won = o.stateCode === StateCode.WonOrQualified;
   const lost = o.stateCode === StateCode.LostOrDisqualified;
-  const highlight = useChangeHighlight(`${status}|${o.csBcQuoteNumber}|${o.csBcOrderNumber}|${o.stateCode}`);
-  const changedLines = isOpen(o) && linesChangedSinceRequest(o);
+  const quote = quotes.find((q) => q.bcQuoteId === o.csBcQuoteId);
+  const total = quote ? formatMoney(quote.totalAmount, quote.currencyCode) : undefined;
+  const highlight = useChangeHighlight(`${status}|${o.csBcQuoteNumber}|${total}|${o.stateCode}`);
 
-  let icon: ReactNode = <DocumentText20Regular />;
   let text: ReactNode;
-  if (status === 'Requested' && !o.csBcQuoteNumber) {
-    icon = <Spinner size="extra-tiny" aria-label="Waiting for Business Central" />;
-    text = (
-      <>
-        Quote requested… Business Central is creating it.
-        <QuoteStatusBadge status="Requested" />
-      </>
-    );
-  } else if (o.csBcQuoteNumber) {
+  let link: ReactNode = null;
+  if (o.csBcQuoteNumber) {
     text = (
       <>
         <span>
           Business Central quote <span className={styles.number}>{o.csBcQuoteNumber}</span> ·
         </span>
         {status && <QuoteStatusBadge status={status} />}
-        {status === 'Accepted' && o.csBcOrderNumber && (
-          <span>
-            — order <span className={styles.number}>{o.csBcOrderNumber}</span>
+        {total && (
+          <span data-testid="bc-quote-total">
+            · total <span className={styles.number}>{total}</span>
           </span>
         )}
       </>
     );
-  } else if (!isOpen(o)) {
-    text = 'No Business Central quote.';
-  } else if (o.lines.length === 0) {
-    text = 'No quote yet. Add product lines, then request a quote — quotes are made in Business Central.';
+    if (o.csBcQuoteId) link = <ExternalLink href={bcQuoteUrl(o.csBcQuoteId)}>Open in Business Central</ExternalLink>;
+  } else if (isOpen(o)) {
+    text = 'No quote yet. A Business Central user makes the quote from this opportunity and links it here.';
+    link = (
+      <ExternalLink href={BC_CRM_OPPORTUNITIES_URL} testId="open-bc-opportunities">
+        Open CRM opportunities in Business Central
+      </ExternalLink>
+    );
   } else {
-    text = 'No quote yet. Request one — Business Central makes the quote and reports back here.';
+    text = 'No Business Central quote.';
   }
 
   const accent = ACCENTS[o.csBcQuoteNumber || status ? quoteStatusColor(status) : 'informative'];
@@ -140,16 +133,10 @@ export function QuoteStatusStrip({ opportunity: o }: QuoteStatusStripProps) {
       {won && (
         <MessageBar intent="success" className={styles.won} data-testid="won-banner">
           <MessageBarBody>
-            {o.csBcOrderNumber ? (
-              <>
-                <MessageBarTitle>Won from Business Central order {o.csBcOrderNumber}</MessageBarTitle>· actual revenue{' '}
-                {formatMoney(o.actualValue)}
-              </>
-            ) : (
-              <>
-                <MessageBarTitle>Won</MessageBarTitle>· actual revenue {formatMoney(o.actualValue)}
-              </>
-            )}
+            <MessageBarTitle>
+              {o.csBcQuoteNumber ? `Won — Business Central quote ${o.csBcQuoteNumber} accepted` : 'Won'}
+            </MessageBarTitle>
+            · actual revenue {formatMoney(o.actualValue)}
           </MessageBarBody>
         </MessageBar>
       )}
@@ -165,22 +152,11 @@ export function QuoteStatusStrip({ opportunity: o }: QuoteStatusStripProps) {
         data-status={status ?? 'None'}
         role="status"
       >
-        <span className={styles.icon}>{icon}</span>
-        <span className={styles.text}>{text}</span>
-        <span className={styles.meta}>
-          {changedLines && (
-            <span className={styles.changed} data-testid="lines-changed">
-              <Warning16Filled />
-              Lines changed after the last request — request the quote again (revision {o.csLinesRevision})
-            </span>
-          )}
-          {o.csQuoteRequestedOn && (
-            <span>
-              Requested {formatDateTime(o.csQuoteRequestedOn)} · revision {o.csQuoteRequestRevision}
-            </span>
-          )}
-          {o.csBcQuoteId && <ExternalLink href={bcQuoteUrl(o.csBcQuoteId)}>Open in Business Central</ExternalLink>}
+        <span className={styles.icon}>
+          <DocumentText20Regular />
         </span>
+        <span className={styles.text}>{text}</span>
+        {link && <span className={styles.meta}>{link}</span>}
       </div>
     </>
   );

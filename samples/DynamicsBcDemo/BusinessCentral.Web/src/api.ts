@@ -1,10 +1,12 @@
 // Typed client for the Business Central simulator (/api/app/* for the BC screens, /api/demo/* for
-// the hidden presenter pages) and the one D365 simulator call the cockpit makes (/d365-api/...).
+// the hidden presenter pages) and the D365 simulator calls the cockpit makes (/d365-api/...).
 // Shapes follow the simulator's camelCase JSON; decimals arrive as numbers, dates as ISO strings.
 
 export type QuoteStatus = 'Draft' | 'Sent' | 'Accepted' | 'Expired';
 export type SellToType = 'Contact' | 'Customer';
 export type Blocked = '' | 'Ship' | 'Invoice' | 'All';
+export type ContactType = 'Company' | 'Person';
+export type CrmOpportunityStatus = 'Open' | 'Won' | 'Lost';
 
 export interface AppInfo {
   companyName: string;
@@ -31,8 +33,47 @@ export interface RoleCenter {
   ordersValueThisMonth: number;
   customers: number;
   customersBlocked: number;
+  /** Prospect companies: company contacts that aren't customers yet. */
   prospects: number;
+  /** Open CRM opportunities that no sales quote is linked to yet. */
+  crmOpportunitiesWithoutQuote: number;
   recentDocuments: RecentDocument[];
+}
+
+/**
+ * A CRM opportunity as Business Central keeps it (AL extension table), newest first. Dynamics 365
+ * sends every opportunity; a BC user creates the sales quote for it. quote* is the latest linked quote.
+ */
+export interface CrmOpportunity {
+  /** The CRM opportunity id. */
+  id: string;
+  /** e.g. "OPP-10025". */
+  number: string;
+  name: string;
+  crmAccountId: string;
+  accountName: string;
+  accountType: 'Customer' | 'Prospect' | string;
+  salespersonCode: string | null;
+  estimatedValue: number | null;
+  currencyCode: string;
+  estimatedCloseDate: string | null;
+  /** The product group is a BC item category. */
+  productGroupCode: string | null;
+  productGroupName: string | null;
+  status: CrmOpportunityStatus | string;
+  lastModified: string;
+  quoteCount: number;
+  quoteId: string | null;
+  quoteNumber: string | null;
+  quoteStatus: QuoteStatus | string | null;
+}
+
+/** The CRM opportunity a sales quote is linked to. */
+export interface LinkedCrmOpportunity {
+  id: string;
+  number: string;
+  name: string;
+  status: CrmOpportunityStatus | string;
 }
 
 export interface QuoteSummary {
@@ -50,6 +91,7 @@ export interface QuoteSummary {
   documentDate: string;
   validUntilDate: string | null;
   orderNumber: string | null;
+  crmOpportunityId: string | null;
   lineCount: number;
   lastModified: string;
 }
@@ -66,12 +108,21 @@ export interface QuoteLine {
   amountExcludingTax: number;
 }
 
-/** A prospect BC quotes before it buys; converted to a customer by Make Order. */
+/**
+ * A company contact or a person at one. Every customer has a company contact; a CRM prospect is a
+ * company contact without a customer, which BC quotes until Make Order turns it into a customer.
+ */
 export interface Contact {
   id: string;
   number: string;
-  type: string;
+  type: ContactType | string;
   displayName: string;
+  /** For a person: the company contact the person works for. */
+  companyContactId: string | null;
+  firstName: string | null;
+  surname: string | null;
+  jobTitle: string | null;
+  email: string | null;
   addressLine1: string | null;
   city: string | null;
   postalCode: string | null;
@@ -79,14 +130,22 @@ export interface Contact {
   phoneNumber: string | null;
   website: string | null;
   vatRegistrationNumber: string | null;
+  /** For a prospect company: the contact person CRM sent with it. */
   contactPersonName: string | null;
   contactPersonEmail: string | null;
   contactPersonPhone: string | null;
   customerTemplateCode: string;
+  /** AL extension: the CRM account a prospect came from. */
   crmAccountId: string | null;
+  /** For a company: the customer it is. */
   customerId: string | null;
   customerNumber: string | null;
   lastModifiedDateTime: string;
+}
+
+/** A row of the Contacts list: the contact and, for a person, the company's name. */
+export interface ContactListRow extends Contact {
+  companyName: string | null;
 }
 
 export interface Customer {
@@ -139,6 +198,8 @@ export interface QuoteDetail {
   sellToName: string;
   crmOpportunityId: string | null;
   crmAccountId: string | null;
+  /** The CRM opportunity the quote was made for (AL extension). */
+  crmOpportunity: LinkedCrmOpportunity | null;
   lastModifiedDateTime: string;
   sellToType: SellToType;
   contact: Contact | null;
@@ -234,6 +295,8 @@ export interface Item {
   displayName: string;
   unitPrice: number;
   baseUnitOfMeasure: string;
+  /** Item categories go to Dynamics 365 as product groups; the items stay in BC. */
+  itemCategoryCode: string | null;
   blocked: boolean;
 }
 
@@ -287,9 +350,13 @@ export interface Alert {
   receivedAt: string;
 }
 
+/** A prospect and its opportunity, created in Dynamics 365 by one seller of the burst. */
 export interface BurstProspect {
   accountId: string;
   opportunityId: string;
+  /** The opportunity number, e.g. "OPP-10031". */
+  number: string;
+  /** The prospect's name. */
   name: string;
   seller: string;
 }
@@ -297,6 +364,19 @@ export interface BurstProspect {
 export interface BurstResult {
   count: number;
   created: BurstProspect[];
+}
+
+/** What the go-live initial sync sent to Dynamics 365. */
+export interface InitialSyncResult {
+  itemCategories: number;
+  customers: number;
+  contacts: number;
+}
+
+/** The opportunity change Dynamics 365 delivered again. */
+export interface RedeliverResult {
+  messageId: string;
+  summary: string;
 }
 
 // ---- Transport -------------------------------------------------------------------------------
@@ -400,8 +480,13 @@ export const api = {
   info: (signal?: AbortSignal) => get<AppInfo>('/api/app/info', signal),
   roleCenter: (signal?: AbortSignal) => get<RoleCenter>('/api/app/rolecenter', signal),
 
+  crmOpportunities: (signal?: AbortSignal) => get<CrmOpportunity[]>('/api/app/crm-opportunities', signal),
+
   quotes: (signal?: AbortSignal) => get<QuoteSummary[]>('/api/app/quotes', signal),
   quote: (id: string, signal?: AbortSignal) => get<QuoteDetail>(`/api/app/quotes/${id}`, signal),
+  /** A draft quote without lines, linked to the (open) CRM opportunity. */
+  createQuote: (crmOpportunityId: string) =>
+    request<QuoteDetail>('/api/app/quotes', { method: 'POST', body: { crmOpportunityId } }),
   updateQuoteLines: (id: string, lines: QuoteLineEdit[]) =>
     request<QuoteDetail>(`/api/app/quotes/${id}/lines`, { method: 'PUT', body: { lines } }),
   sendQuote: (id: string) => request<QuoteDetail>(`/api/app/quotes/${id}/send`, { method: 'POST' }),
@@ -413,7 +498,7 @@ export const api = {
   updateCustomer: (id: string, edit: CustomerEdit) =>
     request<Customer>(`/api/app/customers/${id}`, { method: 'PUT', body: edit }),
 
-  contacts: (signal?: AbortSignal) => get<Contact[]>('/api/app/contacts', signal),
+  contacts: (signal?: AbortSignal) => get<ContactListRow[]>('/api/app/contacts', signal),
 
   salespeople: (signal?: AbortSignal) => get<Salesperson[]>('/api/app/salespeople', signal),
   createSalesperson: (salesperson: NewSalesperson) =>
@@ -427,6 +512,8 @@ export const api = {
 };
 
 export const demoApi = {
+  /** Go-live: BC's item categories, customers and their person contacts go to Dynamics 365. Safe to repeat. */
+  initialSync: () => request<InitialSyncResult>('/api/demo/initial-sync', { method: 'POST' }),
   state: (signal?: AbortSignal) => get<DemoState>('/api/demo/state', signal),
   setMaintenance: (seconds: number) =>
     request<FaultSnapshot>('/api/demo/maintenance', { method: 'PUT', body: { seconds } }),
@@ -436,6 +523,8 @@ export const demoApi = {
   clearAlerts: () => request<void>('/api/demo/alerts', { method: 'DELETE' }),
   burst: (count: number) =>
     request<BurstResult>('/d365-api/api/demo/burst', { method: 'POST', body: { count }, service: D365 }),
+  /** Dynamics 365 delivers its last opportunity change again, same MessageId; 404 when it sent none yet. */
+  redeliver: () => request<RedeliverResult>('/d365-api/api/demo/redeliver', { method: 'POST', service: D365 }),
 };
 
 /** The message to show for any thrown value. */

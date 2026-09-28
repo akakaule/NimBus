@@ -281,9 +281,11 @@ export function QuoteLinesPart({ quote, editable, onEditingChange, onSaved }: Qu
         )}
         <span className={styles.caption}>
           {draft !== null ? (
-            <>
-              <ArrowSync20Regular aria-hidden /> Changes are sent to Dynamics 365 through NimBus.
-            </>
+            quote.crmOpportunityId && (
+              <>
+                <ArrowSync20Regular aria-hidden /> Changes are sent to Dynamics 365 through NimBus.
+              </>
+            )
           ) : (
             !editable && `This quote is ${quote.status} and can no longer be changed.`
           )}
@@ -302,7 +304,13 @@ export function QuoteLinesPart({ quote, editable, onEditingChange, onSaved }: Qu
           columns={readColumns}
           rows={quote.lines}
           rowKey={(l) => l.id}
-          empty="This quote has no lines."
+          empty={
+            editable ? (
+              <span data-testid="no-lines-hint">No lines yet — choose Edit lines to add items.</span>
+            ) : (
+              'This quote has no lines.'
+            )
+          }
         />
       ) : (
         <EditGrid

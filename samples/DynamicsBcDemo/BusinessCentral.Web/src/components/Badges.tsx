@@ -58,6 +58,21 @@ export function ProspectTag() {
   );
 }
 
+const opportunityStatusColors: Record<string, BadgeProps['color']> = {
+  Open: 'brand',
+  Won: 'success',
+  Lost: 'informative',
+};
+
+/** CRM opportunity status: Open teal, Won green, Lost neutral. */
+export function OpportunityStatusBadge({ status }: { status: string }) {
+  return (
+    <Badge appearance="tint" shape="rounded" color={opportunityStatusColors[status] ?? 'informative'}>
+      {status}
+    </Badge>
+  );
+}
+
 /** Sales order status (the simulator creates orders as Open). */
 export function OrderStatusBadge({ status }: { status: string }) {
   return (

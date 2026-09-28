@@ -183,8 +183,8 @@ function DashboardBody({ data }: { data: DashboardData }) {
           value={formatMoney(data.wonValue)}
           detail={
             data.wonCount === 1
-              ? '1 opportunity, won from a Business Central order'
-              : `${data.wonCount} opportunities, won from Business Central orders`
+              ? '1 opportunity, won from an accepted Business Central quote'
+              : `${data.wonCount} opportunities, won from accepted Business Central quotes`
           }
           testId="tile-won"
         />

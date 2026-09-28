@@ -9,16 +9,20 @@ import {
   useId,
 } from '@fluentui/react-components';
 import { Save20Regular } from '@fluentui/react-icons';
-import { api, errorMessage, type Opportunity, type OpportunityDetail } from '../../api';
+import { api, errorMessage, type Opportunity, type OpportunityDetail, type ProductGroup } from '../../api';
 import { QuoteStatusBadge } from '../../components/StatusBadges';
 import { Timeline } from '../../components/Timeline';
 import { ExternalLink, FieldRow, RecordLink, Section } from '../../components/ui';
 import { bcQuoteUrl } from '../../config';
-import { formatDate, formatDateTime, formatMoney, orDash, toDateInputValue } from '../../format';
+import { formatDate, formatDateTime, formatMoney, orDash, parseAmount, toDateInputValue } from '../../format';
 import { useNotify } from '../../hooks/useNotify';
+import { usePolling } from '../../hooks/usePolling';
 import { isOpen, isStage, STAGES, stageLabel, type StageName } from '../../model';
 
 const INTEGRATION_OWNED = 'Set by the integration from Business Central';
+
+// Product groups arrive from Business Central (its initial sync), so the list keeps refreshing.
+const PRODUCT_GROUPS_POLL_MS = 10_000;
 
 const useStyles = makeStyles({
   columns: {
@@ -43,9 +47,18 @@ const useStyles = makeStyles({
   narrow: {
     width: '120px',
   },
+  amount: {
+    width: '180px',
+  },
   hint: {
     display: 'block',
     fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  note: {
+    marginTop: '8px',
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
     color: tokens.colorNeutralForeground3,
   },
   actions: {
@@ -67,6 +80,10 @@ interface SummaryDraft {
   estimatedCloseDate: string;
   closeProbability: number;
   stepName: StageName;
+  /** As typed; blank is no estimate. */
+  estimatedValue: string;
+  /** Blank is no product group. */
+  productGroupId: string;
 }
 
 const toDraft = (o: Opportunity): SummaryDraft => ({
@@ -74,13 +91,59 @@ const toDraft = (o: Opportunity): SummaryDraft => ({
   estimatedCloseDate: toDateInputValue(o.estimatedCloseDate),
   closeProbability: o.closeProbability,
   stepName: isStage(o.stepName) ? o.stepName : STAGES[0],
+  // Plain digits, so parseAmount reads the stored value back exactly.
+  estimatedValue: o.estimatedValue === null ? '' : String(o.estimatedValue),
+  productGroupId: o.csProductGroupId ?? '',
 });
 
 const sameDraft = (a: SummaryDraft, b: SummaryDraft) =>
   a.name === b.name &&
   a.estimatedCloseDate === b.estimatedCloseDate &&
   a.closeProbability === b.closeProbability &&
-  a.stepName === b.stepName;
+  a.stepName === b.stepName &&
+  parseAmount(a.estimatedValue) === parseAmount(b.estimatedValue) &&
+  a.productGroupId === b.productGroupId;
+
+interface ProductGroupSelectProps {
+  id: string;
+  value: string;
+  /** The opportunity's saved product group, kept selectable while the list loads. */
+  current: ProductGroup | null;
+  onChange: (productGroupId: string) => void;
+}
+
+/** The product groups Business Central has synced; polled, so they appear once its initial sync has run. */
+function ProductGroupSelect({ id, value, current, onChange }: ProductGroupSelectProps) {
+  const styles = useStyles();
+  const poll = usePolling('productgroups', (signal) => api.productGroups(signal), PRODUCT_GROUPS_POLL_MS);
+  const groups = poll.data ?? [];
+  const options =
+    current && !groups.some((group) => group.productGroupId === current.productGroupId) ? [current, ...groups] : groups;
+
+  return (
+    <>
+      <Select
+        id={id}
+        className={styles.input}
+        appearance="filled-darker"
+        value={value}
+        disabled={options.length === 0}
+        onChange={(_, data) => onChange(data.value)}
+        data-testid="product-group"
+      >
+        <option value="">—</option>
+        {options.map((group) => (
+          <option key={group.productGroupId} value={group.productGroupId}>
+            {group.name}
+          </option>
+        ))}
+      </Select>
+      {poll.data?.length === 0 && (
+        <span className={styles.hint}>Product groups come from Business Central with the initial sync.</span>
+      )}
+    </>
+  );
+}
 
 interface SummaryTabProps {
   detail: OpportunityDetail;
@@ -91,8 +154,15 @@ interface SummaryTabProps {
 export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps) {
   const styles = useStyles();
   const notify = useNotify();
-  const ids = { name: useId('topic'), close: useId('close'), probability: useId('probability'), stage: useId('stage') };
-  const { opportunity: o, account, owner } = detail;
+  const ids = {
+    name: useId('topic'),
+    productGroup: useId('product-group'),
+    revenue: useId('revenue'),
+    close: useId('close'),
+    probability: useId('probability'),
+    stage: useId('stage'),
+  };
+  const { opportunity: o, account, owner, productGroup } = detail;
   const editable = isOpen(o);
   const [draft, setDraft] = useState<SummaryDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -105,7 +175,12 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
   const server = toDraft(o);
   const values = draft ?? server;
   const dirty = draft !== null && !sameDraft(draft, server);
-  const valid = values.name.trim().length > 0;
+  const estimatedValue = parseAmount(values.estimatedValue);
+  const problem = !values.name.trim()
+    ? 'The topic is required.'
+    : Number.isNaN(estimatedValue)
+      ? 'Est. revenue must be an amount, such as 250000.'
+      : undefined;
   const change = (patch: Partial<SummaryDraft>) => setDraft({ ...values, ...patch });
 
   const save = async () => {
@@ -116,10 +191,12 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
         estimatedCloseDate: values.estimatedCloseDate ? `${values.estimatedCloseDate}T00:00:00` : null,
         closeProbability: values.closeProbability,
         stepName: values.stepName,
+        estimatedValue,
+        productGroupId: values.productGroupId || null,
       });
       await refresh();
       setDraft(null);
-      notify.success('Opportunity saved');
+      notify.success('Opportunity saved', 'Saved and sent to Business Central.');
     } catch (error) {
       notify.error('The opportunity was not saved', errorMessage(error));
     } finally {
@@ -145,6 +222,38 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
         </FieldRow>
         <FieldRow label="Account">
           {account ? <RecordLink to={`/accounts/${account.accountId}`}>{account.name}</RecordLink> : '—'}
+        </FieldRow>
+        <FieldRow label="Product group" htmlFor={ids.productGroup}>
+          {editable ? (
+            <ProductGroupSelect
+              id={ids.productGroup}
+              value={values.productGroupId}
+              current={productGroup}
+              onChange={(productGroupId) => change({ productGroupId })}
+            />
+          ) : (
+            orDash(productGroup?.name)
+          )}
+        </FieldRow>
+        <FieldRow label="Est. revenue" htmlFor={ids.revenue}>
+          {editable ? (
+            <Input
+              id={ids.revenue}
+              className={styles.amount}
+              appearance="filled-darker"
+              inputMode="decimal"
+              contentBefore="€"
+              value={values.estimatedValue}
+              aria-invalid={Number.isNaN(estimatedValue) || undefined}
+              onChange={(_, data) => change({ estimatedValue: data.value })}
+              data-testid="estimated-revenue-input"
+            />
+          ) : (
+            formatMoney(o.estimatedValue)
+          )}
+          <span className={styles.hint}>
+            The seller&apos;s estimate. The Business Central quote is shown on the Quotes tab.
+          </span>
         </FieldRow>
         <FieldRow label="Est. close date" htmlFor={ids.close}>
           {editable ? (
@@ -200,14 +309,6 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
             stageLabel(o.stepName)
           )}
         </FieldRow>
-        <FieldRow label="Est. revenue">
-          {formatMoney(o.estimatedValue)}
-          <span className={styles.hint}>
-            {o.csBcQuoteId
-              ? 'Follows the Business Central quote total.'
-              : 'From the product lines at CRM list prices until Business Central quotes.'}
-          </span>
-        </FieldRow>
         <FieldRow label="Owner">{orDash(owner?.fullName)}</FieldRow>
         <FieldRow label="Opportunity no.">{o.csNumber}</FieldRow>
         <FieldRow label="Created on">{formatDateTime(o.createdOn)}</FieldRow>
@@ -216,7 +317,7 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
             <Button
               appearance="primary"
               icon={<Save20Regular />}
-              disabled={!dirty || !valid || saving}
+              disabled={!dirty || problem !== undefined || saving}
               onClick={() => void save()}
               data-testid="save-opportunity"
             >
@@ -225,7 +326,7 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
             <Button disabled={!dirty || saving} onClick={() => setDraft(null)}>
               Discard changes
             </Button>
-            {dirty && <span className={styles.unsaved}>{valid ? 'Unsaved changes' : 'The topic is required.'}</span>}
+            {dirty && <span className={styles.unsaved}>{problem ?? 'Unsaved changes'}</span>}
           </div>
         )}
       </Section>
@@ -242,17 +343,10 @@ export function SummaryTab({ detail, refresh, onShowTimeline }: SummaryTabProps)
           <FieldRow label="Quote status" lockedReason={INTEGRATION_OWNED}>
             {o.csBcQuoteStatus ? <QuoteStatusBadge status={o.csBcQuoteStatus} /> : '—'}
           </FieldRow>
-          <FieldRow label="Sales order" lockedReason={INTEGRATION_OWNED}>
-            {orDash(o.csBcOrderNumber)}
-          </FieldRow>
-          <FieldRow label="Quote requested" lockedReason={INTEGRATION_OWNED}>
-            {o.csQuoteRequestedOn
-              ? `${formatDateTime(o.csQuoteRequestedOn)} · revision ${o.csQuoteRequestRevision}`
-              : '—'}
-          </FieldRow>
-          <FieldRow label="Lines revision" lockedReason="Goes up each time the product lines are saved">
-            {o.csLinesRevision}
-          </FieldRow>
+          <span className={styles.note}>
+            This opportunity is also in Business Central. A Business Central user creates the quote there and links
+            it to the opportunity.
+          </span>
         </Section>
         <Section
           title="Recent activity"

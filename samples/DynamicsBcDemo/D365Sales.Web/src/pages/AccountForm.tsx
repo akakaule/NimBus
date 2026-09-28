@@ -27,7 +27,7 @@ import { formatMoney, orDash } from '../format';
 import { useBack } from '../hooks/useBack';
 import { useNewItems } from '../hooks/useHighlight';
 import { usePolling } from '../hooks/usePolling';
-import { isBcOwned, stageLabel } from '../model';
+import { isBcManagedProspect, isBcOwned, stageLabel } from '../model';
 import { useCurrentUser } from '../user';
 import { AccountInfoSection } from './account/AccountInfoSection';
 import { BusinessCentralSection } from './account/BusinessCentralSection';
@@ -109,8 +109,10 @@ function AccountBody({ detail, refresh }: { detail: AccountDetail; refresh: () =
       {bcOwned && (
         <MessageBar intent="info" icon={<LockClosed20Regular />} className={styles.banner} data-testid="owned-by-bc-banner">
           <MessageBarBody>
-            Business Central owns this customer&apos;s master data. These fields are read-only here — change them in
-            Business Central.
+            {isBcManagedProspect(account)
+              ? "Business Central manages this account's master data since its first quote."
+              : "Business Central owns this customer's master data."}{' '}
+            These fields are read-only here — change them in Business Central.
           </MessageBarBody>
         </MessageBar>
       )}

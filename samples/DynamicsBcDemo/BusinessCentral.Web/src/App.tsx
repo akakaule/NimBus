@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { BcShell } from './components/BcShell';
 import ContactsList from './pages/ContactsList';
+import CrmOpportunitiesList from './pages/CrmOpportunitiesList';
 import CustomerCard from './pages/CustomerCard';
 import CustomersList from './pages/CustomersList';
 import AlertsChannel from './pages/demo/AlertsChannel';
@@ -51,6 +52,7 @@ export default function App() {
         }
       >
         <Route index element={<RoleCenter />} />
+        <Route path="crm-opportunities" element={<CrmOpportunitiesList />} />
         <Route path="quotes" element={<QuotesList />} />
         <Route path="quotes/:id" element={<QuoteCard />} />
         <Route path="customers" element={<CustomersList />} />

@@ -62,7 +62,10 @@ interface MakeOrderDialogProps {
   onDone: (result: MakeOrderResult) => void;
 }
 
-/** Make Order: converts the quote, and a prospect contact into a customer first. */
+/**
+ * Make Order: converts the quote, and a prospect contact into a customer first. The order stays in
+ * Business Central; Dynamics 365 hears that the quote was accepted and wins the opportunity.
+ */
 export function MakeOrderDialog({ open, quote, onClose, onDone }: MakeOrderDialogProps) {
   return (
     <Dialog
@@ -88,6 +91,10 @@ function MakeOrderForm({ quote, onCancel, onDone }: { quote: QuoteDetail; onCanc
 
   const contact = quote.contact;
   const isProspect = quote.sellToType === 'Contact' && !contact?.customerId;
+  const opportunity = quote.crmOpportunity;
+  const wonNote = quote.crmOpportunityId
+    ? `Dynamics 365 closes ${opportunity ? `opportunity ${opportunity.number}` : 'the opportunity'} as won.`
+    : null;
   const template =
     templates.data?.find((t) => t.code === templateCode) ??
     (templateCode === quote.proposedTemplate?.code ? quote.proposedTemplate : null) ??
@@ -142,20 +149,30 @@ function MakeOrderForm({ quote, onCancel, onDone }: { quote: QuoteDetail; onCanc
                   <dd className={styles.factValue}>{template.paymentTermsCode}</dd>
                 </dl>
               )}
-              <p className={styles.note}>
-                From then on Business Central owns the customer's master data; NimBus keeps Dynamics 365 up to date.
+              <p className={styles.note} data-testid="make-order-note">
+                The prospect becomes a buying customer in Business Central, which owns its master data from then on.
+                {wonNote && ` ${wonNote}`}
               </p>
             </>
-          ) : contact?.customerId ? (
-            <p className={styles.text}>
-              Contact <strong>{contact.number}</strong> ({contact.displayName}) is already customer{' '}
-              <strong>{contact.customerNumber}</strong>. Convert quote <strong>{quote.number}</strong> to a sales order for
-              that customer?
-            </p>
           ) : (
-            <p className={styles.text}>
-              Convert quote <strong>{quote.number}</strong> to a sales order?
-            </p>
+            <>
+              {contact?.customerId ? (
+                <p className={styles.text}>
+                  Contact <strong>{contact.number}</strong> ({contact.displayName}) is already customer{' '}
+                  <strong>{contact.customerNumber}</strong>. Convert quote <strong>{quote.number}</strong> to a sales order
+                  for that customer?
+                </p>
+              ) : (
+                <p className={styles.text}>
+                  Convert quote <strong>{quote.number}</strong> to a sales order?
+                </p>
+              )}
+              {wonNote && (
+                <p className={styles.note} data-testid="make-order-note">
+                  {wonNote}
+                </p>
+              )}
+            </>
           )}
 
           {error && (

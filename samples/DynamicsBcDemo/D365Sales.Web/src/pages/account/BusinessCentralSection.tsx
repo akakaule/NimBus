@@ -76,17 +76,14 @@ export function BusinessCentralSection({ account }: { account: Account }) {
         </>
       ) : (
         <div className={styles.prospect} data-testid="bc-prospect-note">
-          <span>
-            Not a Business Central customer yet — it becomes one when its first quote turns into an order in Business
-            Central.
-          </span>
+          <span>Not a Business Central customer yet — it becomes one when a Business Central quote turns into an order.</span>
           {account.csBcContactNumber ? (
             <span className={styles.contact}>
-              Known to Business Central as prospect contact{' '}
-              <span className={styles.strong}>{account.csBcContactNumber}</span>
+              Business Central keeps this prospect as contact{' '}
+              <span className={styles.strong}>{account.csBcContactNumber}</span>.
             </span>
           ) : (
-            <span>Business Central has not heard of this prospect; it will with the first quote request.</span>
+            <span>Sent to Business Central as a prospect contact.</span>
           )}
         </div>
       )}

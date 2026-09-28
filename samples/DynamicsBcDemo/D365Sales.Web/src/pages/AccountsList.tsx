@@ -27,7 +27,7 @@ function MasterDataCell({ row }: { row: AccountRow }) {
   const styles = useStyles();
   if (!isBcOwned(row.account)) return <span className={styles.owner}>Dynamics 365</span>;
   return (
-    <span className={styles.owner} title="Business Central owns this customer's master data">
+    <span className={styles.owner} title="Business Central manages this account's master data">
       <span className={styles.lock} data-testid="bc-owned-lock">
         <LockClosed16Regular aria-label="Locked" />
       </span>

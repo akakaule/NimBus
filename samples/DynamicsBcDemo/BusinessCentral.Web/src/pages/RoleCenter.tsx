@@ -93,6 +93,7 @@ export default function RoleCenter() {
   }
 
   const openQuoteCount = data.openQuotes + data.sentQuotes;
+  const toQuote = data.crmOpportunitiesWithoutQuote;
 
   return (
     <div data-testid="role-center">
@@ -100,12 +101,16 @@ export default function RoleCenter() {
         <div className={styles.role}>Sales Order Processor</div>
         <h1 className={styles.greeting}>{greeting()}</h1>
         <p className={styles.insight}>
+          {toQuote > 0 &&
+            (toQuote === 1
+              ? '1 CRM opportunity is waiting for a quote. '
+              : `${toQuote} CRM opportunities are waiting for a quote. `)}
           {openQuoteCount === 1 ? '1 open sales quote' : `${openQuoteCount} open sales quotes`} worth{' '}
           {formatMoney(data.openQuotesValue, 'EUR')} {openQuoteCount === 1 ? 'is' : 'are'} waiting to become orders.{' '}
           {data.prospects > 0 &&
             (data.prospects === 1
-              ? '1 prospect is quoted as a contact, not a customer, until it orders.'
-              : `${data.prospects} prospects are quoted as contacts, not customers, until they order.`)}
+              ? '1 prospect from Dynamics 365 is a contact, not a customer, until it orders.'
+              : `${data.prospects} prospects from Dynamics 365 are contacts, not customers, until they order.`)}
         </p>
       </section>
 
@@ -115,6 +120,12 @@ export default function RoleCenter() {
         <Panel>
           <div className={styles.activities}>
             <CueGroup title="Sales Quotes">
+              <Cue
+                title="CRM opportunities without a quote"
+                value={toQuote}
+                to="/crm-opportunities?unquoted=1"
+                data-testid="cue-crm-opportunities"
+              />
               <Cue title="Sales Quotes – Open" value={data.openQuotes} to="/quotes?status=Draft" data-testid="cue-open-quotes" />
               <Cue title="Sales Quotes – Sent" value={data.sentQuotes} to="/quotes?status=Sent" data-testid="cue-sent-quotes" />
               <Cue
@@ -165,7 +176,7 @@ export default function RoleCenter() {
               rows={data.recentDocuments}
               rowKey={(d) => `${d.type}:${d.id}`}
               onRowClick={(d) => navigate(cardPath(d))}
-              empty="No sales documents yet. Quotes appear here when Dynamics 365 requests them."
+              empty="No sales documents yet. Create a quote from a CRM opportunity."
             />
           </div>
         </Panel>

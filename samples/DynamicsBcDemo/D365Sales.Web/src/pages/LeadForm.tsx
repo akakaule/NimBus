@@ -83,8 +83,8 @@ function QualificationBanner({ lead }: { lead: Lead }) {
   return (
     <MessageBar intent="info" className={styles.banner}>
       <MessageBarBody>
-        Qualifying creates a prospect account, a contact and an opportunity in Dynamics 365 only. Business Central
-        first hears about the prospect when a quote is requested.
+        Qualifying creates a prospect account, a contact and an opportunity, and sends the prospect and the
+        opportunity to Business Central, where the quote is made.
       </MessageBarBody>
     </MessageBar>
   );
@@ -151,7 +151,7 @@ export function LeadForm({ id }: { id: string }) {
       const result = await api.qualifyLead(lead.leadId, userId);
       notify.success(
         'Lead qualified',
-        'Qualified: account (Prospect), contact and opportunity created — nothing was sent to Business Central.',
+        'Qualified — the prospect and the opportunity are on their way to Business Central.',
       );
       navigate(`/opportunities/${result.opportunityId}`);
     } catch (error) {

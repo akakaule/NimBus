@@ -1,5 +1,5 @@
 import { DocumentText20Regular } from '@fluentui/react-icons';
-import type { BcQuote, Opportunity } from '../../api';
+import type { BcQuote } from '../../api';
 import { EmptyState } from '../../components/PageStates';
 import { RecordGrid, type GridColumn } from '../../components/RecordGrid';
 import { QuoteStatusBadge } from '../../components/StatusBadges';
@@ -33,14 +33,12 @@ const columns: GridColumn<BcQuote>[] = [
 ];
 
 interface QuotesTabProps {
-  opportunity: Opportunity;
   quotes: BcQuote[];
 }
 
-/** The read-only mirror of the Business Central quotes for this opportunity. */
-export function QuotesTab({ opportunity, quotes }: QuotesTabProps) {
+/** The read-only mirror of the Business Central quotes linked to this opportunity. */
+export function QuotesTab({ quotes }: QuotesTabProps) {
   const fresh = useNewItems(quotes.map((quote) => quote.bcQuoteId));
-  const waiting = opportunity.csBcQuoteStatus === 'Requested';
 
   return (
     <Section
@@ -55,13 +53,8 @@ export function QuotesTab({ opportunity, quotes }: QuotesTabProps) {
         rowKey={(quote) => quote.bcQuoteId}
         fresh={fresh}
         empty={
-          <EmptyState
-            icon={<DocumentText20Regular />}
-            title={waiting ? 'Business Central is creating the quote…' : 'No Business Central quote yet'}
-          >
-            {waiting
-              ? 'It appears here as soon as Business Central reports it.'
-              : 'Use Request quote in Business Central in the command bar.'}
+          <EmptyState icon={<DocumentText20Regular />} title="No Business Central quote yet">
+            A Business Central user creates the quote in Business Central from this opportunity.
           </EmptyState>
         }
       />

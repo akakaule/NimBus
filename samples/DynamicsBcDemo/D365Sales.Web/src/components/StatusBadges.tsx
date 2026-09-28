@@ -42,8 +42,6 @@ export function RelationshipBadge({ code, testId }: { code: number; testId?: str
 
 export const quoteStatusColor = (status: string | null | undefined): BadgeColor => {
   switch (status as BcQuoteStatus | null | undefined) {
-    case 'Requested':
-      return 'warning';
     case 'Sent':
       return 'brand';
     case 'Accepted':

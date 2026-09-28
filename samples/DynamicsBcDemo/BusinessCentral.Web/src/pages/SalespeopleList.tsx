@@ -52,7 +52,7 @@ export default function SalespeopleList() {
     setNotice({
       intent: 'success',
       title: `Salesperson ${salesperson.code} created`,
-      message: `${salesperson.displayName} (${salesperson.email}) can now be the salesperson on quotes Dynamics 365 requests.`,
+      message: `${salesperson.displayName} (${salesperson.email}) can now own CRM opportunities and quotes in Business Central.`,
     });
     if (data) {
       replace([...data.filter((s) => s.code !== salesperson.code), salesperson].sort((a, b) => a.code.localeCompare(b.code)));

@@ -79,7 +79,7 @@ export function AccountInfoSection({ account, refresh }: AccountInfoSectionProps
   const [draft, setDraft] = useState<MasterData | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Business Central can take the account over (first order) while the seller is editing.
+  // Business Central can take the account over (first quote) while the seller is editing.
   useEffect(() => {
     if (locked) setDraft(null);
   }, [locked]);
@@ -106,12 +106,8 @@ export function AccountInfoSection({ account, refresh }: AccountInfoSectionProps
       });
       await refresh();
       setDraft(null);
-      notify.success(
-        'Account saved',
-        account.csBcContactNumber
-          ? `Sent to Business Central, which holds this prospect as contact ${account.csBcContactNumber}.`
-          : 'The prospect data stays in Dynamics 365.',
-      );
+      // Only a Dynamics 365-owned prospect can be saved here, and the API sends each save to Business Central.
+      notify.success('Account saved', 'Saved and sent to Business Central, which keeps this prospect as a contact.');
     } catch (error) {
       notify.error('The account was not saved', errorMessage(error));
     } finally {

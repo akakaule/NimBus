@@ -1,4 +1,4 @@
-import type { Account, Opportunity } from './api';
+import type { Account } from './api';
 
 // Dataverse option-set values the simulator uses (D365Sales.Api Data/Entities.cs, OptionSets).
 
@@ -21,6 +21,10 @@ export const relationshipLabel = (code: number) =>
 export const isBcOwned = (account: Pick<Account, 'csMasterDataOwner'>) =>
   account.csMasterDataOwner === MasterDataOwner.BusinessCentral;
 
+/** A prospect with a Business Central quote: Business Central manages its master data from the first quote on. */
+export const isBcManagedProspect = (account: Pick<Account, 'csMasterDataOwner' | 'customerTypeCode'>) =>
+  isBcOwned(account) && account.customerTypeCode === RelationshipType.Prospect;
+
 export const isOpen = (record: { stateCode: number }) => record.stateCode === StateCode.Open;
 
 export const opportunityStatusLabel = (stateCode: number) =>
@@ -28,7 +32,3 @@ export const opportunityStatusLabel = (stateCode: number) =>
 
 export const leadStatusLabel = (stateCode: number) =>
   stateCode === StateCode.WonOrQualified ? 'Qualified' : stateCode === StateCode.LostOrDisqualified ? 'Disqualified' : 'Open';
-
-/** Business Central has no quote for these lines yet: they changed after the last request. */
-export const linesChangedSinceRequest = (opportunity: Opportunity) =>
-  opportunity.csQuoteRequestedOn !== null && opportunity.csLinesRevision > opportunity.csQuoteRequestRevision;

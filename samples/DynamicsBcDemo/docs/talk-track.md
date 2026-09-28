@@ -1,10 +1,10 @@
 # Talk track: Dynamics 365 Sales ↔ Business Central on NimBus
 
 About **30 minutes** of demo plus Q&A. The audience: an IT lead and the people who will own the CRM
-and ERP integration. The story: *CRM owns everything until the customer buys; Business Central
-owns the buying customer, and quotes are made in Business Central.* The demo proves that NimBus
-keeps that boundary sharp, and shows how an integration behaves when something goes wrong, which is
-what IT really buys.
+and ERP integration. The story: *CRM owns leads, prospects, opportunities and the pipeline; Business
+Central owns the buying customer, contacts, products and quotes, and quotes are made in Business
+Central, linked to the CRM opportunity.* The demo proves that NimBus keeps that boundary sharp, and
+shows how an integration behaves when something goes wrong, which is what IT really buys.
 
 Everything on screen is simulated and fictional ("Contoso Subsea"). Say so up front: *"The two
 systems are simulators we control, so we can break them on purpose. The integration APIs have the
@@ -21,20 +21,21 @@ off the screen.
    Wait until every resource in the Aspire dashboard (https://localhost:17180) is healthy and
    `provisioner` is *Finished*.
    - For a client-facing run, prefer a real Service Bus namespace (see the [README](../README.md#using-a-real-service-bus-namespace)).
-   - Restarting the stack is the reset: it starts from the seed data every time.
-2. **Warm-up cycle.** This touches only throwaway data, never the scenes' records:
-   - In **Sales Hub** (http://localhost:5283), open the opportunity *Warm-up opportunity*
-     (OPP-10099, account *Wingtip Marine (warm-up)*) and click **Request quote in Business
-     Central**. Within a few seconds it should show a Business Central quote.
-   - On **Fabrikam Offshore Energy**, click **Check credit in Business Central**. It is read-only,
-     so the scene 5 record stays as seeded. The first check after a start can take several seconds
-     while the request/reply path warms up, which is why it happens here. Close the dialog and
-     check again: the answer should now appear in under a second.
+   - Restarting the stack is the reset: it starts from go-live morning every time.
+2. **Warm-up cycle.** This touches only the throwaway *Wingtip Marine (warm-up)* records:
+   - In **Sales Hub** (http://localhost:5283) → **Accounts** → *Wingtip Marine (warm-up)* → **Check
+     credit in Business Central**. The first check after a start can take several seconds while the
+     request/reply path warms up. Close the dialog and check again: now it answers in under a second.
+   - Open the opportunity *Warm-up opportunity* (OPP-10099), change **Probability** and **Save**.
+   - In **Business Central** (http://localhost:5293) → **CRM Opportunities** → *OPP-10099* → **Create
+     sales quote** → **Edit lines** → add one item → **Save**. Sales Hub's OPP-10099 now shows the
+     Business Central quote.
+   - Don't run the initial sync: that is scene 1.
 3. **In nimbus-ops** (https://localhost:18543), open **Admin → Health** and switch on the heartbeat
    schedule, so both adapters show as alive.
 4. **Shared screen: open these tabs, in this order:**
-   1. Sales Hub, the **Dashboard**;
-   2. Business Central, **Home** (http://localhost:5293);
+   1. Sales Hub, **Accounts**;
+   2. Business Central, **Home**;
    3. nimbus-ops, **Endpoints**;
    4. **#integration-alerts** (http://localhost:5293/demo/alerts).
 5. **Presenter screen:** the **demo cockpit** (http://localhost:5293/demo) and this script.
@@ -46,83 +47,94 @@ off the screen.
 
 *Say:*
 - "Today your sellers keep leads and pipeline in spreadsheets, and Business Central already runs the
-  business. We keep that split: CRM owns everything until the customer buys; Business Central owns
-  the buying customer, and quotes are made in Business Central."
+  business. We keep that split: CRM owns leads, prospects, opportunities and the pipeline; Business
+  Central owns the buying customer, contacts, products and quotes."
+- "Quotes are made in Business Central, and linked to the CRM opportunity. From an account's first
+  quote, Business Central manages it."
 - "The integration's job isn't to copy everything everywhere. It's to move each piece of data at the
   right moment, in the right order, and to show you exactly what happened when something goes wrong."
 
-## Scene 1 — A lead becomes an opportunity, in CRM only (3 min)
+## Scene 1 — Go-live: the initial sync (3 min)
 
 *Click:*
-1. Sales Hub → **Leads** → *ROV winch upgrade for research vessel* (Tailspin Marine Research,
-   Hannah Okafor).
-2. **Qualify**. You land on the new opportunity *OPP-10025*.
-3. Point to the account: its relationship type is **Prospect**. Open the **Timeline**.
-
-*Say:* "Qualifying creates the account, the contact and the opportunity. Nothing has gone to
-Business Central: a prospect is CRM's business until it buys."
-
-*Prove it (optional):* open nimbus-ops **Endpoints**. There is no traffic for this account yet.
-
-## Scene 2 — Ask Business Central for a quote (4 min)
-
-*Click:*
-1. On OPP-10025 → **Product lines** → **Edit**. Add *Electric ROV winch, 20 kN* × 1 and *Armoured
-   tow cable, per 100 m* × 3 → **Save**.
-2. **Request quote in Business Central**.
-3. Within a few seconds the status strip shows a **Business Central quote … · Draft**. Estimated
-   revenue now shows the quote total (€212,800) and the stage moves to **Propose**. Open the
-   **Quotes (Business Central)** tab: a read-only copy.
-4. Switch to **Business Central → Contacts**. The new contact is *Tailspin Marine Research*, marked
-   **Prospect**, with the CRM account id.
-5. Open **Sales Quotes** and the new quote. It is for the *contact*, it has salesperson **AR**
-   (resolved from the seller's e-mail), and its External Document No. is **OPP-10025**.
-6. Back in Sales Hub, click **Integration trail → Requests to Business Central** (it opens
-   nimbus-ops). `CreateBcSalesQuote` is **Completed**. **Updates from Business Central** shows
-   `BcSalesQuoteCreated` **Completed**.
+1. Sales Hub → **Accounts**. Only a prospect and the warm-up account: none of Business Central's
+   customers yet.
+2. Cockpit → **Go-live** → **Run the initial sync**. It reports the product groups, customers and
+   contacts it sent.
+3. Sales Hub → **Accounts**: *Fabrikam Offshore Energy*, *Northwind Ocean Survey*, *Litware
+   Renewables* and *Adatum Hydrographic* appear as **Customers**, locked for Business Central. Open
+   *Fabrikam*: the **Business Central** section shows the customer number, credit limit and payment
+   terms, and **Contacts** lists Ingrid Solberg and Erik Nilsen.
+4. nimbus-ops → **Endpoints** → **D365SalesEndpoint**: the load — `BcItemCategoryUpdated`,
+   `BcCustomerUpdated`, `BcContactUpdated` — all **Completed**.
 
 *Say:*
-- "Quotes are made in Business Central, so CRM *asks*: the message is a **command** with exactly
-  one receiver, and the platform refuses to deploy if anyone adds a second one."
-- "Business Central quotes the prospect as a *contact*. There is still no customer: we haven't sold
-  anything yet."
+- "Go-live day. The initial load runs through the same pipeline as everything else: every record is
+  audited, and a customer's contacts always arrive after the customer."
+- "Run it twice and nothing changes: CRM matches the records on their Business Central ids."
+- "Items stay in Business Central. CRM gets the product groups to classify its opportunities."
+
+## Scene 2 — A lead becomes an opportunity, and Business Central knows it (3 min)
+
+*Click:*
+1. Sales Hub → **Leads** → *ROV winch upgrade for research vessel* (Tailspin Marine Research, Hannah
+   Okafor) → **Qualify**. You land on the new opportunity *OPP-10025*.
+2. On the **Summary** tab, set **Product group** to *Winches and launch & recovery* → **Save**.
+3. Point to the account: relationship type **Prospect**, managed in Dynamics 365.
+4. Business Central → **Contacts**: *Tailspin Marine Research*, a **Prospect**, with the CRM account
+   id. Then **CRM Opportunities**: *OPP-10025* with salesperson **AR** (matched on the seller's
+   e-mail) and the product group.
+5. Sales Hub → **Integration trail → Changes sent to Business Central** (it opens nimbus-ops):
+   `D365ProspectUpdated`, then `D365OpportunityUpdated`, both **Completed**, in that order.
+
+*Say:*
+- "Qualifying creates the account, the contact and the opportunity. CRM owns them, and sends the
+  prospect and the opportunity to Business Central straight away, in that order, so a quote can be
+  made there."
 - "Every message about Tailspin travels in Tailspin's own lane, in order. Here is the audit trail
   for exactly this customer."
 
-## Scene 3 — Quote work happens in Business Central (2 min)
+## Scene 3 — The quote is made in Business Central (4 min)
 
 *Click:*
-1. On the BC quote card → **Lines** → **Edit** → give the winch a 5 % line discount → **Save**.
-2. **Send**.
-3. In Sales Hub, the opportunity shows **Sent** and the revised estimated revenue. The **Timeline**
-   shows the revision and the send.
+1. Business Central → **CRM Opportunities** → *OPP-10025* → **Create sales quote**. The new quote is
+   for the *contact* Tailspin Marine Research (not a customer), with salesperson **AR** and External
+   Document No. **OPP-10025**.
+2. **Lines** → **Edit lines** → **New line**: *Electric ROV winch, 20 kN* × 1; **New line**:
+   *Armoured tow cable, per 100 m* × 3. Give the winch a 5 % line discount → **Save**.
+3. **Send**.
+4. Sales Hub → *OPP-10025*: the strip shows **Business Central quote … · Sent**. The **Quotes
+   (Business Central)** tab has a read-only copy, and the **Timeline** shows the quote being created,
+   revised and sent.
+5. Open the account: a banner says **Business Central manages this account's master data since its
+   first quote**. The fields are locked.
 
-*Say:* "Pricing, discounts and delivery belong to Business Central. The pipeline in CRM follows
-the real quote automatically, so the sales manager's forecast uses Business Central's numbers, not
-list prices."
+*Say:*
+- "Quotes are made in Business Central, by the people who own pricing and delivery. They link the
+  quote to the CRM opportunity with one click."
+- "From the first quote, Business Central manages the account, and CRM shows it read-only. That's
+  your ownership rule, enforced by the integration."
+- "The opportunity stays the seller's. The quote status comes back to it."
 
-## Scene 4 — Won: Business Central takes ownership (4 min)
+## Scene 4 — Won: the prospect becomes a buying customer (3 min)
 
 *Click:*
 1. On the BC quote card → **Make Order**. The dialog explains that the contact isn't a customer yet
    and will be created from a customer template. Pick a template → **Confirm**.
-2. The message says the sales order and the customer were created.
-3. In Sales Hub, open the account. It is now a **Customer**, and a banner says **Business Central
-   owns this customer's master data**: the fields are locked. The **Business Central** section shows
+2. In Sales Hub, open the account. It is now a **Customer**; the **Business Central** section shows
    the customer number, credit limit and payment terms from the template.
-4. Open the opportunity. It is **Won**, with the order number and the order amount as actual
-   revenue.
-5. Try to rename the account in Sales Hub. It is refused, because Business Central owns it.
-6. nimbus-ops → **Updates from Business Central** for this customer: `BcCustomerCreated` →
-   `BcSalesQuoteUpdated` (Accepted) → `BcSalesOrderCreated`, all Completed, in that order.
+3. Open *OPP-10025*. It is **Won** from the accepted Business Central quote, with the quote total as
+   actual revenue.
+4. nimbus-ops → **Updates from Business Central** for this customer: `BcCustomerCreated` →
+   `BcSalesQuoteUpdated` (Accepted), both **Completed**, in that order.
 
 *Say:*
-- "This is the handover moment you described. The prospect becomes a buying customer, and from now
-  on Business Central is the master; CRM shows it read-only."
-- "Order matters. The customer must exist before the order closes the opportunity, and NimBus
-  guarantees that per customer, without anyone writing locking code."
+- "This is the handover you described. The prospect becomes a buying customer in Business Central.
+  CRM learns about the customer first, then that the quote was accepted, and closes the deal as won —
+  in that order, guaranteed per customer, without anyone writing locking code."
+- "The order stays in Business Central. CRM doesn't need the order history."
 
-## Scene 5 — Ask, don't copy: live credit status (2 min)
+## Scene 5 — Optional, a V2 idea: ask, don't copy (2 min)
 
 *Click:*
 1. Sales Hub → **Accounts** → *Fabrikam Offshore Energy* → **Check credit in Business Central**. The
@@ -143,19 +155,20 @@ The part that matters most to IT. Bring the **#integration-alerts** tab up next 
 ### 6a — Missing reference data: a new seller isn't in Business Central
 
 *Click:*
-1. Sales Hub → **Signed in as** → *Robin Hale* (a new seller). Open **Opportunities** → *OPP-10016*
-   (Trey Research Vessels) → **Request quote in Business Central**. The status stays *Quote
-   requested…*.
-2. **#integration-alerts** shows *Message failed: CreateBcSalesQuote*.
+1. Sales Hub → **Signed in as** → *Robin Hale* (a new seller). **Leads** → *Connectors for offshore
+   wind export cable* (City Power & Light) → **Qualify**.
+2. **#integration-alerts** shows *Message failed: D365OpportunityUpdated*.
 3. nimbus-ops → **Failed**. The error is readable: *No salesperson with e-mail
    robin.hale@contososubsea.example exists in Business Central. Add the seller under Salespeople in
-   Business Central, then resubmit the message.*
-4. While it is failed: cockpit → **Pilot sales office** → **Request quotes now** (6). Six sellers'
-   requests flow through untouched (watch nimbus-ops **Flow** or **Endpoints**).
+   Business Central, then resubmit the message.* The prospect reached Business Central; the
+   opportunity did not.
+4. While it is failed: cockpit → **Pilot sales office** → **Create opportunities now** (6). Six
+   sellers' new prospects and opportunities flow through untouched (watch nimbus-ops **Flow** or
+   **Endpoints**).
 5. Fix it where the data lives: Business Central → **Salespeople** → **New**: code *RH*, *Robin
    Hale*, *robin.hale@contososubsea.example*.
-6. nimbus-ops → the failed message → **Resubmit**. It completes, and the quote appears on the
-   opportunity in Sales Hub.
+6. nimbus-ops → the failed message → **Resubmit**. It completes, and *OPP-10029* appears in Business
+   Central's **CRM Opportunities**, ready to be quoted.
 
 *Say:* "A data problem stops one customer, not the office. Nothing is lost or silently retried. IT
 gets an alert with the exact reason, fixes the data in Business Central, and resubmits. The history
@@ -165,12 +178,12 @@ shows who did what."
 
 *Click:*
 1. Cockpit → **Start 20 s update window**. The BC client shows a banner.
-2. Cockpit → **Request quotes now** (6).
+2. Cockpit → **Create opportunities now** (6).
 3. Within seconds, the cockpit's circuit turns **Open** and **#integration-alerts** shows *Circuit
-   opened*. The adapter has **paused**: the remaining requests wait on the bus, untouched.
+   opened*. The adapter has **paused**: the remaining messages wait on the bus, untouched.
 4. About 20–40 seconds later the circuit goes **HalfOpen → Closed** (*Circuit recovered*). The
-   requests that failed during the window are retried automatically, and all six quotes are
-   created. No one clicked anything.
+   messages that failed during the window are retried automatically, and all six opportunities
+   appear in Business Central. No one clicked anything.
 
 *Say:*
 - "Business Central online has update windows and service limits. Instead of burning every message
@@ -181,25 +194,28 @@ shows who did what."
 
 *Click:*
 1. Cockpit → **Start 20 s throttling**.
-2. **Signed in as** *Maya Lindqvist* → *OPP-10012* (Northwind Ocean Survey, an existing customer) →
-   **Request quote in Business Central**.
-3. nimbus-ops shows it failing with *429 Too Many Requests* and retrying with growing delays (about
-   5, 10 and 20 s). It completes by itself within about 40 seconds, on the first retry after the
-   window. The circuit stays **Closed**: throttling is paced, not an outage.
+2. **Signed in as** *Maya Lindqvist* → *OPP-10017* (Proseware Cable Systems) → change **Est.
+   revenue** → **Save**.
+3. nimbus-ops shows the change failing with *429 Too Many Requests* and retrying with growing delays
+   (about 5, 10 and 20 s). It completes by itself within about 40 seconds, on the first retry after
+   the window, and Business Central's **CRM Opportunities** shows the new value. The circuit stays
+   **Closed**: throttling is paced, not an outage.
 
 *Say:* "Business Central limits requests per user. Backoff is the right answer to that, and here
 it is policy, not code in every integration."
 
-### 6d — The double-click
+### 6d — The same change, twice
 
 *Click:*
-1. *OPP-10017* (Proseware Cable Systems) → click **Request quote in Business Central** twice,
-   quickly.
-2. nimbus-ops → **Requests to Business Central**: one request **Completed**, the second
-   **Skipped** with reason **DuplicateDetected**. Business Central has exactly one quote.
+1. Sales Hub, still signed in as *Maya Lindqvist* → *OPP-10017* → change **Est. revenue** again →
+   **Save**. Business Central's **CRM Opportunities** shows the new value within a second.
+2. Cockpit → **Delivery** → **Deliver the last opportunity change again**.
+3. nimbus-ops → **Endpoints** → **BusinessCentralEndpoint**: the repeat is **Skipped** with reason
+   **DuplicateDetected**. Business Central applied the change once.
 
-*Say:* "The request carries a fingerprint, so the platform recognises a repeat. Business Central
-is idempotent per opportunity as well: belt and braces against duplicate quotes."
+*Say:* "Source systems deliver at least once: a retry can send the same change twice. Every change
+carries a fingerprint, so the platform recognises the repeat. The Business Central side is
+idempotent as well: belt and braces."
 
 ## Scene 7 — Operating it (3 min)
 
@@ -207,7 +223,7 @@ Tour nimbus-ops:
 - **Endpoints**: health per system.
 - **Flow**: live traffic.
 - **Event types**: the integration contract, with descriptions and examples, generated from code.
-- **Personal data masking**: open any `CreateBcSalesQuote` message. The contact person's name,
+- **Personal data masking**: open any `D365ProspectUpdated` message. The contact person's name,
   e-mail and phone show as `***`, and the VAT number only reveals its last four characters, unless
   the user holds the PII Reader role.
 - **Failed**: bulk resubmit or skip.
@@ -216,8 +232,8 @@ Tour nimbus-ops:
 - **Access**: Entra ID sign-in with Reader, Contributor and Owner roles.
 
 *Optional:*
-- If an MCP client is configured, ask the read-only operator endpoint (`/mcp`): *"Which quote
-  requests failed today, and why?"*
+- If an MCP client is configured, ask the read-only operator endpoint (`/mcp`): *"Which opportunity
+  changes failed today, and why?"*
 - Mention `nb catalog export`: the same contract as a browsable EventCatalog site.
 
 ## Scene 8 — From demo to production, and the pilot (3 min)
@@ -228,15 +244,16 @@ Tour nimbus-ops:
   Changes made by the integration user are filtered out, so nothing echoes back.
 - **Business Central → NimBus.** BC webhooks notify about a change (about 30 s after it, and
   subscriptions must be renewed every 3 days). The integration fetches the record through the
-  standard API. A small **AL extension** adds the CRM reference fields and the prospect-quote API,
-  because the standard API only quotes existing customers.
+  standard API. A small **AL extension** adds the CRM reference fields, the CRM opportunities table
+  the quotes link to, and the API for prospects and opportunities.
 - **Hosting.** Everything runs in your Azure tenant: Service Bus, adapters on Container Apps or
   Functions, the operator console, and a SQL or Cosmos audit store. It is deployed and upgraded with
   the `nb` CLI.
 - **The pilot.** Go live with one sales office: its sellers are mapped to Business Central
-  salespeople, and its existing Business Central customers are loaded into CRM through the same
-  pipeline. Other offices follow without changing the integration. The retry timings you saw are
-  stage-tuned seconds; production uses minutes.
+  salespeople, and its Business Central customers, contacts and product groups are loaded into CRM
+  with the initial sync you saw. Other offices and Business Central environments follow the same
+  way, without changing the integration. The retry timings you saw are stage-tuned seconds;
+  production uses minutes.
 
 ## Objection handling
 
@@ -249,7 +266,7 @@ Tour nimbus-ops:
 - NimBus earns its place when you need:
   - near-real-time flow;
   - ownership rules the standard mapping doesn't model, such as quotes made in Business Central for
-    prospects that aren't customers yet;
+    prospects that aren't customers yet, linked to CRM opportunities;
   - per-message audit with resubmit and skip;
   - per-customer ordering;
   - resilience against throttling and update windows;
@@ -284,8 +301,7 @@ Tour nimbus-ops:
 - Most incidents are data problems: fix in the owning system, then resubmit.
 
 **"How do we change the integration safely?"**
-- The contracts are versioned code, and the platform validates them when it deploys (for example,
-  a command must have exactly one receiver).
+- The contracts are versioned code, and the platform validates them when it deploys.
 - The catalog is exportable as AsyncAPI or EventCatalog for review.
 
 **"Can we see everything that happened to one customer?"**
@@ -296,8 +312,13 @@ Tour nimbus-ops:
 
 - **A scene doesn't react within ~10 s.** Check the Aspire dashboard: are the adapters running? The
   web clients poll every few seconds; refresh the page.
+- **The initial sync seems to do nothing.** Check nimbus-ops → **Endpoints** →
+  **D365SalesEndpoint**. Running it again is safe.
 - **Leftovers from a rehearsal** (a failed message, an open circuit). Restart the AppHost: it resets
   everything in about 2 minutes. With a real namespace, purge the demo subscriptions first.
+- **6d processes the repeat instead of skipping it.** Redeliver a change that went through on its
+  first attempt: one that only succeeded after a retry or a resubmit (such as the throttled change in
+  6c) is handled again. That is why 6d starts with a fresh change.
 - **Circuit still Open after the window.** It closes on the next successful probe. Retries land
   about 30 s after the failures. Keep talking through 6b's "nothing is lost" point.
 
@@ -305,10 +326,10 @@ Tour nimbus-ops:
 
 | Record | Use |
 |---|---|
-| Lead *ROV winch upgrade for research vessel* (Tailspin Marine Research) | Scenes 1–4 |
-| *Fabrikam Offshore Energy* (C00010), existing customer | Scene 5 credit check |
-| *OPP-10016* Trey Research Vessels, owner *Robin Hale* (no BC salesperson) | Scene 6a |
-| *OPP-10012* Northwind Ocean Survey (C00020), owner *Maya Lindqvist* | Scene 6c |
-| *OPP-10017* Proseware Cable Systems, owner *Maya Lindqvist* | Scene 6d |
-| *OPP-10013* Litware Renewables, quote *S-QUO1001* already sent | Spare: a customer quote you can Make Order on |
-| *OPP-10099* Wingtip Marine (warm-up) | Warm-up only |
+| Cockpit → **Run the initial sync** | Scene 1 |
+| Lead *ROV winch upgrade for research vessel* (Tailspin Marine Research), owner *Alex Rivera* | Scenes 2–4 |
+| *Fabrikam Offshore Energy* (C00010), in CRM after the initial sync | Scene 5 (optional) |
+| Lead *Connectors for offshore wind export cable* (City Power & Light), owner *Robin Hale* (no BC salesperson) | Scene 6a |
+| *OPP-10017* Proseware Cable Systems, owner *Maya Lindqvist* | Scene 6c |
+| *S-QUO1001*, Litware Renewables | Spare: a quote Business Central made on its own; CRM never hears of it |
+| *Wingtip Marine (warm-up)* and *OPP-10099* | Warm-up only |

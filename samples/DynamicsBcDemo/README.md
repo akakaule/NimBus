@@ -3,16 +3,27 @@
 A client-ready demo of NimBus integrating a CRM and an ERP that each own part of the customer
 lifecycle:
 
-- **Dynamics 365 Sales owns** leads, opportunities and the pipeline — everything until the
-  prospect buys.
-- **Business Central owns** the buying customer, and **quotes are made in Business Central**.
+- **Dynamics 365 Sales owns** leads, prospects, opportunities and the pipeline.
+- **Business Central owns** the buying customer, contacts, products and quotes. **Quotes are made in
+  Business Central**, by a Business Central user, and linked to the CRM opportunity.
+
+It shows a typical first version of such an integration:
+
+| Flow | Direction |
+|---|---|
+| Initial sync of customers and their contacts at go-live | Business Central → Dynamics 365 |
+| Prospect → buying customer | both ways |
+| Product groups (Business Central item categories) | Business Central → Dynamics 365 |
+| Opportunities available in Business Central for quote linkage | Dynamics 365 → Business Central |
+| Quote status back on the opportunity; an accepted quote wins it | Business Central → Dynamics 365 |
+
+Order and invoice history stays in Business Central.
 
 Both systems are **simulated**, so the demo runs on a laptop with no tenants or credentials. The
 simulators' integration APIs follow the shapes of the real ones: the Dataverse Web API for Dynamics
-365 and BC API v2.0 plus one custom API for Business Central. The company, its customers, people and
+365, and BC API v2.0 plus a custom API for Business Central. The company, its customers, people and
 products are fictional ("Contoso Subsea", a maker of subsea equipment). The look-alike web clients
-use Fluent UI and carry no Microsoft branding. They are not affiliated with or endorsed by
-Microsoft.
+use Fluent UI and carry no Microsoft branding. They are not affiliated with or endorsed by Microsoft.
 
 > **Presenting it?** Start with the [talk track](docs/talk-track.md): scene by scene, with prep,
 > click paths, talking points and objection handling.
@@ -21,25 +32,31 @@ Microsoft.
 
 ```mermaid
 flowchart LR
-    subgraph CRM["Dynamics 365 Sales owns"]
+    subgraph CRM["Dynamics 365 Sales"]
         lead["Lead"] --> opp["Opportunity<br/>(pipeline)"]
-        prospect["Account<br/>Relationship type: Prospect"]
+        lead --> prospect["Account<br/>Relationship type: Prospect"]
+        groups["Product groups<br/>(read-only)"]
     end
-    subgraph BC["Business Central owns"]
-        contact["Contact<br/>(the prospect, not a customer)"] --> quote["Sales quote"]
-        quote -->|Make Order| order["Sales order"]
+    subgraph BC["Business Central"]
+        contact["Contact<br/>(the prospect, not a customer)"]
+        crmopp["CRM opportunities<br/>(read-only)"] --> quote["Sales quote<br/>made by a BC user"]
+        contact --> quote
         quote -->|Make Order| customer["Customer<br/>(the buying customer)"]
+        categories["Item categories"]
     end
-    opp -->|"CreateBcSalesQuote (command)"| contact
-    quote -.->|"quote status and total"| opp
-    customer -.->|"account becomes Customer,<br/>master data read-only in CRM"| prospect
-    order -.->|"opportunity won"| opp
+    prospect -->|"D365ProspectUpdated"| contact
+    opp -->|"D365OpportunityUpdated"| crmopp
+    quote -.->|"quote status, account locked from the first quote"| opp
+    customer -.->|"account becomes Customer"| prospect
+    categories -.->|"BcItemCategoryUpdated"| groups
 ```
 
-The handover is the quote. CRM **asks** Business Central for a quote; BC quotes the prospect as a
-*contact*, without creating a customer. When the customer accepts, BC's **Make Order** converts the
-contact into a customer. That is the moment BC takes ownership, and CRM flips the account to
-Customer and locks its master data. From then on, customer changes flow one way: from BC to CRM.
+CRM sends every prospect and every opportunity to Business Central as soon as it exists. A Business
+Central user makes the quote from the CRM opportunity; BC quotes the prospect as a *contact*, without
+creating a customer. From the account's **first quote**, Business Central manages its master data and
+CRM locks it. When the customer accepts, BC's **Make Order** converts the contact into a customer;
+CRM flips the account to Customer and closes the opportunity as won from the accepted quote. The
+order itself stays in Business Central.
 
 ## Architecture
 
@@ -56,21 +73,21 @@ graph LR
     d365ad["d365-adapter<br/>worker"]
     ops["Resolver + nimbus-ops<br/>audit trail, resubmit, skip"]
 
-    d365api -->|"CreateBcSalesQuote, D365ProspectUpdated,<br/>credit-check request"| sb
+    d365api -->|"D365ProspectUpdated, D365OpportunityUpdated,<br/>credit-check request"| sb
     sb -->|BusinessCentralEndpoint| bcad
     bcad -->|"API calls"| bcapi
     bcapi -->|"outbox: Bc* events"| sb
     sb -->|D365SalesEndpoint| d365ad
-    d365ad -->|"PATCH / WinOpportunity"| d365api
+    d365ad -->|"PATCH / upsert / WinOpportunity"| d365api
     sb --> ops
 ```
 
-- **Seller actions publish directly.** `d365-api` publishes seller actions. In production they would
+- **Seller changes publish directly.** `d365-api` publishes seller actions. In production they would
   leave Dataverse through a Service Endpoint and the NimBus Dataverse adapter.
 - **BC changes go through a transactional outbox.** `bc-api` publishes every change that way, so the
   data and its events commit together. In production that is BC webhooks → an ingress → a fetch
   through the API.
-- **Integration writes never publish.** Writes the adapter makes through the Dataverse-shaped API
+- **Integration writes never publish.** Writes the adapters make through the Dataverse-shaped API
   are never published back, which is what prevents echo loops. In real Dataverse that is the plug-in
   step filtering out the integration user.
 - **The BC adapter runs as a worker.** Only a worker host can pause its receivers when the circuit
@@ -80,34 +97,35 @@ graph LR
 
 | Scene | What happens | NimBus capability |
 |---|---|---|
-| 1 | A lead is qualified into a prospect account and opportunity; nothing reaches BC | The ownership boundary |
-| 2 | The seller requests a quote; BC creates a prospect contact and a draft quote | **Command** with exactly one consumer, validated at provisioning; audit trail |
-| 3 | BC revises and sends the quote; the opportunity's revenue follows it | Events; transactional outbox |
-| 4 | BC Make Order: customer and order created; the CRM account becomes a BC-owned Customer; the opportunity is won | **Session ordering** per customer: customer → quote accepted → order |
-| 5 | "Check credit in Business Central", live; BC blocks shipping and CRM mirrors it | **Request/reply** next to events |
-| 6a | A new seller is missing in BC; the request fails, only that customer waits, the office keeps flowing; fix in BC and **Resubmit** | Failure isolation, operator recovery, alert |
-| 6b | BC update window (503) while the whole office requests quotes | **Circuit breaker** + retry policy; recovers with no operator action |
+| 1 | Go-live: the initial sync loads BC's customers, their contacts and the product groups into CRM | Bulk load through the same pipeline, with an audit trail; sessions per customer |
+| 2 | A lead is qualified; the prospect and the opportunity appear in BC within seconds | Events in order per account (prospect before opportunity) |
+| 3 | A BC user makes the quote from the CRM opportunity and sends it; CRM shows it and locks the account | Events; transactional outbox; the ownership handover |
+| 4 | BC Make Order: the prospect becomes a customer; CRM wins the opportunity from the accepted quote | **Session ordering** per customer: customer → quote accepted |
+| 5 | Optional: "Check credit in Business Central", live | **Request/reply** next to events |
+| 6a | A new seller is missing in BC; the opportunity fails, only that customer waits, the office keeps flowing; fix in BC and **Resubmit** | Failure isolation, operator recovery, alert |
+| 6b | BC update window (503) while the whole office creates opportunities | **Circuit breaker** + retry policy; recovers with no operator action |
 | 6c | BC throttling (429) | **Retry policy** with exponential backoff |
-| 6d | A double-clicked request | **Inbox deduplication** (deterministic MessageId) + idempotent BC API |
-| 7 | nimbus-ops tour: endpoints, flow, catalog, failures | The operator surface |
+| 6d | CRM delivers the same change twice | **Inbox deduplication** (deterministic MessageId) + idempotent BC API |
+| 7 | nimbus-ops tour: endpoints, flow, catalog, failures, personal data masking | The operator surface |
 
 ## Message catalog
 
 | Message | Kind | From → to | Notes |
 |---|---|---|---|
-| `CreateBcSalesQuote` | Command | Dynamics 365 → BC | Deterministic MessageId `quote:{opportunity}:{revision}` |
-| `D365ProspectUpdated` | Event | Dynamics 365 → BC | Only for prospects BC already knows; BC refuses it once it owns the customer |
+| `D365ProspectUpdated` | Event | Dynamics 365 → BC | Every change to a prospect CRM still owns; BC keeps it as a contact. Deterministic MessageId `prospect:{account}:{modified}` |
+| `D365OpportunityUpdated` | Event | Dynamics 365 → BC | Every opportunity change; BC keeps it for quoting. Deterministic MessageId `opportunity:{opportunity}:{modified}` |
 | `D365CreditCheckRequested` | Request | Dynamics 365 → BC | Reply `BcCreditStatus`; no session key, so a check never blocks a customer |
-| `BcSalesQuoteCreated` / `BcSalesQuoteUpdated` | Event | BC → Dynamics 365 | Status `Draft`, `Sent`, `Accepted`, `Expired` |
-| `BcCustomerCreated` / `BcCustomerUpdated` | Event | BC → Dynamics 365 | BC-owned master data, credit limit, balance, blocked |
-| `BcSalesOrderCreated` | Event | BC → Dynamics 365 | Wins the opportunity |
+| `BcItemCategoryUpdated` | Event | BC → Dynamics 365 | A product group; keyed on its code |
+| `BcCustomerCreated` / `BcCustomerUpdated` | Event | BC → Dynamics 365 | BC-owned master data, credit limit, balance, blocked; the initial sync sends every customer |
+| `BcContactUpdated` | Event | BC → Dynamics 365 | A person at a customer; follows its customer in the same session |
+| `BcSalesQuoteCreated` / `BcSalesQuoteUpdated` | Event | BC → Dynamics 365 | Only quotes linked to a CRM opportunity. `Accepted` wins the opportunity |
 
-Every event and the command are session-keyed on the CRM account, so everything about one
-customer is processed in order. A failure blocks only that customer. The contracts live in
-[`DynamicsBcDemo.Contracts`](DynamicsBcDemo.Contracts), and nimbus-ops shows them, with
-descriptions and examples, under **Event types**.
+Every message about an account is session-keyed on that account, so everything about one customer
+is processed in order and a failure blocks only that customer. The contracts live in
+[`DynamicsBcDemo.Contracts`](DynamicsBcDemo.Contracts), and nimbus-ops shows them, with descriptions
+and examples, under **Event types**.
 
-## Flow: from quote request to won order
+## Flow: from lead to won quote
 
 ```mermaid
 sequenceDiagram
@@ -120,19 +138,19 @@ sequenceDiagram
     participant CRMA as d365-adapter
     actor BCUser as BC user
 
-    Seller->>CRM: Request quote in Business Central
-    CRM->>SB: CreateBcSalesQuote (session = account)
-    SB->>BCA: deliver
-    BCA->>BC: POST quoteRequests
-    BC->>BC: contact CT000101 + draft quote S-QUO1002
-    BC->>SB: BcSalesQuoteCreated (outbox)
+    Seller->>CRM: Qualify the lead
+    CRM->>SB: D365ProspectUpdated, D365OpportunityUpdated (session = account)
+    SB->>BCA: deliver, in order
+    BCA->>BC: PUT prospects, then PUT crmOpportunities
+    BCUser->>BC: Create sales quote from the CRM opportunity, add lines, Send
+    BC->>SB: BcSalesQuoteCreated, BcSalesQuoteUpdated (outbox)
     SB->>CRMA: deliver
-    CRMA->>CRM: upsert quote mirror, opportunity to Propose
-    BCUser->>BC: Send, then Make Order
-    BC->>SB: BcCustomerCreated, BcSalesQuoteUpdated, BcSalesOrderCreated
+    CRMA->>CRM: quote on the opportunity, account locked for BC
+    BCUser->>BC: Make Order
+    BC->>SB: BcCustomerCreated, BcSalesQuoteUpdated (Accepted)
     SB->>CRMA: deliver, in order, same session
-    CRMA->>CRM: account becomes Customer (BC-owned)
-    CRMA->>CRM: WinOpportunity with the order amount
+    CRMA->>CRM: account becomes Customer
+    CRMA->>CRM: WinOpportunity with the quote total
 ```
 
 ## Run it
@@ -168,8 +186,9 @@ and every resource is healthy.
 The ports differ from CrmErpDemo's, so both demos can run side by side.
 
 **Reset = restart.** SQL Server runs without a persistent volume, and the emulator keeps broker
-state in memory. Every run starts from the seed data with an empty audit trail, and no blocked
-sessions or scheduled retries are left over from a rehearsal.
+state in memory. Every run starts on go-live morning: CRM holds leads, one prospect and the warm-up
+account, but none of BC's customers yet. No blocked sessions or scheduled retries are left over from
+a rehearsal.
 
 ### Using a real Service Bus namespace
 
@@ -189,21 +208,26 @@ fixed.
 The look-alike apps contain no demo gadgets. The presenter uses two hidden pages of the BC client:
 
 - **`/demo`**, the presenter cockpit:
+  - Run the **initial sync** of customers, contacts and product groups into CRM (go-live).
   - Start or end a Business Central update window (503) or API throttling (429). Both are time-boxed
     (20 s by default), so a scene ends on its own.
+  - Fire a **pilot-office burst**: N sellers each create a prospect and an opportunity at once.
+  - **Deliver the last opportunity change again**, with the same MessageId, as a source system's
+    retry can.
   - Watch the Business Central adapter's circuit: Closed, Open or HalfOpen.
-  - Fire a **pilot-office burst**: N sellers request quotes at once.
   - Links to nimbus-ops.
 - **`/demo/alerts`**, a Teams-style channel for the audience. It shows the notifications the BC
   adapter sends through NimBus's webhook notification channel: failures, the circuit opening, and
   the circuit recovering. In production this would be `channels.AddTeams(...)`.
 
-Stage timings are in seconds; production would use minutes. The timings are tuned so that retries
-after an outage land once BC is back:
+Stage timings are in seconds; production would use minutes. The first outage retry comes after the
+update window, so it succeeds and the scene ends on its own. The circuit breaker only looks at the
+last 10 seconds, so the successful calls of the previous scene don't dilute an outage:
 
 | Setting | Stage value |
 |---|---|
 | Update window | 20 s |
+| Circuit sampling window | 10 s |
 | Break duration | 10 s |
 | First outage retry | 30 s |
 | Throttling retries | exponential from 5 s |
@@ -214,10 +238,11 @@ They live in `BusinessCentral.Adapter/appsettings.json` under `BusinessCentral:R
 
 | Demo | Production |
 |---|---|
-| `d365-api` publishes seller actions directly | Dataverse Service Endpoint + async plug-in step → Service Bus queue → the NimBus Dataverse adapter (preview) → the same contract messages |
-| `d365-adapter` PATCHes the Dataverse-shaped API | The same calls against the org's Dataverse Web API, authenticated as an application user (client credentials); custom columns (`cs_…`) in a solution |
+| `d365-api` publishes seller changes directly | Dataverse Service Endpoint + async plug-in step → Service Bus queue → the NimBus Dataverse adapter (preview) → the same contract messages |
+| `d365-adapter` writes to the Dataverse-shaped API | The same calls against the org's Dataverse Web API, authenticated as an application user (client credentials); custom columns and tables (`cs_…`) in a solution |
 | `bc-api` publishes through its outbox | BC webhooks (thin notifications about 30 s after a change; subscriptions renewed every 3 days) → an ingress that fetches the record through API v2.0 → publish |
-| `bc-adapter` calls API v2.0 + `api/contoso/crm/v1.0` | The same calls against the BC environment. A small **AL extension** adds the CRM reference fields and the custom API for quoting a prospect contact, which the standard API v2.0 `salesQuote` (customer-based) can't do |
+| `bc-adapter` calls API v2.0 + `api/contoso/crm/v1.0` | The same calls against each BC environment. A small **AL extension** adds the CRM reference fields, the CRM opportunities table the quote links to, and the custom API for prospects and opportunities |
+| The initial sync is a cockpit button | A one-off job at go-live that publishes the same events, per country or environment |
 | Everything on a laptop | NimBus in your Azure tenant: Service Bus, adapters on Container Apps or Functions, the Resolver, nimbus-ops, a SQL or Cosmos message store; deployed with the `nb` CLI |
 
 ## Project layout
@@ -226,25 +251,25 @@ They live in `BusinessCentral.Adapter/appsettings.json` under `BusinessCentral:R
 samples/DynamicsBcDemo/
   DynamicsBcDemo.AppHost/      Aspire host: emulator, SQL, Resolver, nimbus-ops, simulators, adapters, web clients
   DynamicsBcDemo.Contracts/    endpoints, messages, BcCreditStatus reply, shared fictional seed data
-  DynamicsBcDemo.Provisioner/  applies the Service Bus topology (validates the command's single consumer)
-  D365Sales.Api/               Dynamics 365 simulator: app API, Dataverse-shaped API, quote requests, burst
-  D365Sales.Adapter/           worker: mirrors BC quotes, customers and orders into Dataverse
+  DynamicsBcDemo.Provisioner/  applies the Service Bus topology
+  D365Sales.Api/               Dynamics 365 simulator: app API, Dataverse-shaped API, change publisher, burst
+  D365Sales.Adapter/           worker: mirrors BC customers, contacts, product groups and quotes into Dataverse
   D365Sales.Web/               Sales Hub look-alike (React, Fluent UI)
-  BusinessCentral.Api/         BC simulator: quotes, Make Order, customers, outbox, fault toggles
-  BusinessCentral.Adapter/     worker: quote requests, prospect updates, credit checks, resilience
+  BusinessCentral.Api/         BC simulator: CRM opportunities, quotes, Make Order, customers, outbox, initial sync, fault toggles
+  BusinessCentral.Adapter/     worker: prospects, opportunities, credit checks, resilience
   BusinessCentral.Web/         BC look-alike + /demo cockpit + /demo/alerts (React, Fluent UI)
   docs/talk-track.md           the presenter's script
-tests/DynamicsBcDemo.Tests/    catalog, BC rules, adapter resilience, CRM ownership and dedup
+tests/DynamicsBcDemo.Tests/    catalog, BC rules, adapter resilience, CRM ownership, change publishing, mirroring
 ```
 
 | Concern | File |
 |---|---|
-| Ownership rules in BC (contact quote, Make Order, refusing CRM edits) | `BusinessCentral.Api/Domain/SalesService.cs` |
+| Ownership rules in BC (prospect contact, quote from a CRM opportunity, Make Order, refusing CRM edits, initial sync) | `BusinessCentral.Api/Domain/SalesService.cs` |
 | Failure classification and retry/breaker policy | `BusinessCentral.Adapter/Clients/BusinessCentralClient.cs`, `BusinessCentral.Adapter/Resilience/BcResilience.cs` |
 | Adapter wiring (inbox, retries, breaker, notifications) | `BusinessCentral.Adapter/Program.cs` |
-| Deterministic MessageId for quote requests | `D365Sales.Api/Integration/QuoteRequestPublisher.cs` |
+| Deterministic MessageIds for CRM changes | `D365Sales.Api/Integration/CrmChangePublisher.cs` |
 | Dataverse-shaped writes, never published back | `D365Sales.Api/Endpoints/DataverseApiEndpoints.cs` |
-| Mirroring BC into CRM | `D365Sales.Adapter/Handlers/*.cs` |
+| Mirroring BC into CRM (lock at the first quote, win on acceptance) | `D365Sales.Adapter/Handlers/*.cs` |
 
 ## Tests
 

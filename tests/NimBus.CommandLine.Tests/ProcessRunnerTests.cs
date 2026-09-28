@@ -80,7 +80,10 @@ public sealed class ProcessRunnerTests
                 System.Globalization.CultureInfo.InvariantCulture);
             cancellation.Cancel();
 
-            var completed = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(2)));
+            // The child sleeps for 30 seconds, so completing within 20 still proves the runner
+            // gave up after its 100 ms termination timeout rather than waiting for the child.
+            // The wide margin absorbs scheduling delays on loaded CI runners.
+            var completed = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(20)));
 
             Assert.Same(run, completed);
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);

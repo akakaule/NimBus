@@ -18,6 +18,7 @@ Each Service Bus session maintains state (`SessionState` in `src/NimBus.ServiceB
 | Field | Purpose |
 |-------|---------|
 | `BlockedByEventId` | The EventId that caused the session to block (`null` = unblocked) |
+| `BlockedByMessageId` | The source `MessageId` of the delivery that blocked the session; a successful resubmission records it in the [inbox](inbox-pattern.md#retries-resubmissions-and-deferred-replays) |
 | `DeferredCount` | Number of messages in the deferred subscription |
 | `NextDeferralSequence` | Counter for ordering deferred messages (FIFO) |
 | `DeferredSequenceNumbers` | Legacy: in-session deferred message sequence numbers |
@@ -165,7 +166,11 @@ When the failed event is resolved (resubmit, retry, or skip succeeds):
 1. Accepts the session from the deferred subscription (`AcceptSessionAsync`)
 2. Receives messages in batches (up to 100) until a receive comes back empty
 3. **Sorts by `DeferralSequence`** to maintain FIFO order
-4. Re-publishes each to the main topic with the original `SessionId` and a new `MessageId`
+4. Re-publishes each to the main topic with the original `SessionId` and a new `MessageId`. The
+   parked copy's `InboxMessageId` (the `MessageId` of the delivery that was parked) goes with it,
+   so the [inbox](inbox-pattern.md#retries-resubmissions-and-deferred-replays) recognises a
+   replay of a message that was already processed, and records that `MessageId` when the replay
+   succeeds
 5. Completes deferred messages from the subscription
 
 Re-published messages then flow through normal processing in their original order.

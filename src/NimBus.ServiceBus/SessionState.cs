@@ -22,6 +22,13 @@ public class SessionState
     public string? BlockedByEventId { get; set; }
 
     /// <summary>
+    /// The source MessageId of the delivery that blocked the session, stored and cleared
+    /// together with <see cref="BlockedByEventId"/>. A successful resubmission of the blocking
+    /// event records it in the inbox, so a later delivery of the original is a duplicate.
+    /// </summary>
+    public string? BlockedByMessageId { get; set; }
+
+    /// <summary>
     /// Count of messages deferred to the separate deferred subscription.
     /// </summary>
     public int DeferredCount { get; set; }

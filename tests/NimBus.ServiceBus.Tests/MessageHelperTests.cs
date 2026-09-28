@@ -125,6 +125,41 @@ public class MessageHelperTests
     }
 
     [TestMethod]
+    public void ToServiceBusMessage_StandIn_StampsItsInboxMessageId()
+    {
+        var message = new Message
+        {
+            To = Constants.RetryId,
+            SessionId = "session-1",
+            EventId = "event-1",
+            MessageType = MessageType.RetryRequest,
+            MessageContent = new MessageContent(),
+            InboxMessageId = "source-message",
+        };
+
+        var result = MessageHelper.ToServiceBusMessage(message);
+
+        Assert.AreEqual("source-message", result.ApplicationProperties[UserPropertyName.InboxMessageId.ToString()]);
+    }
+
+    [TestMethod]
+    public void ToServiceBusMessage_OtherMessage_OmitsInboxMessageId()
+    {
+        var message = new Message
+        {
+            To = "Billing",
+            SessionId = "session-1",
+            EventId = "event-1",
+            MessageType = MessageType.EventRequest,
+            MessageContent = new MessageContent(),
+        };
+
+        var result = MessageHelper.ToServiceBusMessage(message);
+
+        Assert.IsFalse(result.ApplicationProperties.ContainsKey(UserPropertyName.InboxMessageId.ToString()));
+    }
+
+    [TestMethod]
     public void CreateDeferredMessage_UsesOriginalSessionAndDeferralMetadata()
     {
         var message = new Message

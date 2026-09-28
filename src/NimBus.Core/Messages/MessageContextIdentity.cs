@@ -74,6 +74,33 @@ public static class MessageContextIdentity
     }
 
     /// <summary>
+    /// Gets the <see cref="IMessage.InboxMessageId"/> a RetryRequest or a parked copy carries,
+    /// or <see langword="null"/> when the message is <see langword="null"/>, carries none, or
+    /// carries a blank one.
+    /// </summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The carried inbox message identifier, or <see langword="null"/>.</returns>
+    public static string? GetInboxMessageIdOrDefault(this IMessage? message)
+    {
+        if (message is null) return null;
+        string inboxMessageId;
+        try { inboxMessageId = message.InboxMessageId; }
+        catch (InvalidMessageException) { return null; }
+
+        return string.IsNullOrWhiteSpace(inboxMessageId) ? null : inboxMessageId;
+    }
+
+    /// <summary>
+    /// Gets the MessageId the source delivered this message's event with: the carried
+    /// <see cref="IMessage.InboxMessageId"/> of a stand-in (a RetryRequest or a parked copy),
+    /// otherwise the message's own identifier. A new stand-in carries this value forward.
+    /// </summary>
+    /// <param name="context">The message context.</param>
+    /// <returns>The source message identifier, or <see langword="null"/> when unavailable.</returns>
+    public static string? GetSourceMessageIdOrDefault(this IMessageContext? context) =>
+        context.GetInboxMessageIdOrDefault() ?? context.GetMessageIdOrDefault();
+
+    /// <summary>
     /// Gets the event identifier, or <see langword="null"/> when the context is
     /// <see langword="null"/> or the identifier is not defined on the message.
     /// </summary>

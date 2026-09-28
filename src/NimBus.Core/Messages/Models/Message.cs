@@ -147,6 +147,17 @@ public interface IMessage
 
     /// <summary>CloudEvents <c>subject</c>, carried to the Resolver. Null for a native message.</summary>
     string CloudEventSubject => null;
+
+    /// <summary>
+    /// The <see cref="MessageId"/> of the delivery this message stands in for. A RetryRequest
+    /// and a parked (deferred) copy reach the endpoint with a fresh <see cref="MessageId"/>,
+    /// so they carry the id the source delivered the event with; when the stand-in succeeds,
+    /// the inbox records that id too, and a later delivery of the original is a duplicate.
+    /// Null on every other message. Unlike <see cref="OriginatingMessageId"/>, which names
+    /// the first message of the whole causal chain (possibly another event's), this is
+    /// always a delivery of the same event to the same endpoint.
+    /// </summary>
+    string InboxMessageId => null;
 }
 
 public class Message : IMessage
@@ -213,4 +224,7 @@ public class Message : IMessage
 
     /// <summary>See <see cref="IMessage.CloudEventSubject"/>.</summary>
     public string CloudEventSubject { get; set; }
+
+    /// <summary>See <see cref="IMessage.InboxMessageId"/>.</summary>
+    public string InboxMessageId { get; set; }
 }

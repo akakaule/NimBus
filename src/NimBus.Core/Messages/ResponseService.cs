@@ -281,6 +281,9 @@ public class ResponseService : IResponseService
             EventTypeId = messageContext.EventTypeId,
             MessageType = MessageType.RetryRequest,
             MessageContent = responseContent,
+            // The retry reaches the endpoint with a fresh MessageId; carry the source's so the
+            // inbox records it when the retry succeeds.
+            InboxMessageId = messageContext.GetSourceMessageIdOrDefault(),
         };
 
 
@@ -329,6 +332,9 @@ public class ResponseService : IResponseService
             MessageContent = messageContext.MessageContent,
             OriginalSessionId = messageContext.SessionId,   // Kept for backward compatibility
             DeferralSequence = deferralSequence,
+            // The replay gets a fresh MessageId; carry the source's so the inbox can check and
+            // record it (see InboxDuplicateDetector).
+            InboxMessageId = messageContext.GetSourceMessageIdOrDefault(),
         };
 
         var endpoint = messageContext.To;

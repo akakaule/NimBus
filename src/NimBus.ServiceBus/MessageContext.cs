@@ -114,6 +114,11 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public string ParentMessageId => _sbMessage.GetUserProperty(UserPropertyName.ParentMessageId) ?? Constants.Self;
 
+    public string InboxMessageId
+    {
+        get { try { return GetUserProperty(UserPropertyName.InboxMessageId); } catch (InvalidMessageException) { return null; } }
+    }
+
     public MessageType MessageType => GetMessageType();
 
     public string MessageId
@@ -254,6 +259,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         SessionState state = await GetSessionState(cancellationToken);
         state.BlockedByEventId = EventId;
+        state.BlockedByMessageId = this.GetSourceMessageIdOrDefault();
         await UpdateSessionState(state, cancellationToken);
     }
 
@@ -261,6 +267,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         SessionState state = await GetSessionState(cancellationToken);
         state.BlockedByEventId = null;
+        state.BlockedByMessageId = null;
         await UpdateSessionState(state, cancellationToken);
     }
 
@@ -344,6 +351,12 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
     {
         SessionState state = await GetSessionState(cancellationToken);
         return state.BlockedByEventId;
+    }
+
+    public async Task<string?> GetBlockedByMessageId(CancellationToken cancellationToken = default)
+    {
+        SessionState state = await GetSessionState(cancellationToken);
+        return state.BlockedByMessageId;
     }
 
     private string GetUserProperty(UserPropertyName userPropertyName)

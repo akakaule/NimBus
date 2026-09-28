@@ -48,7 +48,7 @@ For a usable `MessageId`, the subscriber performs these operations in order:
 3. Only after the handler returns successfully, record the ID.
 4. Publish the normal Resolver response and settle the broker message.
 
-A fresh delivery costs exactly one store check and one record: the hosted compositions run the pre-session-guard check in the message handler for every dispatching entry point (event, retry, and resubmission requests), and the decorator at the handler seam then only records successes.
+A fresh delivery costs exactly one store check and one record: the hosted compositions run the pre-session-guard check in the message handler for every dispatching entry point (event, retry, and resubmission requests), and the decorator at the handler seam then only records successes. A stand-in (see [Retries, resubmissions and deferred replays](#retries-resubmissions-and-deferred-replays)) costs one more record when it succeeds, and a replayed parked copy up to one more check.
 
 A duplicate whose session is no longer blocked at all also triggers the deferred-sibling drain before completing — this covers a crash between the first attempt's session unblock and its deferred drain, where the redelivered duplicate is the only remaining trigger. A session blocked by an unrelated later event is left untouched; that blocker's settlement owns the drain.
 
@@ -61,6 +61,25 @@ When the check finds an existing ID, NimBus does not invoke the application hand
 Messages with a missing, blank, or longer-than-512-character `MessageId` (or a missing or longer-than-260-character endpoint identity) cannot be safely deduplicated. NimBus logs a warning and invokes the handler without consulting or updating the inbox. It never drops such work. This bypass also holds on the real Service Bus transport, whose message context throws for a `MessageId` absent from the wire — inbox processing, lifecycle notification, and diagnostic logging all read identity through non-throwing accessors.
 
 A handler that signals a pending handoff is **not** recorded in the inbox. The pending response and the session block are established after the handler returns, and both must be recreatable if a crash forces redelivery; recording the message would turn that redelivery into a duplicate skip that never re-establishes the pending state. Pending-handoff idempotency is governed by session blocking and the handoff settlement flow instead.
+
+## Retries, resubmissions and deferred replays
+
+Three flows complete an event with a stand-in, a message that reaches the endpoint with a fresh `MessageId`:
+
+- a RetryRequest scheduled after a failure;
+- an operator's resubmission;
+- the replay of a message that was parked (deferred) while its session was blocked.
+
+If the inbox recorded only the stand-in's `MessageId`, a later delivery of the original — the at-least-once case the inbox exists for — would run the handler again. So when a stand-in succeeds, the inbox first records the `MessageId` the source delivered the event with, then the stand-in's own:
+
+- A RetryRequest and a parked copy carry the source `MessageId` as the `InboxMessageId` application property. It is set from the delivery that failed or was parked, or carried on from an earlier stand-in (a retry of a retry, a replay parked again).
+- A resubmission is built by the Manager and carries none. Blocking a session also stores the blocking delivery's source `MessageId` in the session state (`BlockedByMessageId`), and a resubmission that resolves the event blocking its session records it. That read is best effort: the handler has already succeeded, so a failed read only means the resubmission records its own `MessageId`, as before.
+
+A replayed parked copy is also a duplicate when its `InboxMessageId` was already recorded — for example a second delivery of a message that was parked behind the same block as the first. RetryRequests and resubmissions are checked against their own `MessageId` only: a retry of an event that completed another way is answered by the session guard, and a resubmission remains a deliberate new attempt.
+
+`OriginatingMessageId` is not used for any of this. It names the first message of the whole causal chain, which for an event published from another event's handler (`PublishFromContext`) is that other event's delivery; recording it could skip that delivery on this endpoint.
+
+Stand-ins created before this behaviour shipped carry no `InboxMessageId`, and sessions blocked before it store no `BlockedByMessageId`; those stand-ins record only their own `MessageId`. A pending handoff that the Manager settles as completed runs no handler, so it records nothing either (see pending handoffs above).
 
 ## Retention and cleanup
 
@@ -90,4 +109,4 @@ Process-manager transitions must therefore remain idempotent. Derive outgoing me
 
 See [Orchestration](orchestration.md) for the process-manager conventions and deterministic identity guidance.
 
-The inbox key is the `(endpoint, MessageId)` pair, not a content hash. Separate messages that reuse an ID are treated as the same logical delivery. Conversely, the current Manager resubmit flow creates a new transport message ID, so an operator-requested resubmit remains a deliberate new attempt. Any replay mechanism that preserves the original ID is skipped while its inbox record remains within retention.
+The inbox key is the `(endpoint, MessageId)` pair, not a content hash. Separate messages that reuse an ID are treated as the same logical delivery. Conversely, the current Manager resubmit flow creates a new transport message ID, so an operator-requested resubmit remains a deliberate new attempt; when it succeeds, it also records the source `MessageId` of the delivery whose failure it resolves (see [Retries, resubmissions and deferred replays](#retries-resubmissions-and-deferred-replays)). Any replay mechanism that preserves the original ID is skipped while its inbox record remains within retention.

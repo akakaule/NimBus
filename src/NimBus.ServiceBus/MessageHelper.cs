@@ -35,6 +35,13 @@ public static class MessageHelper
             result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = message.DeferralSequence.Value;
         }
 
+        // Only a RetryRequest or a parked copy carries the delivery it stands in for.
+        var inboxMessageId = message.GetInboxMessageIdOrDefault();
+        if (inboxMessageId is not null)
+        {
+            result.ApplicationProperties[UserPropertyName.InboxMessageId.ToString()] = inboxMessageId;
+        }
+
         // Per-message timings: only set on response messages produced by the
         // receive pipeline (subscriber → Resolver). Original publishes leave
         // these null so they're absent on the wire.
@@ -160,6 +167,9 @@ public static class MessageHelper
         result.ApplicationProperties[UserPropertyName.EventTypeId.ToString()] = message.EventTypeId ?? message.MessageContent?.EventContent?.EventTypeId;
         result.ApplicationProperties[UserPropertyName.OriginalSessionId.ToString()] = originalSessionId;
         result.ApplicationProperties[UserPropertyName.DeferralSequence.ToString()] = deferralSequence;
+        var inboxMessageId = message.GetInboxMessageIdOrDefault();
+        if (inboxMessageId is not null)
+            result.ApplicationProperties[UserPropertyName.InboxMessageId.ToString()] = inboxMessageId;
 
         var (traceParent, traceState) = W3CMessagePropagator.CaptureCurrent();
         if (!string.IsNullOrEmpty(traceParent))

@@ -36,6 +36,7 @@ public class InMemoryMessageContext : IMessageContext
     public int? DeferralSequence => _message.DeferralSequence;
     public string ReplyTo => _message.ReplyTo;
     public string ReplyToSessionId => _message.ReplyToSessionId;
+    public string InboxMessageId => _message.InboxMessageId;
 
     // IReceivedMessage
     public DateTime EnqueuedTimeUtc { get; }
@@ -85,12 +86,14 @@ public class InMemoryMessageContext : IMessageContext
     public Task BlockSession(CancellationToken cancellationToken = default)
     {
         _sessionState.BlockedByEventId = EventId;
+        _sessionState.BlockedByMessageId = this.GetSourceMessageIdOrDefault();
         return Task.CompletedTask;
     }
 
     public Task UnblockSession(CancellationToken cancellationToken = default)
     {
         _sessionState.BlockedByEventId = null;
+        _sessionState.BlockedByMessageId = null;
         return Task.CompletedTask;
     }
 
@@ -112,6 +115,11 @@ public class InMemoryMessageContext : IMessageContext
     public Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_sessionState.BlockedByEventId);
+    }
+
+    public Task<string?> GetBlockedByMessageId(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_sessionState.BlockedByMessageId);
     }
 
     public Task<int> GetNextDeferralSequenceAndIncrement(CancellationToken cancellationToken = default)

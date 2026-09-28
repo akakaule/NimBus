@@ -395,6 +395,79 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public async Task BlockSession_StoresTheBlockingDeliverysMessageId()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+
+        await ctx.BlockSession();
+
+        Assert.AreEqual("msg-1", (await session.GetStateAsync()).BlockedByMessageId);
+        Assert.AreEqual("msg-1", await ctx.GetBlockedByMessageId());
+    }
+
+    [TestMethod]
+    public async Task BlockSession_ByAReplayedCopy_StoresTheMessageIdItWasParkedFrom()
+    {
+        var session = new FakeServiceBusSession();
+        var ctx = CreateMessageContext(session: session);
+        ctx.SetUserProperty(UserPropertyName.InboxMessageId, "source-message");
+
+        await ctx.BlockSession();
+
+        Assert.AreEqual("source-message", (await session.GetStateAsync()).BlockedByMessageId);
+    }
+
+    [TestMethod]
+    public async Task UnblockSession_ClearsTheBlockingDeliverysMessageId()
+    {
+        var session = new FakeServiceBusSession();
+        session.State.BlockedByEventId = "evt-1";
+        session.State.BlockedByMessageId = "msg-0";
+        var ctx = CreateMessageContext(session: session);
+
+        await ctx.UnblockSession();
+
+        Assert.IsNull((await session.GetStateAsync()).BlockedByMessageId);
+    }
+
+    [TestMethod]
+    public void InboxMessageId_WhenMissing_ReturnsNull()
+    {
+        var ctx = CreateMessageContext();
+
+        Assert.IsNull(ctx.InboxMessageId);
+    }
+
+    [TestMethod]
+    public void InboxMessageId_WhenPresent_ReturnsValue()
+    {
+        var ctx = CreateMessageContext();
+        ctx.SetUserProperty(UserPropertyName.InboxMessageId, "source-message");
+
+        Assert.AreEqual("source-message", ctx.InboxMessageId);
+    }
+
+    [TestMethod]
+    public async Task Inbox_ResubmissionWhoseSessionStateCannotBeRead_RecordsOnlyItsOwnId()
+    {
+        // The handler already succeeded, so a failed session-state read must not turn the
+        // resubmission into a failure; it only loses the extra record of the source delivery.
+        var session = new FakeServiceBusSession();
+        session.State.BlockedByEventId = "evt-1";
+        session.State.BlockedByMessageId = "source-message";
+        session.GetStateException = new InvalidOperationException("session state unavailable");
+        var ctx = CreateMessageContext(session: session, from: Constants.ManagerId, messageType: MessageType.ResubmissionRequest);
+        var store = new InMemoryInboxStore();
+        var middleware = new NimBus.Core.Inbox.InboxMiddleware(new NoopEventContextHandler(), store);
+
+        await middleware.Handle(ctx);
+
+        Assert.IsTrue(await store.HasProcessedAsync(ctx.To, "msg-1"));
+        Assert.IsFalse(await store.HasProcessedAsync(ctx.To, "source-message"), "The unreadable session state must not be guessed.");
+    }
+
+    [TestMethod]
     public async Task UnblockSession_ClearsBlockedByEventId()
     {
         var session = new FakeServiceBusSession();
@@ -874,6 +947,12 @@ public class MessageContextTests
         msg.UserProperties[UserPropertyName.MessageType.ToString()] = messageType.ToString();
     }
 
+    private sealed class NoopEventContextHandler : IEventContextHandler
+    {
+        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
     // ── Testable subclass to expose SetUserProperty ─────────────────────
 
     private sealed class TestableMessageContext : MessageContext
@@ -967,6 +1046,7 @@ public class MessageContextTests
         public Exception DeadLetterException { get; set; }
         public Exception DeferException { get; set; }
         public Exception? ScheduleException { get; set; }
+        public Exception? GetStateException { get; set; }
 
         public Task CompleteAsync(IServiceBusMessage message, CancellationToken ct = default)
         {
@@ -994,6 +1074,7 @@ public class MessageContextTests
 
         public Task<SessionState> GetStateAsync(CancellationToken ct = default)
         {
+            if (GetStateException != null) throw GetStateException;
             return Task.FromResult(State);
         }
 

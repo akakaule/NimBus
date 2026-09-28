@@ -453,6 +453,7 @@ Stored in Service Bus session state (JSON serialized):
 ```json
 {
   "BlockedByEventId": "event-guid-or-null",
+  "BlockedByMessageId": "message-id-or-null",
   "DeferredSequenceNumbers": [],
   "DeferredCount": 0,
   "NextDeferralSequence": 0
@@ -462,6 +463,7 @@ Stored in Service Bus session state (JSON serialized):
 | Field | Purpose |
 |---|---|
 | `BlockedByEventId` | Event ID that caused the failure. Prevents other messages in session from processing. |
+| `BlockedByMessageId` | Source `MessageId` of the delivery that blocked the session. A successful resubmission records it in the [inbox](inbox-pattern.md#retries-resubmissions-and-deferred-replays). |
 | `DeferredSequenceNumbers` | Legacy: sequence numbers of messages deferred within session state |
 | `DeferredCount` | New: count of messages sent to the Deferred subscription |
 | `NextDeferralSequence` | Counter for ordering deferred messages (FIFO) |

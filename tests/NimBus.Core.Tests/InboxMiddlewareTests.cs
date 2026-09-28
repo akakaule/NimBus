@@ -431,18 +431,126 @@ public sealed class InboxMiddlewareTests
         Assert.AreEqual(HandlerOutcome.DuplicateDetected, duplicate.HandlerOutcome);
     }
 
-    private static InMemoryMessageContext CreateContext(string messageId, string endpointId = "billing")
+    // ── Stand-ins: a RetryRequest, a replayed parked copy, a resubmission ─────────────
+
+    private static readonly string[] SourceThenRetry = ["source-message", "retry-message"];
+    private static readonly string[] SourceThenResubmission = ["source-message", "resubmission-message"];
+    private static readonly string[] OnlyFollowUp = ["follow-up-message"];
+    private static readonly string[] OnlyResubmission = ["resubmission-message"];
+
+    [TestMethod]
+    public async Task Stand_in_success_records_the_source_message_id_before_its_own()
+    {
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var sut = new InboxMiddleware(new RecordingHandler(), store);
+
+        await sut.Handle(CreateContext("retry-message", messageType: MessageType.RetryRequest, inboxMessageId: "source-message"));
+
+        CollectionAssert.AreEqual(SourceThenRetry, store.RecordedMessageIds);
+    }
+
+    [TestMethod]
+    public async Task Failed_stand_in_records_nothing()
+    {
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var inner = new RecordingHandler { Exception = new TransientException("still failing") };
+        var sut = new InboxMiddleware(inner, store);
+
+        await Assert.ThrowsExactlyAsync<TransientException>(
+            () => sut.Handle(CreateContext("retry-message", messageType: MessageType.RetryRequest, inboxMessageId: "source-message")));
+
+        Assert.AreEqual(0, store.RecordCalls);
+    }
+
+    [TestMethod]
+    public async Task Originating_message_id_of_an_event_published_from_another_is_not_recorded()
+    {
+        // PublishFromContext stamps OriginatingMessageId with the delivery that triggered the
+        // publish: another event's, possibly delivered to this endpoint as well. Recording it
+        // here would skip that delivery as a duplicate.
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var sut = new InboxMiddleware(new RecordingHandler(), store);
+
+        await sut.Handle(CreateContext("follow-up-message", originatingMessageId: "triggering-message"));
+
+        CollectionAssert.AreEqual(OnlyFollowUp, store.RecordedMessageIds);
+    }
+
+    [TestMethod]
+    public async Task Replayed_copy_of_a_processed_delivery_is_a_duplicate()
+    {
+        var store = new RecordingInboxStore { TrackRecords = true };
+        await store.RecordProcessedAsync("billing", "source-message");
+        var inner = new RecordingHandler();
+        var sut = new InboxMiddleware(inner, store);
+        var replay = CreateContext("replay-message", inboxMessageId: "source-message");
+
+        await sut.Handle(replay);
+
+        Assert.AreEqual(0, inner.HandleCalls);
+        Assert.AreEqual(HandlerOutcome.DuplicateDetected, replay.HandlerOutcome);
+    }
+
+    [TestMethod]
+    public async Task Retry_is_not_checked_against_its_source_message_id()
+    {
+        // A retry of an event that completed another way is answered by the session guard
+        // before it reaches the inbox; only its own MessageId identifies a redelivered retry.
+        var store = new RecordingInboxStore { TrackRecords = true };
+        await store.RecordProcessedAsync("billing", "source-message");
+        var inner = new RecordingHandler();
+        var sut = new InboxMiddleware(inner, store);
+
+        await sut.Handle(CreateContext("retry-message", messageType: MessageType.RetryRequest, inboxMessageId: "source-message"));
+
+        Assert.AreEqual(1, inner.HandleCalls);
+    }
+
+    [TestMethod]
+    public async Task Resubmission_records_the_delivery_that_blocked_its_session()
+    {
+        var session = new InMemorySessionState();
+        await CreateContext("source-message", session: session).BlockSession();
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var sut = new InboxMiddleware(new RecordingHandler(), store);
+
+        await sut.Handle(CreateContext("resubmission-message", messageType: MessageType.ResubmissionRequest, session: session));
+
+        CollectionAssert.AreEqual(SourceThenResubmission, store.RecordedMessageIds);
+    }
+
+    [TestMethod]
+    public async Task Resubmission_of_an_event_that_does_not_block_its_session_records_only_its_own_id()
+    {
+        var session = new InMemorySessionState();
+        await CreateContext("other-message", eventId: "other-event", session: session).BlockSession();
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var sut = new InboxMiddleware(new RecordingHandler(), store);
+
+        await sut.Handle(CreateContext("resubmission-message", messageType: MessageType.ResubmissionRequest, session: session));
+
+        CollectionAssert.AreEqual(OnlyResubmission, store.RecordedMessageIds);
+    }
+
+    private static InMemoryMessageContext CreateContext(
+        string messageId,
+        string endpointId = "billing",
+        MessageType messageType = MessageType.EventRequest,
+        string inboxMessageId = null,
+        string originatingMessageId = Constants.Self,
+        string eventId = "event-1",
+        InMemorySessionState? session = null)
     {
         return new InMemoryMessageContext(
             new Message
             {
                 MessageId = messageId,
-                EventId = "event-1",
+                EventId = eventId,
                 EventTypeId = "OrderPlaced",
                 To = endpointId,
                 SessionId = "customer-1",
                 CorrelationId = "correlation-1",
-                MessageType = MessageType.EventRequest,
+                MessageType = messageType,
                 MessageContent = new MessageContent
                 {
                     EventContent = new EventContent
@@ -451,12 +559,13 @@ public sealed class InboxMiddlewareTests
                         EventJson = "{}",
                     },
                 },
-                From = "sales",
+                From = messageType == MessageType.ResubmissionRequest ? Constants.ManagerId : "sales",
                 OriginatingFrom = "sales",
                 ParentMessageId = Constants.Self,
-                OriginatingMessageId = Constants.Self,
+                OriginatingMessageId = originatingMessageId,
+                InboxMessageId = inboxMessageId,
             },
-            new InMemorySessionState());
+            session ?? new InMemorySessionState());
     }
 
     private sealed class RecordingInboxStore : IInboxStore
@@ -480,6 +589,7 @@ public sealed class InboxMiddlewareTests
         public string? LastCheckedMessageId { get; private set; }
         public string? LastRecordedEndpointId { get; private set; }
         public string? LastRecordedMessageId { get; private set; }
+        public List<string> RecordedMessageIds { get; } = [];
 
         public Task<bool> HasProcessedAsync(
             string endpointId,
@@ -506,6 +616,7 @@ public sealed class InboxMiddlewareTests
             _order?.Add("record");
             if (RecordException is not null)
                 throw RecordException;
+            RecordedMessageIds.Add(messageId);
             _recorded.Add((endpointId, messageId));
             return Task.CompletedTask;
         }

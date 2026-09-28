@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Events;
 using NimBus.Core.Extensions;
+using NimBus.Core.Inbox;
 using NimBus.Core.Messages;
 using NimBus.SDK;
 using NimBus.SDK.EventHandlers;
@@ -106,7 +107,9 @@ internal sealed class EndToEndFixture
 
     private EndToEndFixture(
         Func<IEventContextHandler, IEventContextHandler> decorateHandler,
-        MessageLifecycleNotifier? notifier)
+        MessageLifecycleNotifier? notifier,
+        IRetryPolicyProvider? retryPolicyProvider,
+        InboxDuplicateDetector? inboxDuplicateDetector)
     {
         ArgumentNullException.ThrowIfNull(decorateHandler);
 
@@ -123,20 +126,25 @@ internal sealed class EndToEndFixture
             contextHandler,
             responseService,
             NullLogger.Instance,
-            retryPolicyProvider: null,
+            retryPolicyProvider,
             pipeline: null,
             lifecycleNotifier: notifier,
-            failureDispositionClassifier: null);
+            failureDispositionClassifier: null,
+            inboxDuplicateDetector: inboxDuplicateDetector);
     }
 
     /// <summary>
     /// Creates a fixture with an event-handler decorator that runs before the
-    /// subscriber publishes its response and settles the broker message.
+    /// subscriber publishes its response and settles the broker message. Pass an
+    /// <paramref name="inboxDuplicateDetector"/> to run the inbox check in the message
+    /// handler, as the hosted compositions do.
     /// </summary>
     public static EndToEndFixture CreateWithHandlerDecorator(
         Func<IEventContextHandler, IEventContextHandler> decorateHandler,
-        MessageLifecycleNotifier? notifier = null) =>
-        new(decorateHandler, notifier);
+        MessageLifecycleNotifier? notifier = null,
+        IRetryPolicyProvider? retryPolicyProvider = null,
+        InboxDuplicateDetector? inboxDuplicateDetector = null) =>
+        new(decorateHandler, notifier, retryPolicyProvider, inboxDuplicateDetector);
 
     /// <summary>
     /// Registers an event handler factory.

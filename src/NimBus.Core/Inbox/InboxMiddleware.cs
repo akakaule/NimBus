@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 
 namespace NimBus.Core.Inbox;
 
@@ -103,8 +104,22 @@ public sealed class InboxMiddleware : IEventContextHandler
             return;
         }
 
+        // A RetryRequest, a replayed parked copy and a resubmission reach the endpoint with a
+        // fresh MessageId, so their success is also recorded under the MessageId the source
+        // delivered the event with. That one goes first: a failure between the two records
+        // must not leave the stand-in's own MessageId recorded without it, or the broker's
+        // redelivery of the stand-in would be skipped as a duplicate and never record it.
+        var standsInFor = await GetDeliveryStoodInForAsync(context, identity.Value.MessageId, cancellationToken);
         try
         {
+            if (standsInFor is not null)
+            {
+                await _inboxStore.RecordProcessedAsync(
+                    identity.Value.EndpointId,
+                    standsInFor,
+                    cancellationToken);
+            }
+
             await _inboxStore.RecordProcessedAsync(
                 identity.Value.EndpointId,
                 identity.Value.MessageId,
@@ -118,5 +133,53 @@ public sealed class InboxMiddleware : IEventContextHandler
         {
             throw _duplicateDetector.CreateStoreException(RecordOperation);
         }
+    }
+
+    // A RetryRequest or a parked copy carries the source MessageId. A resubmission is built
+    // by the Manager and carries none, but it resolves the event that blocks its session,
+    // and the session stored the blocking delivery's source MessageId. That read is best
+    // effort: the handler already succeeded, so a failure must not turn into a handler
+    // failure; the resubmission then records only its own MessageId, as before.
+    private async Task<string?> GetDeliveryStoodInForAsync(
+        IMessageContext context,
+        string messageId,
+        CancellationToken cancellationToken)
+    {
+        var carried = InboxDuplicateDetector.GetStandInMessageId(context, messageId);
+        if (carried is not null || !IsResubmission(context))
+            return carried;
+
+        try
+        {
+            if (!await context.IsSessionBlockedByThis(cancellationToken))
+                return null;
+
+            var blockedBy = await context.GetBlockedByMessageId(cancellationToken);
+            return string.IsNullOrWhiteSpace(blockedBy)
+                || blockedBy.Length > MaximumMessageIdLength
+                || string.Equals(blockedBy, messageId, StringComparison.Ordinal)
+                    ? null
+                    : blockedBy;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                "Could not read the delivery a resubmission resolves ({ExceptionType}); only its own MessageId is recorded. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, MessageId:{MessageId}",
+                exception.GetType().Name,
+                context.GetEndpointIdOrDefault(),
+                context.EventTypeId,
+                messageId);
+            return null;
+        }
+    }
+
+    private static bool IsResubmission(IMessageContext context)
+    {
+        try { return context.MessageType == MessageType.ResubmissionRequest; }
+        catch (InvalidMessageException) { return false; }
     }
 }

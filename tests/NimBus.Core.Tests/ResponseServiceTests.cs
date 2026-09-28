@@ -591,6 +591,72 @@ public class ResponseServiceTests
             "Counter must not increment when the parking send threw");
     }
 
+    // ── InboxMessageId: the delivery a stand-in stands in for ─────────────
+
+    [TestMethod]
+    public async Task SendRetryResponse_CarriesTheDeliverysMessageId_NotTheOriginatingOne()
+    {
+        // OriginatingMessageId names the start of the causal chain, which for an event
+        // published from another event's handler is that other event's delivery.
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(messageId: "message-1", originatingMessageId: "triggering-message");
+
+        await sut.SendRetryResponse(ctx, TimeSpan.Zero);
+
+        Assert.AreEqual("message-1", sender.SentMessages.Single().InboxMessageId);
+    }
+
+    [TestMethod]
+    public async Task SendRetryResponse_ForAFailedRetry_KeepsTheSourceMessageId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(messageId: "retry-1", messageType: MessageType.RetryRequest, retryCount: 1);
+        ctx.InboxMessageId = "message-1";
+
+        await sut.SendRetryResponse(ctx, TimeSpan.Zero);
+
+        Assert.AreEqual("message-1", sender.SentMessages.Single().InboxMessageId);
+    }
+
+    [TestMethod]
+    public async Task SendToDeferredSubscription_CarriesTheParkedDeliverysMessageId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+
+        await sut.SendToDeferredSubscription(CreateContext(messageId: "message-1"), 0);
+
+        Assert.AreEqual("message-1", sender.SentMessages.Single().InboxMessageId);
+    }
+
+    [TestMethod]
+    public async Task SendToDeferredSubscription_ForAReplayParkedAgain_KeepsTheSourceMessageId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(messageId: "replay-1");
+        ctx.InboxMessageId = "message-1";
+
+        await sut.SendToDeferredSubscription(ctx, 3);
+
+        Assert.AreEqual("message-1", sender.SentMessages.Single().InboxMessageId);
+    }
+
+    [TestMethod]
+    public async Task SendResolutionResponse_CarriesNoInboxMessageId()
+    {
+        var sender = new RecordingSender();
+        var sut = new ResponseService(sender);
+        var ctx = CreateContext(messageId: "retry-1", messageType: MessageType.RetryRequest);
+        ctx.InboxMessageId = "message-1";
+
+        await sut.SendResolutionResponse(ctx);
+
+        Assert.IsNull(sender.SentMessages.Single().InboxMessageId);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static FakeMessageContext CreateContext(
@@ -679,6 +745,7 @@ public class ResponseServiceTests
         public string EventTypeId { get; set; } = string.Empty;
         public string OriginalSessionId { get; set; } = string.Empty;
         public int? DeferralSequence { get; set; }
+        public string InboxMessageId { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         private string _from = string.Empty;
 

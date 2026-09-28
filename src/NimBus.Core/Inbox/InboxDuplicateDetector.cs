@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NimBus.Core.Diagnostics;
 using NimBus.Core.Extensions;
 using NimBus.Core.Messages;
+using NimBus.Core.Messages.Exceptions;
 
 namespace NimBus.Core.Inbox;
 
@@ -67,6 +68,11 @@ public sealed class InboxDuplicateDetector
     /// When it was, sets <see cref="IMessageContext.HandlerOutcome"/> to
     /// <see cref="HandlerOutcome.DuplicateDetected"/> and emits the duplicate-skip signals.
     /// A message without a usable deduplication identity is never treated as a duplicate.
+    /// A replayed parked copy is also a duplicate when the delivery it was parked from
+    /// (its <see cref="IMessage.InboxMessageId"/>) was processed. RetryRequests and
+    /// resubmissions are checked against their own MessageId only: a retry of an event that
+    /// completed another way is answered by the session guard, and a resubmission is a
+    /// deliberate new attempt.
     /// </summary>
     /// <param name="context">The message context.</param>
     /// <param name="cancellationToken">A token that can cancel the operation.</param>
@@ -83,10 +89,13 @@ public sealed class InboxDuplicateDetector
             return false;
 
         var (endpointId, messageId) = identity.Value;
+        var parkedFrom = IsEventRequest(context) ? GetStandInMessageId(context, messageId) : null;
         bool hasProcessed;
         try
         {
-            hasProcessed = await _inboxStore.HasProcessedAsync(endpointId, messageId, cancellationToken);
+            hasProcessed = await _inboxStore.HasProcessedAsync(endpointId, messageId, cancellationToken)
+                || (parkedFrom is not null
+                    && await _inboxStore.HasProcessedAsync(endpointId, parkedFrom, cancellationToken));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -103,14 +112,39 @@ public sealed class InboxDuplicateDetector
         context.HandlerOutcome = HandlerOutcome.DuplicateDetected;
         NimBusMeters.InboxDuplicatesDetected.Add(1);
         _logger.LogInformation(
-            "Inbox duplicate detected. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+            "Inbox duplicate detected. EndpointId:{EndpointId}, EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, InboxMessageId:{InboxMessageId}, SessionId:{SessionId}",
             endpointId,
             context.EventTypeId,
             context.GetEventIdOrDefault(),
             messageId,
+            parkedFrom,
             context.GetSessionIdOrDefault());
         await NotifyDuplicateDetectedBestEffort(context, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Gets the MessageId of the delivery a stand-in (a RetryRequest or a parked copy) carries
+    /// as its <see cref="IMessage.InboxMessageId"/>, or <see langword="null"/> when it carries
+    /// none, carries its own MessageId, or carries one longer than the supported maximum.
+    /// </summary>
+    /// <param name="context">The message context.</param>
+    /// <param name="messageId">The message's own deduplication MessageId.</param>
+    /// <returns>The carried MessageId, or <see langword="null"/>.</returns>
+    internal static string? GetStandInMessageId(IMessageContext context, string messageId)
+    {
+        var inboxMessageId = context.GetInboxMessageIdOrDefault();
+        return inboxMessageId is null
+            || inboxMessageId.Length > MaximumMessageIdLength
+            || string.Equals(inboxMessageId, messageId, StringComparison.Ordinal)
+                ? null
+                : inboxMessageId;
+    }
+
+    private static bool IsEventRequest(IMessageContext context)
+    {
+        try { return context.MessageType == MessageType.EventRequest; }
+        catch (InvalidMessageException) { return false; }
     }
 
     /// <summary>

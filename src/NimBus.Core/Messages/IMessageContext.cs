@@ -37,6 +37,19 @@ public interface IMessageContext : IReceivedMessage
     Task<string> GetBlockedByEventId(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets the source MessageId of the delivery whose failure (or pending handoff) blocked
+    /// the session, as <see cref="BlockSession"/> stored it: the MessageId the source
+    /// delivered the blocking event with. An operator resubmission of that event reaches the
+    /// endpoint with a fresh MessageId, so the inbox records this id too when it succeeds.
+    /// <see langword="null"/> when the session is not blocked, or was blocked by a version
+    /// that did not store it; the default implementation always returns <see langword="null"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token that can cancel the operation.</param>
+    /// <returns>The blocking delivery's source MessageId, or <see langword="null"/>.</returns>
+    Task<string?> GetBlockedByMessageId(CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(null);
+
+    /// <summary>
     /// Gets the next deferral sequence number and increments the counter.
     /// Used for ordering messages in the non-session deferred subscription.
     /// </summary>

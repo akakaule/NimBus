@@ -225,6 +225,8 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public HandoffMetadata HandoffMetadata { get; set; }
 
+    public Exception? HandledFailure { get; set; }
+
     public System.Diagnostics.ActivityContext ParentTraceContext { get; set; }
 
     private long? TryReadLong(UserPropertyName name)

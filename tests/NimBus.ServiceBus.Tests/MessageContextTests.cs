@@ -367,6 +367,19 @@ public class MessageContextTests
         Assert.IsNull(ctx.DeadLetterErrorDescription);
     }
 
+    [TestMethod]
+    public void HandledFailure_SetThroughTheInterface_IsStored()
+    {
+        // The interface default discards the value, and the circuit breaker recorder
+        // reads a failed RetryRequest or resubmission from it, so this context must store it.
+        IMessageContext ctx = CreateMessageContext();
+        var failure = new EventContextHandlerException(new InvalidOperationException("down"));
+
+        ctx.HandledFailure = failure;
+
+        Assert.AreSame(failure, ctx.HandledFailure);
+    }
+
     // ── Session state: Block/Unblock ────────────────────────────────────
 
     [TestMethod]

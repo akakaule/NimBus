@@ -25,13 +25,20 @@ public sealed class CircuitBreakerRecorderBehavior(IEndpointCircuitBreaker circu
         try
         {
             await next(context, cancellationToken).ConfigureAwait(false);
-            _circuitBreaker.RecordSuccess();
         }
         catch (Exception exception)
         {
             _circuitBreaker.RecordFailure(exception);
             throw;
         }
+
+        // A failed RetryRequest or resubmission is settled by the handler, which returns
+        // normally and reports the failure on the context. Recording a success there would
+        // let a retry that fails during an outage close a half-open circuit.
+        if (context.HandledFailure is { } handledFailure)
+            _circuitBreaker.RecordFailure(handledFailure);
+        else
+            _circuitBreaker.RecordSuccess();
     }
 
     private static bool IsHeartbeat(IMessageContext context)

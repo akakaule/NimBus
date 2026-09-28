@@ -208,6 +208,9 @@ public class StrictMessageHandler : MessageHandler
             await SendErrorResponse(messageContext, exception, cancellationToken);
             await CompleteMessage(messageContext, cancellationToken);
             await CheckForRetry(messageContext, exception, cancellationToken);
+            // Settled here rather than rethrown: report the failure through the context so
+            // pipeline behaviors (the circuit breaker recorder) do not see a success.
+            messageContext.HandledFailure = exception;
         }
     }
 
@@ -287,6 +290,8 @@ public class StrictMessageHandler : MessageHandler
             LogError(messageContext, "Failed to handle event (Resubmission)", exception);
             await SendErrorResponse(messageContext, exception, cancellationToken);
             await CompleteMessage(messageContext, cancellationToken);
+            // Settled rather than rethrown, as in HandleRetryRequest.
+            messageContext.HandledFailure = exception;
         }
     }
 

@@ -132,6 +132,22 @@ public interface IMessageContext : IReceivedMessage
     HandoffMetadata HandoffMetadata { get; set; }
 
     /// <summary>
+    /// A handler failure the message handler settled itself instead of letting it
+    /// propagate. <c>StrictMessageHandler</c> sets it when a RetryRequest or
+    /// ResubmissionRequest fails: it sends the ErrorResponse, completes the message and
+    /// schedules any retry, then returns normally. <see langword="null"/> when the handler
+    /// succeeded or its failure propagated as an exception. Pipeline behaviors read it after
+    /// <c>next</c> returns; the endpoint circuit breaker's recorder counts it as a failure
+    /// instead of a success.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation discards the value so existing implementers stay
+    /// source-compatible; a context that does not store it reports such a delivery to the
+    /// circuit breaker as a success.
+    /// </remarks>
+    Exception? HandledFailure { get => null; set { } }
+
+    /// <summary>
     /// W3C trace context extracted from the inbound message's <c>traceparent</c> /
     /// <c>tracestate</c> headers. Populated by the transport adapter at the receive
     /// boundary; consumed by the consumer-side instrumentation (which owns the

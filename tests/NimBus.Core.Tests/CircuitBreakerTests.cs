@@ -157,6 +157,21 @@ public sealed class CircuitBreakerTests
     }
 
     [TestMethod]
+    public async Task Recorder_counts_a_failure_the_handler_settled_without_rethrowing()
+    {
+        var breaker = CreateBreaker();
+        var behavior = new CircuitBreakerRecorderBehavior(breaker);
+
+        await behavior.Handle(CreateContext("orders.created"), (context, _) =>
+        {
+            context.HandledFailure = new EventContextHandlerException(new InvalidOperationException("down"));
+            return Task.CompletedTask;
+        });
+
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
+    [TestMethod]
     public async Task Recorder_does_not_record_heartbeat_outcomes()
     {
         var breaker = CreateBreaker(minimumThroughput: 2, failurePercentage: 50);
@@ -371,6 +386,120 @@ public sealed class CircuitBreakerTests
 
         await messageHandler.Handle(CreateContext("OrderPlaced"));
         Assert.AreEqual(CircuitState.Open, breaker.State);
+    }
+
+    // ----- failures StrictMessageHandler settles without rethrowing -----------
+
+    [TestMethod]
+    [DataRow(MessageType.RetryRequest, 1)]
+    [DataRow(MessageType.ResubmissionRequest, 0)]
+    public async Task Failed_retry_or_resubmission_is_a_failed_probe_and_settles_as_before(
+        MessageType messageType,
+        int expectedScheduledRetries)
+    {
+        // StrictMessageHandler answers a failed RetryRequest or resubmission itself
+        // (ErrorResponse, completion, retry scheduling) and returns normally. The
+        // recorder counted that as a success, so a due retry failing against a
+        // dependency that was still down closed the half-open circuit.
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var bus = new InMemoryMessageBus();
+        var session = new InMemorySessionState { BlockedByEventId = "event-1" };
+        var context = CreateBlockedEventContext(messageType, session);
+
+        await CreateStrictHandler(breaker, bus, new InvalidOperationException("still down")).Handle(context);
+
+        Assert.AreEqual(CircuitState.Open, breaker.State);
+        Assert.IsTrue(context.IsCompleted);
+        Assert.AreEqual("event-1", session.BlockedByEventId, "A failed attempt must leave the session blocked.");
+        Assert.AreEqual(1, bus.SentMessages.Count(message => message.MessageType == MessageType.ErrorResponse));
+        Assert.AreEqual(expectedScheduledRetries, bus.ScheduledMessages.Count);
+    }
+
+    [TestMethod]
+    [DataRow(MessageType.RetryRequest)]
+    [DataRow(MessageType.ResubmissionRequest)]
+    public async Task Excluded_failure_of_a_retry_or_resubmission_is_not_a_probe_outcome(MessageType messageType)
+    {
+        // Exclusions inspect the settled failure's inner-exception chain, as they do
+        // for a failure that escapes the pipeline: neither a failed nor a successful probe.
+        var options = CreateOptions();
+        options.Exclude<ExpectedDependencyException>();
+        var breaker = CreateHalfOpenBreaker(options);
+        var context = CreateBlockedEventContext(messageType, new InMemorySessionState { BlockedByEventId = "event-1" });
+
+        await CreateStrictHandler(breaker, new InMemoryMessageBus(), new ExpectedDependencyException()).Handle(context);
+
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+    }
+
+    [TestMethod]
+    [DataRow(MessageType.RetryRequest)]
+    [DataRow(MessageType.ResubmissionRequest)]
+    public async Task Successful_retry_or_resubmission_is_a_successful_probe(MessageType messageType)
+    {
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var session = new InMemorySessionState { BlockedByEventId = "event-1" };
+        var context = CreateBlockedEventContext(messageType, session);
+
+        await CreateStrictHandler(breaker, new InMemoryMessageBus(), handlerFailure: null).Handle(context);
+
+        Assert.AreEqual(CircuitState.Closed, breaker.State);
+        Assert.IsNull(session.BlockedByEventId);
+    }
+
+    private static EndpointCircuitBreaker CreateHalfOpenBreaker(CircuitBreakerOptions options)
+    {
+        var clock = new MutableTimeProvider(Start);
+        var breaker = new EndpointCircuitBreaker("billing", options, clock);
+        breaker.RecordFailure(new TransientException("down"));
+        clock.Advance(options.BreakDuration);
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+        return breaker;
+    }
+
+    private static StrictMessageHandler CreateStrictHandler(
+        IEndpointCircuitBreaker breaker,
+        InMemoryMessageBus bus,
+        Exception? handlerFailure)
+    {
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var pipeline = new MessagePipeline(
+            new PipelineBehaviorRegistry([]),
+            services,
+            [new CircuitBreakerRecorderBehavior(breaker)]);
+
+        return new StrictMessageHandler(
+            new StubEventContextHandler(handlerFailure),
+            new ResponseService(bus),
+            retryPolicyProvider: new DefaultRetryPolicyProvider().SetDefaultPolicy(new RetryPolicy { MaxRetries = 3 }),
+            pipeline: pipeline);
+    }
+
+    // A control message for event-1, whose earlier failure blocked the session.
+    // Resubmissions are accepted only from the Manager.
+    private static InMemoryMessageContext CreateBlockedEventContext(MessageType messageType, InMemorySessionState session) => new(
+        new Message
+        {
+            EventId = "event-1",
+            MessageId = "message-2",
+            SessionId = "session-1",
+            From = Constants.ManagerId,
+            To = "billing",
+            OriginatingMessageId = "message-1",
+            OriginatingFrom = "storefront",
+            EventTypeId = "OrderPlaced",
+            MessageType = messageType,
+            MessageContent = new MessageContent
+            {
+                EventContent = new EventContent { EventTypeId = "OrderPlaced", EventJson = "{}" },
+            },
+        },
+        session);
+
+    private sealed class StubEventContextHandler(Exception? failure) : IEventContextHandler
+    {
+        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default) =>
+            failure is null ? Task.CompletedTask : Task.FromException(failure);
     }
 
     /// <summary>

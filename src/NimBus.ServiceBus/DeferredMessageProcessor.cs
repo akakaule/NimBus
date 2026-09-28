@@ -19,6 +19,11 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
     private readonly string _deferredSubscriptionName;
     private const int BatchSize = 100;
 
+    // A session receiver, unlike a session processor, never renews its session lock, and the
+    // Deferred subscription's lock is 30 s. The drain renews the lock once less than this is
+    // left, which covers the 5 s receive wait and a replay's send and completion.
+    private static readonly TimeSpan SessionLockRenewalMargin = TimeSpan.FromSeconds(10);
+
     public DeferredMessageProcessor(ServiceBusClient serviceBusClient, string? deferredSubscriptionName = null)
     {
         _serviceBusClient = serviceBusClient ?? throw new ArgumentNullException(nameof(serviceBusClient));
@@ -78,6 +83,7 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
                     // Receive messages in batches until we've processed all messages for this session
                     while (!sessionBlockedAgain && !cancellationToken.IsCancellationRequested)
                     {
+                        await RenewSessionLockIfExpiringAsync(receiver, cancellationToken);
                         var messages = await receiver.ReceiveMessagesAsync(BatchSize, TimeSpan.FromSeconds(5), cancellationToken);
                         if (messages == null || messages.Count == 0)
                             break;
@@ -92,6 +98,7 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
                         {
                             cancellationToken.ThrowIfCancellationRequested();
                             var message = orderedMessages[i];
+                            await RenewSessionLockIfExpiringAsync(receiver, cancellationToken);
 
                             if (IsReplayParkedAgain(message, replayedMessageIds))
                             {
@@ -148,6 +155,14 @@ public class DeferredMessageProcessor : IDeferredMessageProcessor
         {
             replaySpan?.SetTag(MessagingAttributes.NimBusDeferredBatchSize, totalReplayed);
         }
+    }
+
+    // Without renewal a drain that outlasts the lock fails partway with SessionLockLost, and a
+    // lock lost between a replay's send and its completion gets that message replayed twice.
+    private static async Task RenewSessionLockIfExpiringAsync(ServiceBusSessionReceiver receiver, CancellationToken cancellationToken)
+    {
+        if (receiver.SessionLockedUntil - DateTimeOffset.UtcNow <= SessionLockRenewalMargin)
+            await receiver.RenewSessionLockAsync(cancellationToken);
     }
 
     private static KeyValuePair<string, object?>[] BuildEndpointTag(string endpoint) =>

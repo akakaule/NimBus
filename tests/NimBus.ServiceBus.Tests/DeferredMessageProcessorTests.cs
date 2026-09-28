@@ -447,6 +447,53 @@ public class DeferredMessageProcessorTests
         Assert.AreEqual("corr-with-seq", client.Sender.SentMessages[1].CorrelationId);
     }
 
+    // ── Session lock ────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_DrainOutlastsTheSessionLock_RenewsItAndReplaysEachMessageOnce()
+    {
+        // A session receiver does not renew its own lock. Ten replays at 8 s each outlast
+        // the 30 s lock, which would fail the drain partway with SessionLockLost. A lock lost
+        // between a replay's send and its completion leaves that parked message to be
+        // replayed again by the next drain.
+        using var capture = ReplayTelemetryCapture.Start();
+        var client = new RecordingServiceBusClient();
+        client.SessionReceiver.LockDuration = TimeSpan.FromSeconds(30);
+        client.SessionReceiver.ElapsedPerCompletion = TimeSpan.FromSeconds(8);
+        var messages = Enumerable.Range(1, 10)
+            .Select(i => CreateReceivedMessage($"corr-{i:D2}", deferralSequence: i))
+            .ToList();
+        client.SessionReceiver.ReceiveBatches.Add(messages.Take(5).ToList());
+        client.SessionReceiver.ReceiveBatches.Add(messages.Skip(5).ToList());
+
+        await new DeferredMessageProcessor(client).ProcessDeferredMessagesAsync("session-1", "billing");
+
+        CollectionAssert.AreEqual(messages, client.SessionReceiver.CompletedMessages);
+        CollectionAssert.AreEqual(
+            messages.Select(m => m.CorrelationId).ToList(),
+            client.Sender.SentMessages.Select(m => m.CorrelationId).ToList(),
+            "Each parked message is replayed exactly once.");
+        Assert.IsGreaterThanOrEqualTo(3, client.SessionReceiver.SessionLockRenewals);
+        var span = capture.Activities.Single(a => a.OperationName == "NimBus.DeferredProcessor.Replay");
+        Assert.AreEqual(ActivityStatusCode.Ok, span.Status);
+    }
+
+    [TestMethod]
+    public async Task ProcessDeferredMessagesAsync_DrainWithinTheSessionLock_DoesNotRenewIt()
+    {
+        var client = new RecordingServiceBusClient();
+        client.SessionReceiver.ReceiveBatches.Add(new List<ServiceBusReceivedMessage>
+        {
+            CreateReceivedMessage("corr-1", deferralSequence: 1),
+            CreateReceivedMessage("corr-2", deferralSequence: 2),
+        });
+
+        await new DeferredMessageProcessor(client).ProcessDeferredMessagesAsync("session-1", "billing");
+
+        Assert.AreEqual(2, client.SessionReceiver.CompletedMessages.Count);
+        Assert.AreEqual(0, client.SessionReceiver.SessionLockRenewals);
+    }
+
     // ── Transient exception ─────────────────────────────────────────────
 
     [TestMethod]

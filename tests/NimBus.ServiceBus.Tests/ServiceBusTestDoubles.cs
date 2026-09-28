@@ -139,6 +139,41 @@ internal sealed class RecordingServiceBusSessionReceiver : ServiceBusSessionRece
     public List<ServiceBusReceivedMessage> AbandonedMessages { get; } = new();
     public Exception? ReceiveMessagesException { get; set; }
 
+    /// <summary>
+    /// The subscription's lock duration: what the session is locked for when it is accepted
+    /// and after each renewal.
+    /// </summary>
+    public TimeSpan LockDuration { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Simulated time each completion takes. The session lock runs down by this much per
+    /// completion, and once it has run out, receives and settlements fail with
+    /// <see cref="ServiceBusFailureReason.SessionLockLost"/>, like they do on Service Bus.
+    /// </summary>
+    public TimeSpan ElapsedPerCompletion { get; set; } = TimeSpan.Zero;
+
+    public int SessionLockRenewals { get; private set; }
+
+    private TimeSpan? _lockRemaining;
+
+    private TimeSpan LockRemaining => _lockRemaining ?? LockDuration;
+
+    public override DateTimeOffset SessionLockedUntil => DateTimeOffset.UtcNow + LockRemaining;
+
+    public override Task RenewSessionLockAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfSessionLockLost();
+        _lockRemaining = LockDuration;
+        SessionLockRenewals++;
+        return Task.CompletedTask;
+    }
+
+    private void ThrowIfSessionLockLost()
+    {
+        if (LockRemaining <= TimeSpan.Zero)
+            throw new ServiceBusException("The session lock was lost.", ServiceBusFailureReason.SessionLockLost);
+    }
+
     public override Task<IReadOnlyList<ServiceBusReceivedMessage>> ReceiveDeferredMessagesAsync(IEnumerable<long> sequenceNumbers, CancellationToken cancellationToken = default)
     {
         LastDeferredSequenceNumbers = sequenceNumbers.ToArray();
@@ -147,6 +182,7 @@ internal sealed class RecordingServiceBusSessionReceiver : ServiceBusSessionRece
 
     public override Task<IReadOnlyList<ServiceBusReceivedMessage>> ReceiveMessagesAsync(int maxMessages, TimeSpan? maxWaitTime, CancellationToken cancellationToken = default)
     {
+        ThrowIfSessionLockLost();
         if (_receiveBatchIndex >= ReceiveBatches.Count && ReceiveMessagesException != null)
             throw ReceiveMessagesException;
         if (_receiveBatchIndex < ReceiveBatches.Count)
@@ -162,6 +198,8 @@ internal sealed class RecordingServiceBusSessionReceiver : ServiceBusSessionRece
 
     public override Task CompleteMessageAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken = default)
     {
+        _lockRemaining = LockRemaining - ElapsedPerCompletion;
+        ThrowIfSessionLockLost();
         CompletedMessages.Add(message);
         return Task.CompletedTask;
     }
@@ -171,6 +209,7 @@ internal sealed class RecordingServiceBusSessionReceiver : ServiceBusSessionRece
         IDictionary<string, object>? propertiesToModify = null,
         CancellationToken cancellationToken = default)
     {
+        ThrowIfSessionLockLost();
         AbandonedMessages.Add(message);
         return Task.CompletedTask;
     }

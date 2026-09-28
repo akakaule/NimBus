@@ -1988,6 +1988,33 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(1, found.Audits.Count(), "The audit search keeps an audit in the first second after its lower bound.");
     }
 
+    [TestMethod]
+    public async Task DownloadEndpointStateCount_oldest_failure_is_chronological_within_one_second()
+    {
+        var store = CreateStore();
+        var endpointId = Id("fo-a");
+        var second = WholeSecond(DateTime.UtcNow.AddMinutes(-1));
+
+        // Oldest first, uploaded in real time so the providers that stamp UpdatedAt keep the
+        // order. On Cosmos "…:00Z" sorts after "…:00.1Z", which sorts after "…:00.15Z", so a
+        // string MIN picks the newest of the three.
+        foreach (var (name, milliseconds) in new[] { ("fo1", 0), ("fo2", 100), ("fo3", 150) })
+        {
+            var ev = FailureEvent(endpointId, Id(name), name);
+            ev.UpdatedAt = second.AddMilliseconds(milliseconds);
+            await store.UploadFailedMessage(Id(name), name, endpointId, ev);
+            await Task.Delay(50);
+        }
+
+        AssertUtcNear(await StoredUpdatedAt(store, endpointId, Id("fo1")),
+            (await store.DownloadEndpointStateCount(endpointId)).OldestFailureAt);
+
+        // Without the whole-second failure the oldest is ".1Z", though ".15Z" sorts first.
+        await store.RemoveMessage(Id("fo1"), "fo1", endpointId);
+        AssertUtcNear(await StoredUpdatedAt(store, endpointId, Id("fo2")),
+            (await store.DownloadEndpointStateCount(endpointId)).OldestFailureAt);
+    }
+
     private static DateTime WholeSecond(DateTime value) =>
         new(value.Ticks - value.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
 

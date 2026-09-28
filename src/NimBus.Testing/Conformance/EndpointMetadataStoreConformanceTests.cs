@@ -270,6 +270,22 @@ public abstract class EndpointMetadataStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task SweepTimedOutHeartbeats_settles_a_whole_second_probe_by_a_cutoff_later_in_that_second()
+    {
+        // Cosmos stores a whole-second StartTime as "…:00Z", which sorts after a "…:00.1Z"
+        // cutoff; the sweep must compare instants, not those strings.
+        var store = CreateStore();
+        var endpointId = Id("hb-edge");
+        var start = T0.AddDays(-1);
+        await store.SetHeartbeat(Probe("edge-1", HeartbeatStatus.Pending, start), endpointId);
+
+        var swept = await store.SweepTimedOutHeartbeats(start.AddMilliseconds(100));
+
+        CollectionAssert.Contains(swept, endpointId);
+        Assert.AreEqual(HeartbeatStatus.Off, (await store.GetEndpointMetadata(endpointId)).EndpointHeartbeatStatus);
+    }
+
+    [TestMethod]
     public async Task GetHeartbeatOverview_in_flight_probe_does_not_mask_the_last_settled_outcome()
     {
         var store = CreateStore();

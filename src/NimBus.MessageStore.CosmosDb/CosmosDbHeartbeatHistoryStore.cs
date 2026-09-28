@@ -73,9 +73,11 @@ internal sealed class CosmosDbHeartbeatHistoryStore : IHeartbeatHistoryStore
     public async Task<List<HeartbeatGap>> GetHeartbeatGaps(DateTime fromUtc)
     {
         var container = await _getHeartbeatGapsContainer();
+        // Widened to a whole second, as Cosmos compares datetimes as strings (see
+        // CosmosDateBounds); the exact bound is applied to the rows read.
         var query = new QueryDefinition(
             "SELECT * FROM c WHERE IS_NULL(c.ToUtc) OR c.ToUtc >= @fromUtc ORDER BY c.FromUtc DESC")
-            .WithParameter("@fromUtc", fromUtc);
+            .WithParameter("@fromUtc", CosmosDateBounds.WidenFrom(fromUtc));
         var iterator = container.GetItemQueryIterator<HeartbeatGap>(query);
         var rows = new List<HeartbeatGap>();
         while (iterator.HasMoreResults)
@@ -83,7 +85,7 @@ internal sealed class CosmosDbHeartbeatHistoryStore : IHeartbeatHistoryStore
             rows.AddRange(await iterator.ReadNextAsync());
         }
 
-        return rows;
+        return rows.Where(gap => gap.ToUtc is null || gap.ToUtc >= fromUtc).ToList();
     }
 
     public async Task<bool> UpsertHeartbeatGaps(IEnumerable<HeartbeatGap> gaps)

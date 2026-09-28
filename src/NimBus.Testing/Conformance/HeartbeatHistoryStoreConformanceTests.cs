@@ -49,6 +49,34 @@ public abstract class HeartbeatHistoryStoreConformanceTests
         Assert.AreEqual("2.0.0", rows.Single(row => row.EndpointId == inside.EndpointId).SdkVersionAfter);
     }
 
+    // Cosmos DB stores DateTimes as ISO strings with trailing fractional zeros trimmed
+    // ("…T00:00:00Z", "…T00:00:00.1Z") and compares them as strings, where '.' sorts before 'Z'
+    // and ".125Z" before ".12Z", so within one second string order is not chronological. Every
+    // provider keeps the caller's gap timestamps, so the bounds below are exact.
+    [TestMethod]
+    public async Task Gap_query_compares_ToUtc_chronologically_within_one_second()
+    {
+        var store = CreateStore();
+        var midnight = DateTime.UtcNow.Date.AddDays(-1);
+        var second = midnight.AddHours(-1);
+        var closedAfterMidnight = Gap("after-midnight", midnight.AddMinutes(-10), midnight.AddMilliseconds(100));
+        var closedOnSecond = Gap("on-second", second.AddMinutes(-10), second);
+        var closedAt100 = Gap("at-100ms", second.AddMinutes(-11), second.AddMilliseconds(100));
+        var closedAt125 = Gap("at-125ms", second.AddMinutes(-12), second.AddMilliseconds(125));
+        var closedAt150 = Gap("at-150ms", second.AddMinutes(-13), second.AddMilliseconds(150));
+        await store.UpsertHeartbeatGaps([closedAfterMidnight, closedOnSecond, closedAt100, closedAt125, closedAt150]);
+
+        // The Heartbeat page reads gaps from the midnight that starts its window.
+        CollectionAssert.Contains(ScopedEndpointIds(await store.GetHeartbeatGaps(midnight)), closedAfterMidnight.EndpointId,
+            "A gap that closed just after a whole-second bound overlaps the window.");
+
+        var ids = ScopedEndpointIds(await store.GetHeartbeatGaps(second.AddMilliseconds(120)));
+        CollectionAssert.DoesNotContain(ids, closedOnSecond.EndpointId, "A gap that closed on the whole second ended before a .12 bound.");
+        CollectionAssert.DoesNotContain(ids, closedAt100.EndpointId, "A gap that closed at .1 ended before a .12 bound.");
+        CollectionAssert.Contains(ids, closedAt125.EndpointId, "A gap that closed at .125 overlaps a .12 bound.");
+        CollectionAssert.Contains(ids, closedAt150.EndpointId, "A gap that closed at .15 overlaps a .12 bound.");
+    }
+
     [TestMethod]
     public async Task Fractional_second_gap_keys_round_trip_and_update_without_duplicates()
     {
@@ -110,6 +138,9 @@ public abstract class HeartbeatHistoryStoreConformanceTests
         Assert.IsFalse(gaps.Any(row => row.EndpointId == oldClosed.EndpointId));
         Assert.IsTrue(gaps.Any(row => row.EndpointId == oldOpen.EndpointId));
     }
+
+    private List<string> ScopedEndpointIds(IEnumerable<HeartbeatGap> gaps)
+        => gaps.Select(gap => gap.EndpointId).Where(id => id.StartsWith(_scope, StringComparison.Ordinal)).ToList();
 
     private HeartbeatUptimeDay Day(string suffix, DateTime dayUtc, int expected)
         => new()

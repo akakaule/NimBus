@@ -40,6 +40,11 @@ internal sealed partial class CosmosDbMessageTrackingStore
             }
         }
 
+        // MIN compares the stored strings (see CosmosDateBounds): it finds the second that holds
+        // the oldest failure, but within that second it can pick a later row.
+        if (oldestFailure is { } inOldestSecond)
+            oldestFailure = await ExactOldestFailureAt(container, inOldestSecond);
+
         return new EndpointStateCount
         {
             EndpointId = endpointId,
@@ -51,6 +56,33 @@ internal sealed partial class CosmosDbMessageTrackingStore
             DeadletterCount = resultDict.ContainsKey(DLQStatus) ? resultDict[DLQStatus] : 0,
             UnsupportedCount = resultDict.ContainsKey(UnsupportedStatus) ? resultDict[UnsupportedStatus] : 0,
         };
+    }
+
+    // Reads the failures up to the widened end of the second that holds inOldestSecond and
+    // takes their minimum as instants. None are older than that second, so this is exact.
+    private static async Task<DateTime> ExactOldestFailureAt(ICosmosContainerAdapter container, DateTime inOldestSecond)
+    {
+        var queryDefinition = new QueryDefinition(
+                "SELECT VALUE c.event.UpdatedAt FROM c WHERE (NOT IS_DEFINED(c.deleted) or c.deleted != true) " +
+                "AND c.status IN (@failedStatus, @deadletterStatus) AND c.event.UpdatedAt <= @to")
+            .WithParameter("@failedStatus", FailedStatus)
+            .WithParameter("@deadletterStatus", DLQStatus)
+            .WithParameter("@to", CosmosDateBounds.WidenTo(inOldestSecond));
+
+        // The read returns the MIN row too, unless it was resolved after the count query.
+        var oldest = inOldestSecond;
+        var result = container.GetItemQueryIterator<DateTime>(queryDefinition);
+        while (result.HasMoreResults)
+        {
+            foreach (var updatedAt in await result.ReadNextAsync())
+            {
+                var candidate = AsUtc(updatedAt);
+                if (candidate < oldest)
+                    oldest = candidate;
+            }
+        }
+
+        return oldest;
     }
 
     // UpdatedAt is written from DateTime.UtcNow and round-trips with a "Z" suffix; guard

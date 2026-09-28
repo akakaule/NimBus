@@ -1,6 +1,8 @@
 # Dynamics 365 Sales ↔ Business Central demo (`samples/DynamicsBcDemo`)
 
-Status: in progress (2026-09-28) on branch `claude/nimbus-dynamics-bc-demo-4918f0`.
+Status: implemented in #171 and #172. The quote flow is superseded by
+[the quote-linkage V1 flows](2026-09-28-dynamics-bc-demo-v1-flows.md): quotes are now made in Business
+Central from CRM opportunities, instead of CRM requesting them.
 
 ## Context
 

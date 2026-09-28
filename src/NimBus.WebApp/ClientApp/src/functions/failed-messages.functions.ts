@@ -57,7 +57,7 @@ export const PERIOD_OPTIONS: PeriodOption[] = [
   },
 ];
 
-export const DEFAULT_PERIOD = api.Period._7d;
+export const DEFAULT_PERIOD = api.Period._1d;
 
 export function periodOption(period: string): PeriodOption {
   return (

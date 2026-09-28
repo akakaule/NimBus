@@ -6,7 +6,7 @@ all the endpoints you can read. The sidebar badge shows the size of that backlog
 
 ## What the page shows
 
-- **Range** — `1h`, `12h`, `1d`, `3d`, `7d` (default) or `30d`. When failures older than the
+- **Range** — `1h`, `12h`, `1d` (default), `3d`, `7d` or `30d`. When failures older than the
   range exist, the page says how many and offers to widen it.
 - **Summary tiles** — totals per status in the range, the number of endpoints affected and
   the busiest bucket.

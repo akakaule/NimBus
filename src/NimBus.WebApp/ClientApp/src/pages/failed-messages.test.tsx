@@ -152,7 +152,7 @@ describe("Failed messages page", () => {
     await waitFor(() => expect(captured.rows?.length).toBe(3));
     const histogramRequest = mocks.histogram.mock
       .calls[0][0] as api.FailedHistogramRequest;
-    expect(histogramRequest.period).toBe(api.Period._7d);
+    expect(histogramRequest.period).toBe(api.Period._1d);
     expect(histogramRequest.filter?.updatedAtFrom).toBeUndefined();
 
     const searchRequest = mocks.search.mock
@@ -173,7 +173,7 @@ describe("Failed messages page", () => {
       "2026-09-25T06:00:00.000Z",
     );
     expect(request.filter?.updatedAtTo?.toISOString()).toBe(
-      "2026-09-25T11:59:59.999Z",
+      "2026-09-25T06:59:59.999Z",
     );
     expect(mocks.histogram).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("Clear time window")).toBeTruthy();

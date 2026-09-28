@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -11,6 +10,7 @@ import {
 } from "recharts";
 import * as api from "api-client";
 import ByEventTypeTab, {
+  buildBucketGrid,
   spansMoreThanOneDay,
 } from "components/metrics/by-event-type-tab";
 import Page from "components/page";
@@ -100,9 +100,6 @@ export default function Metrics() {
   const [timeseries, setTimeseries] = useState<api.TimeSeriesOverview | null>(
     null,
   );
-  const [insights, setInsights] = useState<api.FailedInsightsOverview | null>(
-    null,
-  );
   const [byEventType, setByEventType] =
     useState<api.EventTypeTimeSeriesOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,19 +115,15 @@ export default function Metrics() {
     setLoading(true);
     try {
       const client = new api.Client(api.CookieAuth());
-      // Insights is optional — Metrics still renders if the call fails so a
-      // misconfigured /metrics/failed-insights route doesn't blank the page.
-      const [o, l, t, i, e] = await Promise.all([
+      const [o, l, t, e] = await Promise.all([
         client.getMetricsOverview(p),
         client.getMetricsLatency(p).catch(() => null),
         client.getMetricsTimeseries(p).catch(() => null),
-        client.getMetricsFailedInsights(p).catch(() => null),
         client.getMetricsTimeseriesByEventtype(p).catch(() => null),
       ]);
       setOverview(o);
       setLatency(l);
       setTimeseries(t);
-      setInsights(i);
       setByEventType(e);
     } catch (err) {
       console.error("Failed to load metrics", err);
@@ -222,13 +215,6 @@ export default function Metrics() {
     () => rollupByEndpoint(overview?.handled ?? []),
     [overview?.handled],
   );
-
-  // ---- Failure summary --------------------------------------------------
-  const topFailures = useMemo(
-    () => (insights?.groups ?? []).slice(0, 3),
-    [insights],
-  );
-  const totalFailureCount = insights?.totalFailed ?? totals.failed;
 
   // ---- Tone heuristics --------------------------------------------------
   const failureRateTone: StatTileTone =
@@ -367,20 +353,22 @@ export default function Metrics() {
                 </div>
               ) : (
                 <>
-                  {/* Activity chart — Published + Handled on shared axis, failed
-                events as red dots at the baseline (design §03 · pin 2). */}
+                  {/* Activity chart — Published next to Handled + Failed per
+                bucket, on a shared axis (design §03 · pin 2). */}
                   <ChartCard
                     title="Activity & failures"
                     meta={`shared time axis · ${periodLabel}`}
                     legend={
                       <>
-                        <LegendArea color={PALETTE.published}>
+                        <LegendSwatch color={PALETTE.published}>
                           Published
-                        </LegendArea>
-                        <LegendArea color={PALETTE.handled}>Handled</LegendArea>
-                        <LegendDot color={PALETTE.failed}>
-                          Failed events
-                        </LegendDot>
+                        </LegendSwatch>
+                        <LegendSwatch color={PALETTE.handled}>
+                          Handled
+                        </LegendSwatch>
+                        <LegendSwatch color={PALETTE.failed}>
+                          Failed
+                        </LegendSwatch>
                       </>
                     }
                   >
@@ -389,16 +377,6 @@ export default function Metrics() {
                       bucketSize={timeseries?.bucketSize}
                     />
                   </ChartCard>
-
-                  {/* Top failure causes — compact teaser linking to /Insights. We
-                deliberately don't duplicate the full grouped table here;
-                Metrics is "what's happening", Insights is "why" (design §04). */}
-                  {topFailures.length > 0 && (
-                    <FailureSummary
-                      groups={topFailures}
-                      totalFailed={totalFailureCount ?? 0}
-                    />
-                  )}
 
                   {/* Published × Consumed — symmetric small-multiples instead of a
                 stacked horizontal bar that mixes "who publishes most" with
@@ -502,28 +480,14 @@ const ChartCard: React.FC<ChartCardProps> = ({
   </div>
 );
 
-const LegendArea: React.FC<{ color: string; children: React.ReactNode }> = ({
+const LegendSwatch: React.FC<{ color: string; children: React.ReactNode }> = ({
   color,
   children,
 }) => (
   <span className="inline-flex items-center gap-1.5">
     <span
       aria-hidden="true"
-      className="inline-block w-2.5 h-[3px]"
-      style={{ background: color }}
-    />
-    {children}
-  </span>
-);
-
-const LegendDot: React.FC<{ color: string; children: React.ReactNode }> = ({
-  color,
-  children,
-}) => (
-  <span className="inline-flex items-center gap-1.5">
-    <span
-      aria-hidden="true"
-      className="inline-block w-2 h-2 rounded-full"
+      className="inline-block w-2.5 h-2.5 rounded-sm"
       style={{ background: color }}
     />
     {children}
@@ -531,9 +495,10 @@ const LegendDot: React.FC<{ color: string; children: React.ReactNode }> = ({
 );
 
 // -------------------------------------------------------------------------
-// Activity chart — uses the same Recharts line treatment as the event-type
-// chart. Failures remain baseline markers so they flag affected buckets
-// without changing the scale used to compare published and handled traffic.
+// Activity chart — bars, like the Failed page's histogram. Each bucket gets a
+// Published bar next to an outcome bar stacking Handled under Failed, so the
+// failure share of each bucket reads directly off the red cap on the same
+// scale as the traffic.
 // -------------------------------------------------------------------------
 interface ActivityChartProps {
   dataPoints: api.TimeSeriesDataPoint[];
@@ -541,11 +506,10 @@ interface ActivityChartProps {
 }
 
 interface ActivityChartRow {
-  timestamp?: string;
+  timestamp: string;
   published: number;
   handled: number;
   failed: number;
-  failureMarker: number | null;
 }
 
 export const ActivityChart: React.FC<ActivityChartProps> = ({
@@ -562,21 +526,38 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
     );
   }
 
-  const rows: ActivityChartRow[] = dataPoints.map((point) => ({
-    timestamp: point.timestamp,
-    published: point.published ?? 0,
-    handled: point.handled ?? 0,
-    failed: point.failed ?? 0,
-    failureMarker: (point.failed ?? 0) > 0 ? 0 : null,
-  }));
+  // Bars sit on a categorical axis, so zero-fill the gaps the store leaves
+  // between observed buckets to keep the bars evenly spaced in time.
+  const byTimestamp = new Map(
+    dataPoints
+      .filter((p) => p.timestamp)
+      .map((p) => [p.timestamp as string, p]),
+  );
+  const rows: ActivityChartRow[] = buildBucketGrid(
+    [...byTimestamp.keys()],
+    bucketSize,
+  ).map((timestamp) => {
+    const point = byTimestamp.get(timestamp);
+    return {
+      timestamp,
+      published: point?.published ?? 0,
+      handled: point?.handled ?? 0,
+      failed: point?.failed ?? 0,
+    };
+  });
 
   // Hour ticks are ambiguous once the window crosses a day — carry the date
   // on axis and tooltip labels then.
-  const ticksWithDate = spansMoreThanOneDay(dataPoints.map((p) => p.timestamp));
+  const ticksWithDate = spansMoreThanOneDay(rows.map((r) => r.timestamp));
 
   return (
     <ResponsiveContainer width="100%" height={280}>
-      <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+      <BarChart
+        data={rows}
+        margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
+        barCategoryGap="18%"
+        barGap={1}
+      >
         <CartesianGrid
           stroke={PALETTE.grid}
           strokeDasharray="3 3"
@@ -600,6 +581,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
           width={44}
         />
         <Tooltip
+          cursor={{ fill: PALETTE.grid, fillOpacity: 0.4 }}
           content={({ active, payload, label }) => {
             const point = payload?.[0]?.payload as ActivityChartRow | undefined;
             if (!active || !point) return null;
@@ -628,48 +610,29 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
             );
           }}
         />
-        <Line
-          type="monotone"
+        <Bar
           dataKey="published"
-          stroke={PALETTE.published}
-          strokeWidth={2}
-          dot={false}
-          activeDot={{ r: 4 }}
+          stackId="published"
+          fill={PALETTE.published}
+          radius={[2, 2, 0, 0]}
           isAnimationActive={false}
         />
-        <Line
-          type="monotone"
+        <Bar
           dataKey="handled"
-          stroke={PALETTE.handled}
-          strokeWidth={2}
-          dot={false}
-          activeDot={{ r: 4 }}
+          stackId="outcome"
+          fill={PALETTE.handled}
           isAnimationActive={false}
         />
-        <Line
-          dataKey="failureMarker"
-          stroke="none"
-          dot={<FailureDot />}
-          activeDot={false}
+        <Bar
+          dataKey="failed"
+          stackId="outcome"
+          fill={PALETTE.failed}
+          radius={[2, 2, 0, 0]}
           isAnimationActive={false}
         />
-      </LineChart>
+      </BarChart>
     </ResponsiveContainer>
   );
-};
-
-const FailureDot = ({
-  cx,
-  cy,
-  payload,
-}: {
-  cx?: number;
-  cy?: number;
-  payload?: ActivityChartRow;
-}) => {
-  if (cx == null || cy == null || !payload || payload.failed <= 0) return null;
-  const radius = Math.min(5, 2 + Math.log10(payload.failed + 1) * 2);
-  return <circle cx={cx} cy={cy} r={radius} fill={PALETTE.failed} />;
 };
 
 const ActivityTooltipRow: React.FC<{
@@ -691,117 +654,6 @@ const ActivityTooltipRow: React.FC<{
     >
       {formatNumber(value)}
     </span>
-  </div>
-);
-
-// -------------------------------------------------------------------------
-// Top failure causes — compact teaser linking to /Insights. Metrics shows
-// "what" failed at a glance; clicking through to Insights tells the operator
-// "why" (design §04 division of labour).
-// -------------------------------------------------------------------------
-interface FailureSummaryProps {
-  groups: api.ErrorPatternGroup[];
-  totalFailed: number;
-}
-
-const FailureSummary: React.FC<FailureSummaryProps> = ({
-  groups,
-  totalFailed,
-}) => (
-  <div
-    className={cn(
-      "bg-card border rounded-nb-md p-4",
-      "border-status-danger-50",
-    )}
-  >
-    <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
-      <h4 className="m-0 text-sm font-bold tracking-tight text-status-danger">
-        Top failure causes
-      </h4>
-      <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
-        <span>
-          {totalFailed} failure{totalFailed === 1 ? "" : "s"} · {groups.length}{" "}
-          pattern
-          {groups.length === 1 ? "" : "s"}
-        </span>
-        <Link
-          to="/Insights"
-          className="text-primary-600 font-semibold no-underline hover:text-primary"
-        >
-          Open Insights ›
-        </Link>
-      </div>
-    </div>
-    <div className="overflow-x-auto">
-      <table className="w-full text-[12.5px] tabular-nums">
-        <thead>
-          <tr className="bg-surface-2 text-muted-foreground">
-            <th className="text-left font-semibold uppercase tracking-[0.06em] text-[10.5px] px-3 py-2">
-              Error pattern
-            </th>
-            <th className="text-left font-semibold uppercase tracking-[0.06em] text-[10.5px] px-3 py-2">
-              Endpoints / event types
-            </th>
-            <th className="text-right font-semibold uppercase tracking-[0.06em] text-[10.5px] px-3 py-2">
-              Count
-            </th>
-            <th className="text-right font-semibold uppercase tracking-[0.06em] text-[10.5px] px-3 py-2">
-              Latest
-            </th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {groups.map((g, idx) => (
-            <tr key={idx} className="border-t border-border">
-              <td className="px-3 py-2.5 align-top">
-                <div className="font-semibold text-foreground">
-                  {g.errorCategory ?? "Unknown"}
-                </div>
-                {g.exampleErrorText && (
-                  <div className="font-mono text-[10.5px] text-muted-foreground mt-0.5 truncate max-w-[420px]">
-                    {g.exampleErrorText}
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-2.5 align-top">
-                <div className="font-semibold">
-                  {(g.endpoints ?? []).join(", ") || "—"}
-                </div>
-                <div className="font-mono text-[10.5px] text-nimbus-purple font-semibold">
-                  {(g.eventTypes ?? []).join(", ") || "—"}
-                </div>
-              </td>
-              <td className="px-3 py-2.5 text-right align-top text-status-danger font-bold">
-                {g.count ?? 0}
-              </td>
-              <td className="px-3 py-2.5 text-right align-top font-mono text-[10.5px] text-muted-foreground">
-                {g.latestOccurrence ? g.latestOccurrence.fromNow() : "—"}
-              </td>
-              <td className="px-3 py-2.5 text-right align-top">
-                <Link
-                  to="/Insights"
-                  className="text-primary-600 font-semibold no-underline text-[12px] hover:text-primary"
-                >
-                  Investigate ›
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-    <p className="mt-3 pt-2.5 border-t border-dashed border-border font-mono text-[11px] text-muted-foreground italic">
-      Top 3 patterns shown as a teaser. Full grouping, stack traces, and replay
-      actions live on{" "}
-      <Link
-        to="/Insights"
-        className="text-primary-600 font-semibold no-underline not-italic hover:text-primary"
-      >
-        Insights
-      </Link>
-      .
-    </p>
   </div>
 );
 

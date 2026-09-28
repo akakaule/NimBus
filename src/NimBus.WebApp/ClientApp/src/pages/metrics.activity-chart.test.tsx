@@ -5,11 +5,19 @@ import { ActivityChart } from "./metrics";
 
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
-  Line: ({ dataKey }: { dataKey: string }) => (
-    <span data-testid="chart-line" data-key={dataKey} />
+  Bar: ({ dataKey, stackId }: { dataKey: string; stackId?: string }) => (
+    <span data-testid="chart-bar" data-key={dataKey} data-stack={stackId} />
   ),
-  LineChart: ({ children }: { children: ReactNode }) => (
-    <div data-testid="line-chart">{children}</div>
+  BarChart: ({
+    children,
+    data,
+  }: {
+    children: ReactNode;
+    data: { timestamp: string; published: number }[];
+  }) => (
+    <div data-testid="bar-chart" data-rows={JSON.stringify(data)}>
+      {children}
+    </div>
   ),
   ResponsiveContainer: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
@@ -31,7 +39,7 @@ vi.mock("recharts", () => ({
 afterEach(cleanup);
 
 describe("ActivityChart", () => {
-  it("uses the same line-chart treatment as the event-type chart", () => {
+  it("draws published beside a handled + failed stack", () => {
     render(
       <ActivityChart
         bucketSize="hour"
@@ -46,12 +54,37 @@ describe("ActivityChart", () => {
       />,
     );
 
-    expect(screen.getByTestId("line-chart")).toBeTruthy();
+    expect(screen.getByTestId("bar-chart")).toBeTruthy();
     expect(
       screen
-        .getAllByTestId("chart-line")
-        .map((line) => line.getAttribute("data-key")),
-    ).toEqual(["published", "handled", "failureMarker"]);
+        .getAllByTestId("chart-bar")
+        .map(
+          (bar) =>
+            `${bar.getAttribute("data-key")}:${bar.getAttribute("data-stack") ?? ""}`,
+        ),
+    ).toEqual(["published:published", "handled:outcome", "failed:outcome"]);
+  });
+
+  it("zero-fills buckets missing between observed ones", () => {
+    render(
+      <ActivityChart
+        bucketSize="hour"
+        dataPoints={[
+          { timestamp: "2026-08-10T10", published: 5, handled: 4, failed: 1 },
+          { timestamp: "2026-08-10T13", published: 2, handled: 2, failed: 0 },
+        ]}
+      />,
+    );
+
+    const rows = JSON.parse(
+      screen.getByTestId("bar-chart").getAttribute("data-rows") ?? "[]",
+    ) as { timestamp: string; published: number }[];
+    expect(rows.map((r) => [r.timestamp, r.published])).toEqual([
+      ["2026-08-10T10", 5],
+      ["2026-08-10T11", 0],
+      ["2026-08-10T12", 0],
+      ["2026-08-10T13", 2],
+    ]);
   });
 
   it("keeps the empty state when no activity is available", () => {

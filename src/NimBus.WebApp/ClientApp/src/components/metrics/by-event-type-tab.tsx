@@ -6,9 +6,9 @@ import { Spinner } from "components/ui/spinner";
 import { useTheme } from "hooks/use-theme";
 import { cn } from "lib/utils";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -364,7 +364,7 @@ export default function ByEventTypeTab({
             >
               <span
                 aria-hidden="true"
-                className="inline-block w-2.5 h-[3px]"
+                className="inline-block w-2.5 h-2.5 rounded-sm"
                 style={{ background: colorOf(s.eventTypeId ?? "") }}
               />
               {s.eventTypeId}
@@ -387,9 +387,10 @@ export default function ByEventTypeTab({
           />
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart
+            <BarChart
               data={chartRows}
               margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
+              barCategoryGap="18%"
             >
               <CartesianGrid
                 stroke={grid}
@@ -414,6 +415,7 @@ export default function ByEventTypeTab({
                 width={44}
               />
               <Tooltip
+                cursor={{ fill: grid, fillOpacity: 0.4 }}
                 content={({ active, payload, label }) => {
                   if (!active || !payload?.length) return null;
                   const entries = [...payload].sort(
@@ -450,19 +452,19 @@ export default function ByEventTypeTab({
                   );
                 }}
               />
-              {visible.map((s) => (
-                <Line
+              {/* Stacked: event types partition the published volume, so
+                  each bar's height is the bucket's total for the shown types. */}
+              {visible.map((s, i) => (
+                <Bar
                   key={s.eventTypeId}
-                  type="monotone"
                   dataKey={s.eventTypeId ?? ""}
-                  stroke={colorOf(s.eventTypeId ?? "")}
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
+                  stackId="published"
+                  fill={colorOf(s.eventTypeId ?? "")}
+                  radius={i === visible.length - 1 ? [2, 2, 0, 0] : undefined}
                   isAnimationActive={false}
                 />
               ))}
-            </LineChart>
+            </BarChart>
           </ResponsiveContainer>
         )}
       </div>

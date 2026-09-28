@@ -25,7 +25,7 @@ describe("resolveWindow", () => {
   it("falls back to the default range for an unknown period", () => {
     const now = new Date("2026-09-25T10:17:30Z");
     const w = resolveWindow("nonsense", now);
-    expect((w.to.getTime() - w.from.getTime()) / 3_600_000).toBe(24 * 7);
+    expect((w.to.getTime() - w.from.getTime()) / 3_600_000).toBe(24);
   });
 });
 

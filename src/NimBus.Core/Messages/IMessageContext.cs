@@ -121,6 +121,10 @@ public interface IMessageContext : IReceivedMessage
     /// work off to a long-running external system. Read by
     /// <c>StrictMessageHandler</c> after the handler returns to decide
     /// whether to send a PendingHandoffResponse and block the session.
+    /// The inbox sets <see cref="HandlerOutcome.DuplicateDetected"/> and
+    /// <c>StrictMessageHandler</c> sets <see cref="HandlerOutcome.NotDispatched"/>
+    /// when a message is answered without dispatching a handler; the endpoint
+    /// circuit breaker's recorder counts neither as a success.
     /// </summary>
     HandlerOutcome HandlerOutcome { get; set; }
 
@@ -134,11 +138,12 @@ public interface IMessageContext : IReceivedMessage
     /// <summary>
     /// A handler failure the message handler settled itself instead of letting it
     /// propagate. <c>StrictMessageHandler</c> sets it when a RetryRequest or
-    /// ResubmissionRequest fails: it sends the ErrorResponse, completes the message and
-    /// schedules any retry, then returns normally. <see langword="null"/> when the handler
-    /// succeeded or its failure propagated as an exception. Pipeline behaviors read it after
-    /// <c>next</c> returns; the endpoint circuit breaker's recorder counts it as a failure
-    /// instead of a success.
+    /// ResubmissionRequest fails (it sends the ErrorResponse, completes the message and
+    /// schedules any retry, then returns normally) and when the failure disposition
+    /// classifier discards a failure. <see langword="null"/> when the handler succeeded or
+    /// its failure propagated as an exception. Pipeline behaviors read it after
+    /// <c>next</c> returns; the endpoint circuit breaker's recorder records it as a failure
+    /// instead of a success, subject to the breaker's counting rules.
     /// </summary>
     /// <remarks>
     /// The default implementation discards the value so existing implementers stay

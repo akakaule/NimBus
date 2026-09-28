@@ -53,7 +53,7 @@ stateDiagram-v2
 
 - **Closed:** receivers use their configured `MaxConcurrentSessions`.
 - **Open:** receivers are stopped. In-flight handlers finish through normal processor shutdown; queued messages are not received or settled.
-- **HalfOpen:** receivers are recreated with `MaxConcurrentSessions = 1`. Real messages are the probes. Success restores configured concurrency; a counted failure starts a fresh break.
+- **HalfOpen:** receivers are recreated with `MaxConcurrentSessions = 1`. Real messages that reach a handler are the probes. Success restores configured concurrency; a counted failure starts a fresh break.
 
 When a process hosts multiple `AddNimBusReceiver(...)` registrations, every receiver observes the same endpoint breaker and pauses or resumes together.
 
@@ -63,9 +63,11 @@ The recorder observes the pipeline result and never changes or replaces an excep
 
 - Counted: `EventContextHandlerException` (the retry disposition) and `TransientException`.
 - Optional: `PermanentFailureException` when `CountPermanentFailures` is enabled.
-- Ignored: `SessionBlockedException`, cancellation, unrelated middleware exceptions, configured exclusions, and platform heartbeat traffic.
+- Ignored, as neither a success nor a failure: `SessionBlockedException`, cancellation, unrelated middleware exceptions, configured exclusions, discarded failures (the `Discard` disposition), platform heartbeat traffic, and deliveries answered without running a handler: operator skips, handoff settlements, legacy continuations, inbox duplicates, a `RetryRequest` for an event that no longer blocks its session, and an event type without a registered handler.
 
 Scheduled retries (`RetryRequest`) and operator resubmissions (`ResubmissionRequest`) count like the original delivery. When their handler fails with the retry disposition, `StrictMessageHandler` settles the message itself: it sends the `ErrorResponse`, completes the message and, for a retry, schedules the next attempt, then returns without rethrowing. It reports the `EventContextHandlerException` on `IMessageContext.HandledFailure` instead, and the recorder counts it as though it had escaped the pipeline. A retry that fails during an outage therefore adds to the failure rate while the circuit is closed and is a failed probe while it is half-open; it cannot close the circuit. Configured exclusions still inspect the failure's inner-exception chain. A `TransientException` from a retry or resubmission propagates and is counted as usual.
+
+Only a delivery that reached a handler counts as a success. A skip, a handoff settlement or a duplicate never calls the endpoint's dependencies; counted as successes, three operator skips during an outage would close a half-open circuit. `StrictMessageHandler` marks such deliveries with `HandlerOutcome.NotDispatched` (the inbox marks duplicates with `HandlerOutcome.DuplicateDetected`), and the recorder records nothing for them. A discarded failure is reported on `IMessageContext.HandledFailure`, but the `Discard` disposition, like a poison message, is not counted. A handler that marks a pending handoff did call its external system, so it counts as a success.
 
 Permanent failures are ignored by default because a poison message does not imply a failing downstream service. Session blocks are a secondary effect of an earlier failure and would otherwise double-count the incident.
 

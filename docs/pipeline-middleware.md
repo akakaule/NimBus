@@ -264,7 +264,8 @@ Middleware has access to the full message context:
 | `EnqueuedTimeUtc` | DateTime | When message was enqueued |
 | `RetryCount` | int? | Current retry attempt number |
 | `MessageContent` | MessageContent | Event payload and error content |
-| `HandledFailure` | Exception? | Failure the handler settled without rethrowing (a failed RetryRequest or ResubmissionRequest); read it after `next` returns |
+| `HandlerOutcome` | HandlerOutcome | How handler dispatch ended: `Default`, `PendingHandoff`, `DuplicateDetected` or `NotDispatched` (answered without running a handler); read it after `next` returns |
+| `HandledFailure` | Exception? | Failure the handler settled without rethrowing (a failed RetryRequest or ResubmissionRequest, or a discarded failure); read it after `next` returns |
 
 Control methods: `Complete()`, `Abandon()`, `DeadLetter()`, `Defer()`, `BlockSession()`, `UnblockSession()`.
 

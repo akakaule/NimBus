@@ -115,6 +115,7 @@ public class StrictMessageHandler : MessageHandler
         }
         catch (EventHandlerNotFoundException exception)
         {
+            messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogError(messageContext, "Failed to handle event", exception);
             await SendUnsupportedResponse(messageContext, cancellationToken);
             await CompleteMessage(messageContext, cancellationToken);
@@ -198,6 +199,9 @@ public class StrictMessageHandler : MessageHandler
         }
         catch (SessionBlockedException exception)
         {
+            // The event no longer blocks its session (resubmitted or skipped meanwhile), so
+            // the retry is answered as resolved without running the handler.
+            messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
             await SendResolutionResponse(messageContext, cancellationToken);
             await CompleteMessage(messageContext, cancellationToken);
@@ -281,6 +285,7 @@ public class StrictMessageHandler : MessageHandler
         }
         catch (EventHandlerNotFoundException exception)
         {
+            messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogError(messageContext, "Failed to handle event (Resubmission)", exception);
             await SendUnsupportedResponse(messageContext, cancellationToken);
             await CompleteMessage(messageContext, cancellationToken);
@@ -297,6 +302,7 @@ public class StrictMessageHandler : MessageHandler
 
     public override async Task HandleSkipRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
+        messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
         try
         {
             LogInfo(messageContext, "Handle (Skip)");
@@ -318,6 +324,7 @@ public class StrictMessageHandler : MessageHandler
 
     public override async Task HandleHandoffCompletedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
+        messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
         try
         {
             LogInfo(messageContext, "Handle (HandoffCompleted)");
@@ -354,6 +361,7 @@ public class StrictMessageHandler : MessageHandler
 
     public override async Task HandleHandoffFailedRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
+        messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
         try
         {
             LogInfo(messageContext, "Handle (HandoffFailed)");
@@ -388,6 +396,7 @@ public class StrictMessageHandler : MessageHandler
     /// </summary>
     public override async Task HandleContinuationRequest(IMessageContext messageContext, CancellationToken cancellationToken = default)
     {
+        messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
         _logger.LogWarning(
             "Completing a legacy ContinuationRequest without processing it; the Service Bus defer drain was removed in v4. EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
             messageContext.GetEventIdOrDefault(),
@@ -586,6 +595,9 @@ public class StrictMessageHandler : MessageHandler
             discardedFailure.ClassifierName,
             cancellationToken);
         await CompleteMessage(messageContext, cancellationToken);
+        // Settled rather than rethrown, as in HandleRetryRequest. The circuit breaker does not
+        // count it: only the retry disposition does.
+        messageContext.HandledFailure = discardedFailure.Exception;
     }
 
     private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)

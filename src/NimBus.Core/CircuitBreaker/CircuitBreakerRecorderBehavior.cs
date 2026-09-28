@@ -32,14 +32,20 @@ public sealed class CircuitBreakerRecorderBehavior(IEndpointCircuitBreaker circu
             throw;
         }
 
-        // A failed RetryRequest or resubmission is settled by the handler, which returns
-        // normally and reports the failure on the context. Recording a success there would
-        // let a retry that fails during an outage close a half-open circuit.
+        // A failed RetryRequest or resubmission, or a discarded failure, is settled by the
+        // handler, which returns normally and reports the failure on the context. Recording a
+        // success there would let a retry that fails during an outage close a half-open circuit.
         if (context.HandledFailure is { } handledFailure)
             _circuitBreaker.RecordFailure(handledFailure);
-        else
+        else if (ReachedHandler(context))
             _circuitBreaker.RecordSuccess();
     }
+
+    // A delivery answered without running a handler (a skip, a handoff settlement, an inbox
+    // duplicate, a stale RetryRequest) never reached the endpoint's dependencies, so it is
+    // neither a success nor a failure.
+    private static bool ReachedHandler(IMessageContext context) =>
+        context.HandlerOutcome is not (HandlerOutcome.DuplicateDetected or HandlerOutcome.NotDispatched);
 
     private static bool IsHeartbeat(IMessageContext context)
     {

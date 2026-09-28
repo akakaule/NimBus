@@ -4,6 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NimBus.Core.CircuitBreaker;
 using NimBus.Core.Events;
 using NimBus.Core.Extensions;
+using NimBus.Core.Inbox;
 using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using NimBus.SDK.EventHandlers;
@@ -404,7 +405,7 @@ public sealed class CircuitBreakerTests
         var breaker = CreateHalfOpenBreaker(CreateOptions());
         var bus = new InMemoryMessageBus();
         var session = new InMemorySessionState { BlockedByEventId = "event-1" };
-        var context = CreateBlockedEventContext(messageType, session);
+        var context = CreateSessionContext(messageType, session);
 
         await CreateStrictHandler(breaker, bus, new InvalidOperationException("still down")).Handle(context);
 
@@ -425,7 +426,7 @@ public sealed class CircuitBreakerTests
         var options = CreateOptions();
         options.Exclude<ExpectedDependencyException>();
         var breaker = CreateHalfOpenBreaker(options);
-        var context = CreateBlockedEventContext(messageType, new InMemorySessionState { BlockedByEventId = "event-1" });
+        var context = CreateSessionContext(messageType, new InMemorySessionState { BlockedByEventId = "event-1" });
 
         await CreateStrictHandler(breaker, new InMemoryMessageBus(), new ExpectedDependencyException()).Handle(context);
 
@@ -439,12 +440,120 @@ public sealed class CircuitBreakerTests
     {
         var breaker = CreateHalfOpenBreaker(CreateOptions());
         var session = new InMemorySessionState { BlockedByEventId = "event-1" };
-        var context = CreateBlockedEventContext(messageType, session);
+        var context = CreateSessionContext(messageType, session);
 
         await CreateStrictHandler(breaker, new InMemoryMessageBus(), handlerFailure: null).Handle(context);
 
         Assert.AreEqual(CircuitState.Closed, breaker.State);
         Assert.IsNull(session.BlockedByEventId);
+    }
+
+    // ----- deliveries that never exercise the endpoint's dependencies ---------
+
+    [TestMethod]
+    [DataRow(MessageType.SkipRequest)]
+    [DataRow(MessageType.HandoffCompletedRequest)]
+    [DataRow(MessageType.HandoffFailedRequest)]
+    [DataRow(MessageType.ContinuationRequest)]
+    public async Task Control_message_that_never_runs_the_handler_is_not_a_probe_outcome(MessageType messageType)
+    {
+        // Counted as successes, three operator skips during an outage closed a half-open
+        // circuit (default HalfOpenProbeCount) without the dependency ever being called.
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var context = CreateSessionContext(messageType, new InMemorySessionState { BlockedByEventId = "event-1" });
+
+        await CreateStrictHandler(breaker, new InMemoryMessageBus(), handlerFailure: null).Handle(context);
+
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+        Assert.IsTrue(context.IsCompleted);
+    }
+
+    [TestMethod]
+    public async Task Retry_for_an_event_that_no_longer_blocks_its_session_is_not_a_probe_outcome()
+    {
+        // The event was resubmitted or skipped meanwhile, so its scheduled RetryRequest is
+        // answered as resolved without running the handler (which would fail here).
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var bus = new InMemoryMessageBus();
+        var context = CreateSessionContext(MessageType.RetryRequest, new InMemorySessionState());
+
+        await CreateStrictHandler(breaker, bus, new InvalidOperationException("still down")).Handle(context);
+
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+        Assert.AreEqual(1, bus.SentMessages.Count(message => message.MessageType == MessageType.ResolutionResponse));
+    }
+
+    [TestMethod]
+    [DataRow(MessageType.EventRequest)]
+    [DataRow(MessageType.RetryRequest)]
+    [DataRow(MessageType.ResubmissionRequest)]
+    public async Task Inbox_duplicate_is_not_a_probe_outcome(MessageType messageType)
+    {
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var inboxStore = new InMemoryInboxStore();
+        await inboxStore.RecordProcessedAsync("billing", "message-2");
+        var context = CreateSessionContext(messageType, new InMemorySessionState());
+
+        await CreateStrictHandler(
+            breaker,
+            new InMemoryMessageBus(),
+            new InvalidOperationException("still down"),
+            inbox: new InboxDuplicateDetector(inboxStore, endpointScope: "billing")).Handle(context);
+
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+        Assert.IsTrue(context.IsCompleted);
+    }
+
+    [TestMethod]
+    [DataRow(MessageType.EventRequest)]
+    [DataRow(MessageType.ResubmissionRequest)]
+    public async Task Event_type_without_a_handler_is_not_a_probe_outcome(MessageType messageType)
+    {
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var bus = new InMemoryMessageBus();
+        var context = CreateSessionContext(messageType, new InMemorySessionState());
+
+        await CreateStrictHandler(breaker, bus, new EventHandlerNotFoundException("no handler")).Handle(context);
+
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+        Assert.AreEqual(1, bus.SentMessages.Count(message => message.MessageType == MessageType.UnsupportedResponse));
+    }
+
+    [TestMethod]
+    [DataRow(MessageType.EventRequest, false)]
+    [DataRow(MessageType.RetryRequest, true)]
+    [DataRow(MessageType.ResubmissionRequest, true)]
+    public async Task Discarded_failure_is_not_a_probe_outcome(MessageType messageType, bool sessionBlockedByEvent)
+    {
+        // Discard is for a known poison message which, like a dead-lettered one, says
+        // nothing about the dependency: neither a failed nor a successful probe.
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var session = new InMemorySessionState { BlockedByEventId = sessionBlockedByEvent ? "event-1" : null };
+        var context = CreateSessionContext(messageType, session);
+
+        await CreateStrictHandler(
+            breaker,
+            new InMemoryMessageBus(),
+            new FormatException("known poison"),
+            classifier: new DiscardingClassifier()).Handle(context);
+
+        Assert.AreEqual(CircuitState.HalfOpen, breaker.State);
+        Assert.IsTrue(context.IsCompleted);
+    }
+
+    [TestMethod]
+    [DataRow(HandlerOutcome.Default)]
+    [DataRow(HandlerOutcome.PendingHandoff)]
+    public async Task Event_the_handler_processed_is_a_successful_probe(HandlerOutcome outcome)
+    {
+        // A handoff is a successful call to the external system, so it counts like any
+        // processed event.
+        var breaker = CreateHalfOpenBreaker(CreateOptions());
+        var context = CreateSessionContext(MessageType.EventRequest, new InMemorySessionState());
+
+        await CreateStrictHandler(breaker, new InMemoryMessageBus(), handlerFailure: null, handlerOutcome: outcome).Handle(context);
+
+        Assert.AreEqual(CircuitState.Closed, breaker.State);
     }
 
     private static EndpointCircuitBreaker CreateHalfOpenBreaker(CircuitBreakerOptions options)
@@ -460,7 +569,10 @@ public sealed class CircuitBreakerTests
     private static StrictMessageHandler CreateStrictHandler(
         IEndpointCircuitBreaker breaker,
         InMemoryMessageBus bus,
-        Exception? handlerFailure)
+        Exception? handlerFailure,
+        HandlerOutcome handlerOutcome = HandlerOutcome.Default,
+        IFailureDispositionClassifier? classifier = null,
+        InboxDuplicateDetector? inbox = null)
     {
         using var services = new ServiceCollection().BuildServiceProvider();
         var pipeline = new MessagePipeline(
@@ -469,15 +581,18 @@ public sealed class CircuitBreakerTests
             [new CircuitBreakerRecorderBehavior(breaker)]);
 
         return new StrictMessageHandler(
-            new StubEventContextHandler(handlerFailure),
+            new StubEventContextHandler(handlerFailure, handlerOutcome),
             new ResponseService(bus),
             retryPolicyProvider: new DefaultRetryPolicyProvider().SetDefaultPolicy(new RetryPolicy { MaxRetries = 3 }),
-            pipeline: pipeline);
+            pipeline: pipeline,
+            failureDispositionClassifier: classifier,
+            inboxDuplicateDetector: inbox);
     }
 
-    // A control message for event-1, whose earlier failure blocked the session.
-    // Resubmissions are accepted only from the Manager.
-    private static InMemoryMessageContext CreateBlockedEventContext(MessageType messageType, InMemorySessionState session) => new(
+    // A message for event-1 in session-1; the session state says whether event-1's
+    // earlier failure still blocks it. Resubmissions, skips and handoff settlements are
+    // accepted only from the Manager.
+    private static InMemoryMessageContext CreateSessionContext(MessageType messageType, InMemorySessionState session) => new(
         new Message
         {
             EventId = "event-1",
@@ -496,10 +611,22 @@ public sealed class CircuitBreakerTests
         },
         session);
 
-    private sealed class StubEventContextHandler(Exception? failure) : IEventContextHandler
+    private sealed class StubEventContextHandler(Exception? failure, HandlerOutcome outcome) : IEventContextHandler
     {
-        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default) =>
-            failure is null ? Task.CompletedTask : Task.FromException(failure);
+        public Task Handle(IMessageContext context, CancellationToken cancellationToken = default)
+        {
+            if (failure is not null)
+                return Task.FromException(failure);
+
+            context.HandlerOutcome = outcome;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class DiscardingClassifier : IFailureDispositionClassifier
+    {
+        public FailureDisposition Classify(Exception exception, string eventTypeId, string? endpointName) =>
+            FailureDisposition.Discard;
     }
 
     /// <summary>

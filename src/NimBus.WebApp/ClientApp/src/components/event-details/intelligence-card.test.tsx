@@ -154,6 +154,8 @@ describe("IntelligenceCard", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Analyze failure" }));
     await screen.findByText("transient_dependency (91%)");
+    expect(screen.getByText(/A manual resubmit is reasonable once the dependency is healthy/)).toBeTruthy();
+    expect(screen.getByText(/A temporary downstream or infrastructure condition/)).toBeTruthy();
 
     const postCall = fetchMock.mock.calls[2];
     expect(postCall[0]).toContain("/failures/event-1/failure-message-7/classification");

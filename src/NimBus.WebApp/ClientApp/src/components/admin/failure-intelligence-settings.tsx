@@ -4,6 +4,7 @@ import { Input } from "components/ui/input";
 import { Select } from "components/ui/select";
 import { Toggle } from "components/ui/toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
+import FailureClassificationExplainer from "./failure-classification-explainer";
 
 type Settings = {
   enabled: boolean; model: string; includeEventPayload: boolean; includeRecentFailureHistory: boolean;
@@ -148,11 +149,11 @@ export default function FailureIntelligenceSettings() {
           <label className="block text-sm">Allow new analysis on<Select value={selected ? "selected" : "all"} onChange={event => { setSelected(event.target.value === "selected"); setReview(false); }}><option value="all">All authorized endpoints</option><option value="selected">Selected endpoints</option></Select></label>
           {selected && <label className="block text-sm">Endpoint IDs<Input value={endpoints} required maxLength={20100} onChange={event => { setEndpoints(event.target.value); setReview(false); }} placeholder="ErpEndpoint, CrmEndpoint" /></label>}
           <p className="text-xs text-muted-foreground">Existing permissions still apply. Contributors analyze; Readers view saved results. Restricting analysis does not remove history access.</p>
-          <details><summary className="cursor-pointer text-sm font-semibold">Advanced limits &amp; guidance thresholds</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {([ ["timeoutSeconds", "Provider timeout (seconds)", 1, 20, 1], ["minimumCategoryConfidence", "Minimum category confidence", 0, 1, 0.01], ["retryLikely", "Retry-likely threshold", 0, 1, 0.01], ["changeRequired", "Change-required threshold", 0, 1, 0.01] ] as const).map(([key, label, min, max, step]) =>
-              <label key={key} className="text-sm">{label}<Input type="number" required min={min} max={max} step={step} value={draft[key]} onChange={event => edit(key, Number(event.target.value))} /></label>)}
+          <details><summary className="cursor-pointer text-sm font-semibold">Advanced limits</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm">Provider timeout (seconds)<Input type="number" required min={1} max={20} step={1} value={draft.timeoutSeconds} onChange={event => edit("timeoutSeconds", Number(event.target.value))} /></label>
           </div></details>
         </CardContent></Card>
+        <FailureClassificationExplainer thresholds={draft} onChange={(key, value) => edit(key, value)} />
       </fieldset>
       <aside className="min-w-0 space-y-5"><Card><CardHeader><CardTitle>What leaves NimBus</CardTitle><p className="text-xs text-muted-foreground">Illustrative ERP failure — not live data or a production redaction check.</p></CardHeader><CardContent>
         <pre className="max-h-[540px] overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-950 p-4 text-xs leading-relaxed text-amber-100">{draft.enabled ? JSON.stringify(preview, null, 2) : "No classification request is sent while disabled."}</pre>

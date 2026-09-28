@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
+import { FAILURE_CATEGORIES, GUIDANCE_BADGE, GUIDANCE_MEANING, isFailureGuidance } from "lib/failure-classification";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "components/ui/card";
 
 type IntelligenceCardProps = { endpointId: string; eventId: string; messageId: string; resolutionStatus?: string; occurrenceLabel?: string };
@@ -108,6 +110,8 @@ function OccurrenceCard(props: IntelligenceCardProps) {
     .sort(([, left], [, right]) => right - left)
     .slice(0, 2);
   const historical = Boolean(classification && (analysisActive || unknownOutcome));
+  const guidanceMeaning = classification && isFailureGuidance(classification.guidance) ? GUIDANCE_MEANING[classification.guidance] : undefined;
+  const categoryMeaning = FAILURE_CATEGORIES.find(item => item.id === classification?.category)?.meaning;
   return (
     <Card className="mb-4 border-primary/30">
       <CardHeader className="flex-row items-center justify-between gap-4">
@@ -130,11 +134,16 @@ function OccurrenceCard(props: IntelligenceCardProps) {
           {historical && <p role="status" className="text-muted-foreground">Historical result{analysisActive ? "; a newer analysis is running." : "; the latest analysis outcome is unknown."}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-muted-foreground">Category</div><strong>{classification.category} ({percent(classification.categoryConfidence)})</strong></div>
-            <div><div className="text-muted-foreground">Guidance</div><strong>{classification.guidance}</strong></div>
+            <div><div className="text-muted-foreground">Guidance</div>{isFailureGuidance(classification.guidance)
+              ? <Badge variant={GUIDANCE_BADGE[classification.guidance]}>{classification.guidance}</Badge> : <strong>{classification.guidance}</strong>}</div>
             <div><div className="text-muted-foreground">Retry likely</div><strong>{percent(classification.retryLikelihood)}</strong></div>
             <div><div className="text-muted-foreground">Change required</div><strong>{percent(classification.changeRequiredLikelihood)}</strong></div>
             <div><div className="text-muted-foreground">External dependency</div><strong>{percent(classification.externalDependencyLikelihood)}</strong></div>
           </div>
+          {(guidanceMeaning || categoryMeaning) && <div className="rounded-md bg-muted p-3">
+            {guidanceMeaning && <p>{guidanceMeaning}</p>}
+            {categoryMeaning && <p className="text-muted-foreground"><span className="font-mono">{classification.category}</span>: {categoryMeaning}</p>}
+          </div>}
           <p className="text-muted-foreground">Revision {classification.revision} · {classification.model} · {classification.createdAtUtc} · {classification.requestedBy}</p>
           <details>
             <summary className="cursor-pointer">Classification details</summary>

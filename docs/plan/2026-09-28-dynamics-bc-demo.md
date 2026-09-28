@@ -99,9 +99,10 @@ the command carry `[SessionKey(nameof(AccountId))]` and an `AccountId` property.
 | `BcSalesOrderCreated` | Event | BC → D365 | OrderNo, QuoteNo, OpportunityId, CustomerId/No, totals |
 
 **Make Order** raises customer created → quote accepted → order created with three sequential
-`Publish` calls in one outbox transaction (not a batch): the outbox orders by `CreatedAtUtc` with no tiebreaker (`SqlServerOutbox.cs:178`, flagged as a separate
-task). The D365 handlers are order-tolerant anyway; the order handler also ensures the account
-link.
+`Publish` calls in one outbox transaction (not a batch). The SQL Server outbox dispatches rows
+in the order they were stored (#168; when this was planned it ordered by `CreatedAtUtc` with no
+tiebreaker). The D365 handlers are order-tolerant anyway; the order handler also ensures the
+account link.
 
 **Real-shaped surfaces** (only what the adapters call):
 
@@ -143,9 +144,9 @@ link.
 - **Circuit breaker:** `WithCircuitBreaker` with MinimumThroughput 3, 50 %, window 60 s, break
   10 s, 1 probe, `Exclude<BcRequestRejectedException>()` and `Exclude<BcThrottledException>()`
   (throttling is paced by retries; only outages count).
-  - Failed retries currently count as breaker successes (`StrictMessageHandler.cs:205-212`). This
-    is flagged as a separate task.
-  - Stage timings must therefore make the probes fresh messages that land after the window.
+  - Failed retries count as breaker failures (#166, #169; when this was planned they counted as
+    successes). The outage retries still land after the window, so the first retry succeeds and
+    the scene ends on its own.
 - **Receivers:** `SessionIdleTimeout` 3 s (the 30 s default stalls probing); prefetch 0.
 - **Inbox:** `UseInbox` with the SQL store in the **`nimbus` DB** (BC is SaaS, so never in BC's
   database).
@@ -323,8 +324,9 @@ tests/DynamicsBcDemo.Tests/      MSTest
 - Opportunity lost → quote archive; item/price and invoice sync.
 - A translated talk track.
 
-Out-of-scope issues found and flagged as separate tasks:
+Out-of-scope issues found and fixed separately:
 
-- the breaker counts failed retries as successes;
-- the outbox order has no tiebreaker;
-- about 14 doc/comment inaccuracies.
+- the breaker counted failed retries as successes (#166, #169);
+- the outbox order had no tiebreaker (#168);
+- about 14 doc/comment inaccuracies (#167);
+- the circuit-open reason used the host culture (#170).

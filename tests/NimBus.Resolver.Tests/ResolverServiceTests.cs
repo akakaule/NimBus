@@ -900,6 +900,8 @@ public class ResolverServiceTests
         public Task<List<string>> SweepTimedOutHeartbeats(DateTime cutoffUtc) => Task.FromResult(new List<string>());
         public Task<HeartbeatSettings> GetHeartbeatSettings() => Task.FromResult(new HeartbeatSettings());
         public Task<bool> SetHeartbeatSettings(HeartbeatSettings settings) => Task.FromResult(true);
+        public Task<AuditSettings> GetAuditSettings() => Task.FromResult(new AuditSettings());
+        public Task<bool> SetAuditSettings(AuditSettings settings) => Task.FromResult(true);
         public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => Task.FromResult(true);
         public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => Task.FromResult(new List<HeartbeatOverviewItem>());
         public Task<List<ServiceHealth>> GetServiceHealth() => Task.FromResult(new List<ServiceHealth>());

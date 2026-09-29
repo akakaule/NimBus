@@ -70,6 +70,53 @@ vi.mock("components/failed-messages/failed-histogram", () => ({
   ),
 }));
 
+// The panel's own loading is covered by its tests; here it only shows what it was opened on.
+vi.mock("components/failed-messages/failure-detail-panel", () => ({
+  default: (props: {
+    endpointId: string;
+    eventId: string;
+    position?: { index: number; total: number };
+    onNext?: () => void;
+    onPrevious?: () => void;
+    onClose: () => void;
+    onAct: (action: "Resubmit" | "Skip", e: api.Event) => void;
+  }) => (
+    <div data-testid="panel">
+      <span>
+        panel {props.endpointId}/{props.eventId}{" "}
+        {props.position
+          ? `${props.position.index} of ${props.position.total}`
+          : "not listed"}
+      </span>
+      <button type="button" disabled={!props.onNext} onClick={props.onNext}>
+        panel-next
+      </button>
+      <button
+        type="button"
+        disabled={!props.onPrevious}
+        onClick={props.onPrevious}
+      >
+        panel-previous
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          props.onAct(
+            "Resubmit",
+            new api.Event({
+              eventId: props.eventId,
+              endpointId: props.endpointId,
+              lastMessageId: `m-${props.eventId}`,
+            }),
+          )
+        }
+      >
+        panel-resubmit
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("api-client", async () => {
   const actual =
     await vi.importActual<typeof import("api-client")>("api-client");
@@ -340,6 +387,68 @@ describe("Failed messages page", () => {
       -1,
     )![0] as api.FailedSearchRequest;
     expect(request.filter?.endpointIds).toEqual(["Crm"]);
+  });
+
+  it("opens a failure in the details panel and closes it with Escape", async () => {
+    await renderPage();
+    await waitFor(() => expect(listItems()).toHaveLength(3));
+
+    fireEvent.click(
+      within(listItems()[1]).getByRole("link", { name: /- FAILED$/ }),
+    );
+
+    expect(await screen.findByText("panel Erp/e2 2 of 3")).toBeTruthy();
+    expect(
+      screen.getByRole("dialog", { name: "Transaction details" }),
+    ).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByTestId("panel")).toBeNull());
+  });
+
+  it("opens the panel from a deep link and steps through the list", async () => {
+    await renderPage("/Failed?open=Crm/e3");
+
+    expect(await screen.findByText("panel Crm/e3 3 of 3")).toBeTruthy();
+    expect(
+      (screen.getByText("panel-next") as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByText("panel-previous"));
+
+    expect(await screen.findByText("panel Erp/e2 2 of 3")).toBeTruthy();
+  });
+
+  it("loads the next page when Next runs past the last loaded failure", async () => {
+    mocks.search
+      .mockResolvedValueOnce(
+        new api.SearchResponse({
+          events: [event("e1", "Crm", "s1"), event("e2", "Erp", "s2")],
+          continuationToken: "page-2",
+        }),
+      )
+      .mockResolvedValueOnce(
+        new api.SearchResponse({ events: [event("e3", "Crm", "s3")] }),
+      );
+    await renderPage("/Failed?open=Erp/e2");
+    expect(await screen.findByText("panel Erp/e2 2 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("panel-next"));
+
+    expect(await screen.findByText("panel Crm/e3 3 of 3")).toBeTruthy();
+    const request = mocks.search.mock.calls[1][0] as api.FailedSearchRequest;
+    expect(request.continuationToken).toBe("page-2");
+  });
+
+  it("resubmits from the panel and moves on to the next failure", async () => {
+    await renderPage("/Failed?open=Crm/e1");
+    expect(await screen.findByText("panel Crm/e1 1 of 3")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("panel-resubmit"));
+
+    expect(mocks.resubmit).toHaveBeenCalledWith("e1", "m-e1");
+    expect(await screen.findByText(/panel Erp\/e2/)).toBeTruthy();
   });
 
   it("resubmits a table row and removes it from the list", async () => {

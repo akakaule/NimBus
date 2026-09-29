@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as api from "api-client";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import Page from "components/page";
 import DataTable, {
   ITableBodyAction,
@@ -22,7 +22,10 @@ import FailedLegend from "components/failed-messages/failed-legend";
 import FailedItemList, {
   failureIdOf,
   failureRouteOf,
+  type FailureAction,
 } from "components/failed-messages/failed-item-list";
+import FailureDetailPanel from "components/failed-messages/failure-detail-panel";
+import { SidePanel } from "components/ui/side-panel";
 import FailedErrorGroupsView from "components/failed-messages/failed-error-groups";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { formatMoment } from "functions/endpoint.functions";
@@ -120,7 +123,6 @@ export default function FailedMessages() {
   ) as View;
   const split = applied.split === "endpoint" ? "endpoint" : "status";
   const client = React.useMemo(() => new api.Client(api.CookieAuth()), []);
-  const navigate = useNavigate();
 
   const [histogram, setHistogram] = React.useState<api.FailedHistogram>();
   const [histogramLoading, setHistogramLoading] = React.useState(true);
@@ -372,6 +374,78 @@ export default function FailedMessages() {
   };
 
   const visible = hideReported ? events.filter((e) => !e.isReported) : events;
+
+  // The details panel is `?open=<endpointId>/<eventId>`, outside the filter values so the
+  // sessionStorage mirror never reopens it. Opening adds a history entry, so Back closes it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openId = searchParams.get("open") ?? undefined;
+  const openTarget = React.useMemo(() => {
+    const slash = openId?.indexOf("/") ?? -1;
+    return openId && slash > 0
+      ? { endpointId: openId.slice(0, slash), eventId: openId.slice(slash + 1) }
+      : undefined;
+  }, [openId]);
+  const setOpen = React.useCallback(
+    (id: string | undefined, replace = false) =>
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (id) next.set("open", id);
+          else next.delete("open");
+          return next;
+        },
+        { replace },
+      ),
+    [setSearchParams],
+  );
+  const openIndex = openId
+    ? visible.findIndex((e) => failureIdOf(e) === openId)
+    : -1;
+  // "Next" on the last loaded failure loads the next page first, then moves on.
+  const pendingNext = React.useRef<string>(undefined);
+  React.useEffect(() => {
+    const from = pendingNext.current;
+    if (!from || listLoading) return;
+    pendingNext.current = undefined;
+    const i = visible.findIndex((e) => failureIdOf(e) === from);
+    if (i >= 0 && i + 1 < visible.length)
+      setOpen(failureIdOf(visible[i + 1]), true);
+  }, [visible, listLoading, setOpen]);
+  const onNextFailure =
+    openIndex < 0
+      ? undefined
+      : openIndex + 1 < visible.length
+        ? () => setOpen(failureIdOf(visible[openIndex + 1]), true)
+        : continuationToken
+          ? () => {
+              pendingNext.current = openId;
+              void fetchPage(continuationToken, true);
+            }
+          : undefined;
+  const onPreviousFailure =
+    openIndex > 0
+      ? () => setOpen(failureIdOf(visible[openIndex - 1]), true)
+      : undefined;
+  const actFromPanel = (action: FailureAction, e: api.Event) => {
+    // Move on to the neighbour before the list drops this failure.
+    const neighbour = visible[openIndex + 1] ?? visible[openIndex - 1];
+    act(action, [e]);
+    setOpen(
+      neighbour && failureIdOf(neighbour) !== failureIdOf(e)
+        ? failureIdOf(neighbour)
+        : undefined,
+      true,
+    );
+  };
+  const showSimilar = (e: api.Event) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("open");
+      next.set("view", "error");
+      next.delete("endpointId");
+      if (e.endpointId) next.append("endpointId", e.endpointId);
+      return next;
+    });
   const rows: ITableRow[] = visible.map((e) => {
     const blockedCount = blocked[`${e.endpointId}/${e.sessionId}`] ?? 0;
     const error = errorTextOf(e);
@@ -745,7 +819,8 @@ export default function FailedMessages() {
             selected={selected}
             onSelectedChange={setSelected}
             onAct={act}
-            onOpen={(e) => navigate(failureRouteOf(e))}
+            onOpen={(e) => setOpen(failureIdOf(e))}
+            openId={openId}
             onNarrow={(field, value) => narrow({ [field]: value })}
             hasMore={!!continuationToken}
             isLoading={listLoading}
@@ -775,6 +850,33 @@ export default function FailedMessages() {
           />
         )}
       </div>
+      <SidePanel
+        isOpen={!!openTarget}
+        onClose={() => setOpen(undefined)}
+        label="Transaction details"
+      >
+        {openTarget && (
+          <FailureDetailPanel
+            key={openId}
+            endpointId={openTarget.endpointId}
+            eventId={openTarget.eventId}
+            position={
+              openIndex >= 0
+                ? {
+                    index: openIndex + 1,
+                    total: visible.length,
+                    more: !!continuationToken,
+                  }
+                : undefined
+            }
+            onPrevious={onPreviousFailure}
+            onNext={onNextFailure}
+            onClose={() => setOpen(undefined)}
+            onAct={actFromPanel}
+            onShowSimilar={showSimilar}
+          />
+        )}
+      </SidePanel>
     </Page>
   );
 }

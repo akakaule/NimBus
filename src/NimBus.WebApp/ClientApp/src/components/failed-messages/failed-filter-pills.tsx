@@ -194,39 +194,28 @@ function MultiSelectContent({
   onApply: (next: string[]) => void;
   close: () => void;
 }) {
-  const [draft, setDraft] = React.useState(value);
+  // Each pick applies at once (the options list covers the popover while it is open).
   return (
-    <div className="flex w-[320px] flex-col gap-3">
+    <div className="flex w-[320px] flex-col gap-2">
       <Combobox
         options={options}
-        value={draft}
-        onChange={setDraft}
+        value={value}
+        onChange={onApply}
         placeholder={placeholder}
         multiple
       />
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          colorScheme="primary"
-          onClick={() => {
-            onApply(draft);
-            close();
-          }}
-        >
-          Apply
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          colorScheme="gray"
+      {value.length > 0 && (
+        <button
+          type="button"
           onClick={() => {
             onApply([]);
             close();
           }}
+          className="self-start text-[12.5px] font-semibold text-primary-700 hover:underline"
         >
           Clear
-        </Button>
-      </div>
+        </button>
+      )}
     </div>
   );
 }

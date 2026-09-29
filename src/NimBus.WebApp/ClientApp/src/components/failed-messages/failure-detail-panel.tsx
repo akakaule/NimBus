@@ -12,7 +12,11 @@ import {
   STATUS_COLORS,
   errorTextOf,
 } from "functions/failed-messages.functions";
-import { buildFlowRows, type FlowRow } from "functions/flow-gantt.functions";
+import {
+  buildFlowRows,
+  formatSpan,
+  type FlowRow,
+} from "functions/flow-gantt.functions";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
 import { copyToClipboard } from "lib/clipboard";
 
@@ -422,13 +426,13 @@ function SelectedEntry({
             segments={[
               {
                 label: "Queue",
-                display: `${event.queueTimeMs ?? 0} ms`,
+                display: formatSpan(event.queueTimeMs ?? 0),
                 weight: event.queueTimeMs ?? 0,
                 colorClass: "bg-ink-3",
               },
               {
                 label: "Processing",
-                display: `${event.processingTimeMs ?? 0} ms`,
+                display: formatSpan(event.processingTimeMs ?? 0),
                 weight: event.processingTimeMs ?? 0,
                 colorClass: "bg-status-info",
               },
@@ -513,7 +517,9 @@ function BlockedInSession({
       className="rounded-nb-md border border-border bg-background"
     >
       <div className="flex items-center justify-between gap-2 border-b border-border px-3.5 py-2.5">
-        <h3 className="m-0 text-[14.5px] font-bold">Blocked in session</h3>
+        <h3 className="m-0 shrink-0 text-[14.5px] font-bold">
+          Blocked in session
+        </h3>
         {sessionId && (
           <span className="truncate font-mono text-[11.5px] text-muted-foreground">
             {sessionId}

@@ -121,6 +121,11 @@ describe("axisTicks", () => {
     expect(axisTicks(1_242)).toEqual([0, 500, 1_000]);
   });
 
+  it("still divides a flow shorter than 100 ms", () => {
+    expect(axisTicks(46)).toEqual([0, 10, 20, 30, 40]);
+    expect(axisTicks(3)).toEqual([0, 1, 2, 3]);
+  });
+
   it("has a single tick for a zero-length flow", () => {
     expect(axisTicks(0)).toEqual([0]);
   });

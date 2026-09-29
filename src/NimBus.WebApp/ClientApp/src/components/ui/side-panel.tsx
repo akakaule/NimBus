@@ -34,7 +34,8 @@ export const SidePanel = ({
     if (!isOpen) return;
     const returnTo = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
-    (panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel)?.focus();
+    // Focus the dialog itself: screen readers announce it, and Tab moves into its controls.
+    panel?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -44,9 +45,7 @@ export const SidePanel = ({
         return;
       }
       if (e.key !== "Tab" || !panel) return;
-      const items = Array.from(
-        panel.querySelectorAll<HTMLElement>(FOCUSABLE),
-      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
       if (items.length === 0) return;
       const first = items[0];
       const last = items[items.length - 1];

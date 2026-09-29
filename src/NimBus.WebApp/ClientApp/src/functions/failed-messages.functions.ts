@@ -92,6 +92,12 @@ export type FailedFilterValues = {
   errorText: string;
   view: string;
   split: string;
+  /** ISO start of the brushed list window ("" for the whole range). */
+  windowStart: string;
+  /** ISO end (exclusive) of the brushed list window. */
+  windowEnd: string;
+  /** How the list renders: "items" (default) or "table". */
+  display: string;
 };
 
 export const EMPTY_FAILED_FILTER: FailedFilterValues = {
@@ -108,6 +114,9 @@ export const EMPTY_FAILED_FILTER: FailedFilterValues = {
   errorText: "",
   view: "list",
   split: "status",
+  windowStart: "",
+  windowEnd: "",
+  display: "items",
 };
 
 /** The subset of filter fields the filter bar edits (the rest is view state). */
@@ -153,10 +162,22 @@ export function toFailedSearchFilter(
   return filter;
 }
 
-/** The window of the selected bar, when one is selected and parses. */
-export function selectedBucketWindow(
+/**
+ * The window the list is narrowed to: the brushed `windowStart`/`windowEnd`, else the bar a
+ * legacy `bucket` link selected. Undefined for the whole range.
+ */
+export function selectedWindow(
   values: FailedFilterValues,
 ): { from: Date; to: Date } | undefined {
+  if (values.windowStart && values.windowEnd) {
+    const from = new Date(values.windowStart);
+    const to = new Date(values.windowEnd);
+    return Number.isNaN(from.getTime()) ||
+      Number.isNaN(to.getTime()) ||
+      from >= to
+      ? undefined
+      : { from, to };
+  }
   if (!values.bucket) return undefined;
   const start = new Date(values.bucket);
   if (Number.isNaN(start.getTime())) return undefined;
@@ -165,6 +186,95 @@ export function selectedBucketWindow(
     from: start,
     to: new Date(start.getTime() + option.bucketMinutes * 60_000),
   };
+}
+
+/** The URL values for a list window (undefined clears it). Always drops the legacy `bucket`. */
+export function windowParams(
+  window: { from: Date; to: Date } | undefined,
+): Pick<FailedFilterValues, "bucket" | "windowStart" | "windowEnd"> {
+  return {
+    bucket: "",
+    windowStart: window ? window.from.toISOString() : "",
+    windowEnd: window ? window.to.toISOString() : "",
+  };
+}
+
+/** The search fields the single search box reads and writes. */
+export type SearchBoxFields = Pick<
+  FailedFilterValues,
+  "eventId" | "lastMessageId" | "sessionId" | "errorText"
+>;
+
+const GUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SEARCH_PREFIXES: Record<string, keyof SearchBoxFields> = {
+  event: "eventId",
+  message: "lastMessageId",
+  session: "sessionId",
+};
+// prefix:"quoted value" | prefix:value | "quoted text" | word
+const SEARCH_TOKEN = /(\w+):"([^"]*)"|(\w+):(\S+)|"([^"]*)"|(\S+)/g;
+
+/**
+ * Reads the search box. `event:`, `message:` and `session:` set those fields; a lone bare
+ * GUID is an event ID; everything else (and any quoted text) is error text.
+ */
+export function parseSearchQuery(query: string): SearchBoxFields {
+  const fields: SearchBoxFields = {
+    eventId: "",
+    lastMessageId: "",
+    sessionId: "",
+    errorText: "",
+  };
+  const text: string[] = [];
+  let quoted = false;
+  for (const m of query.matchAll(SEARCH_TOKEN)) {
+    const prefix = m[1] ?? m[3];
+    const field = prefix ? SEARCH_PREFIXES[prefix.toLowerCase()] : undefined;
+    if (field) {
+      fields[field] = m[2] ?? m[4] ?? "";
+    } else if (m[5] !== undefined) {
+      text.push(m[5]);
+      quoted = true;
+    } else {
+      text.push(m[0]);
+    }
+  }
+  const joined = text.join(" ").trim();
+  if (!quoted && !fields.eventId && text.length === 1 && GUID.test(joined)) {
+    fields.eventId = joined;
+  } else {
+    fields.errorText = joined;
+  }
+  return fields;
+}
+
+/** The search box text for the applied values; the inverse of {@link parseSearchQuery}. */
+export function searchQueryOf(values: SearchBoxFields): string {
+  const token = (prefix: string, value: string) =>
+    /[\s"]/.test(value) ? `${prefix}:"${value}"` : `${prefix}:${value}`;
+  const parts: string[] = [];
+  if (values.eventId) parts.push(token("event", values.eventId));
+  if (values.lastMessageId) parts.push(token("message", values.lastMessageId));
+  if (values.sessionId) parts.push(token("session", values.sessionId));
+  const error = values.errorText.trim();
+  if (error) {
+    parts.push(
+      /[:"]/.test(error) || /\s{2,}/.test(error) || GUID.test(error)
+        ? `"${error}"`
+        : error,
+    );
+  }
+  return parts.join(" ");
+}
+
+/** Toggles one failure status. An empty list means all three. */
+export function toggleStatus(current: string[], status: string): string[] {
+  const on = current.length ? current : [...FAILED_STATUSES];
+  const next = on.includes(status)
+    ? on.filter((s) => s !== status)
+    : [...on, status];
+  return next.length === FAILED_STATUSES.length ? [] : next;
 }
 
 /**

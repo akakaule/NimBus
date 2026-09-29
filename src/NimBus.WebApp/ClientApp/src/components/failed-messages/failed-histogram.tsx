@@ -3,6 +3,7 @@ import * as api from "api-client";
 import {
   Bar,
   BarChart,
+  Brush,
   CartesianGrid,
   Cell,
   ResponsiveContainer,
@@ -23,13 +24,59 @@ const INK3 = "#8A8473";
 const MAX_ENDPOINT_SERIES = 7;
 const OTHER = "Other";
 
+export interface TimeWindow {
+  from: Date;
+  to: Date;
+}
+
 export interface FailedHistogramProps {
   histogram: api.FailedHistogram | undefined;
   split: "status" | "endpoint";
-  /** ISO start of the selected bar, or "" for none. */
-  selectedBucket: string;
-  onSelectBucket: (start: string) => void;
+  /** The list window, or undefined for the whole range. */
+  window: TimeWindow | undefined;
+  /** Sets the list window (a clicked bar or the brushed range); undefined clears it. */
+  onWindowChange: (window: TimeWindow | undefined) => void;
   isLoading: boolean;
+}
+
+// Recharts fires the brush's onChange on every drag step; the list reloads once it settles.
+const BRUSH_SETTLE_MS = 350;
+// The main chart's Y axis is this wide; the brush below it lines up with the plot area.
+const Y_AXIS_WIDTH = 40;
+const RIGHT_MARGIN = 8;
+
+/** The first and last bar whose start falls inside `window` (every bar without one). */
+export function brushIndexes(
+  starts: number[],
+  window: TimeWindow | undefined,
+): { startIndex: number; endIndex: number } {
+  const last = Math.max(starts.length - 1, 0);
+  if (!window) return { startIndex: 0, endIndex: last };
+  const from = window.from.getTime();
+  const to = window.to.getTime();
+  const inside = starts
+    .map((start, i) => (start >= from && start < to ? i : -1))
+    .filter((i) => i >= 0);
+  return inside.length
+    ? { startIndex: inside[0], endIndex: inside[inside.length - 1] }
+    : { startIndex: 0, endIndex: last };
+}
+
+/** The window a brushed index range covers; undefined when it spans every bar. */
+export function windowOfIndexes(
+  starts: number[],
+  bucketMinutes: number,
+  startIndex: number,
+  endIndex: number,
+): TimeWindow | undefined {
+  if (starts.length === 0) return undefined;
+  const first = Math.max(0, Math.min(startIndex, endIndex));
+  const last = Math.min(starts.length - 1, Math.max(startIndex, endIndex));
+  if (first === 0 && last === starts.length - 1) return undefined;
+  return {
+    from: new Date(starts[first]),
+    to: new Date(starts[last] + bucketMinutes * 60_000),
+  };
 }
 
 interface Series {
@@ -96,15 +143,17 @@ export function histogramRows(
   });
 }
 
+
 /**
- * Stacked bar chart of unresolved failures per time bucket, split by status or endpoint.
- * Clicking a bar selects its window; clicking it again clears the selection.
+ * Stacked bar chart of unresolved failures per time bucket, split by status or endpoint, with a
+ * range brush under it (Application Insights style). The chart always shows the whole range;
+ * the brush and a clicked bar only set the list window, and bars outside it are dimmed.
  */
 export default function FailedHistogram({
   histogram,
   split,
-  selectedBucket,
-  onSelectBucket,
+  window,
+  onWindowChange,
   isLoading,
 }: FailedHistogramProps) {
   const series = React.useMemo(
@@ -115,18 +164,34 @@ export default function FailedHistogram({
     () => histogramRows(histogram, split),
     [histogram, split],
   );
+  const starts = React.useMemo(
+    () => rows.map((r) => new Date(r.start).getTime()),
+    [rows],
+  );
   const bucketMinutes = histogram?.bucketMinutes ?? 60;
-  const selectedTime = selectedBucket
-    ? new Date(selectedBucket).getTime()
-    : undefined;
-  const isSelected = (row: ChartRow) =>
-    selectedTime !== undefined &&
-    new Date(row.start).getTime() === selectedTime;
+  const from = window?.from.getTime();
+  const to = window?.to.getTime();
+  const inWindow = (start: number) =>
+    from === undefined || to === undefined || (start >= from && start < to);
+  const { startIndex, endIndex } = brushIndexes(starts, window);
+
+  const settle = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+  React.useEffect(() => () => clearTimeout(settle.current), []);
+  const onBrush = (range: { startIndex?: number; endIndex?: number }) => {
+    clearTimeout(settle.current);
+    const { startIndex: s, endIndex: e } = range;
+    if (s === undefined || e === undefined) return;
+    if (s === startIndex && e === endIndex) return;
+    settle.current = setTimeout(
+      () => onWindowChange(windowOfIndexes(starts, bucketMinutes, s, e)),
+      BRUSH_SETTLE_MS,
+    );
+  };
 
   if (!histogram && isLoading) {
     return (
       <div
-        className="h-[220px] animate-pulse rounded-md bg-muted"
+        className="h-[244px] animate-pulse rounded-md bg-muted"
         aria-label="Loading chart"
       />
     );
@@ -136,27 +201,29 @@ export default function FailedHistogram({
     // Recharts makes its surface focusable; clicking a bar would otherwise ring the whole
     // chart. Keyboard focus keeps its outline.
     <div className="[&_*:focus:not(:focus-visible)]:outline-none">
-      <div
-        className="mb-2 flex flex-wrap items-center gap-4"
-        aria-label="Legend"
-      >
-        {series.map((s) => (
-          <span
-            key={s.key}
-            className="inline-flex items-center gap-1.5 font-mono text-[11.5px] text-muted-foreground"
-          >
+      {split === "endpoint" && (
+        <div
+          className="mb-2 flex flex-wrap items-center gap-4"
+          aria-label="Legend"
+        >
+          {series.map((s) => (
             <span
-              className="inline-block h-2.5 w-2.5 rounded-sm"
-              style={{ background: s.color }}
-            />
-            {s.label}
-          </span>
-        ))}
-      </div>
-      <ResponsiveContainer width="100%" height={220}>
+              key={s.key}
+              className="inline-flex items-center gap-1.5 font-mono text-[11.5px] text-muted-foreground"
+            >
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{ background: s.color }}
+              />
+              {s.label}
+            </span>
+          ))}
+        </div>
+      )}
+      <ResponsiveContainer width="100%" height={200}>
         <BarChart
           data={rows}
-          margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+          margin={{ top: 8, right: RIGHT_MARGIN, bottom: 0, left: 0 }}
           barCategoryGap="18%"
         >
           <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
@@ -175,7 +242,7 @@ export default function FailedHistogram({
             tick={{ fontSize: 10.5, fill: INK3 }}
             stroke={GRID}
             tickLine={false}
-            width={40}
+            width={Y_AXIS_WIDTH}
           />
           <Tooltip
             cursor={{ fill: "rgba(232, 116, 60, 0.08)" }}
@@ -223,23 +290,61 @@ export default function FailedHistogram({
               cursor="pointer"
               radius={i === series.length - 1 ? [3, 3, 0, 0] : undefined}
               onClick={(_data: unknown, index: number) => {
-                const row = rows[index];
-                if (!row) return;
-                onSelectBucket(isSelected(row) ? "" : row.start);
+                const start = starts[index];
+                if (start === undefined) return;
+                const end = start + bucketMinutes * 60_000;
+                onWindowChange(
+                  from === start && to === end
+                    ? undefined
+                    : { from: new Date(start), to: new Date(end) },
+                );
               }}
             >
-              {rows.map((row) => (
+              {rows.map((row, index) => (
                 <Cell
                   key={row.start}
-                  fillOpacity={
-                    selectedTime === undefined || isSelected(row) ? 1 : 0.3
-                  }
+                  fillOpacity={inWindow(starts[index]) ? 1 : 0.3}
                 />
               ))}
             </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
+      {rows.length > 1 && (
+        <ResponsiveContainer width="100%" height={44}>
+          {/* Remounted when the applied window changes, so the brush follows a clicked bar,
+              a reset or a shared link; its drag state is its own. */}
+          <BarChart
+            key={`${startIndex}-${endIndex}-${rows.length}`}
+            data={rows}
+            margin={{ top: 0, right: RIGHT_MARGIN, bottom: 0, left: Y_AXIS_WIDTH }}
+          >
+            <Brush
+              dataKey="start"
+              height={40}
+              travellerWidth={8}
+              stroke="#E8743C"
+              fill="rgba(232, 116, 60, 0.06)"
+              startIndex={startIndex}
+              endIndex={endIndex}
+              onChange={onBrush}
+              tickFormatter={(start: string) =>
+                formatBucket(new Date(start), bucketMinutes)
+              }
+              ariaLabel="Time window"
+            >
+              <BarChart data={rows}>
+                <Bar
+                  dataKey="total"
+                  fill={INK3}
+                  fillOpacity={0.45}
+                  isAnimationActive={false}
+                />
+              </BarChart>
+            </Brush>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }

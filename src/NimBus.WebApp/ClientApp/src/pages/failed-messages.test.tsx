@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
@@ -36,20 +37,37 @@ vi.mock("components/data-table", async () => {
   };
 });
 
-// The chart is recharts (no layout in jsdom); expose its selection callback as a button.
+// The chart is recharts (no layout in jsdom); expose its window callback as buttons: a
+// clicked bar is one 1d bucket, a brushed range spans several.
 vi.mock("components/failed-messages/failed-histogram", () => ({
-  default: (props: { onSelectBucket: (start: string) => void }) => (
-    <button
-      type="button"
-      onClick={() => props.onSelectBucket("2026-09-25T06:00:00.000Z")}
-    >
-      select-bar
-    </button>
+  default: (props: {
+    onWindowChange: (w: { from: Date; to: Date } | undefined) => void;
+  }) => (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          props.onWindowChange({
+            from: new Date("2026-09-25T06:00:00.000Z"),
+            to: new Date("2026-09-25T07:00:00.000Z"),
+          })
+        }
+      >
+        select-bar
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          props.onWindowChange({
+            from: new Date("2026-09-25T02:00:00.000Z"),
+            to: new Date("2026-09-25T09:00:00.000Z"),
+          })
+        }
+      >
+        brush-range
+      </button>
+    </>
   ),
-}));
-
-vi.mock("components/failed-messages/failed-filter-bar", () => ({
-  default: () => <div data-testid="filter-bar-stub" />,
 }));
 
 vi.mock("api-client", async () => {
@@ -63,6 +81,8 @@ vi.mock("api-client", async () => {
     postEndpointSessionsBatch = mocks.sessions;
     postResubmitEventIds = mocks.resubmit;
     postSkipEventIds = mocks.skip;
+    getEndpointsAll = () => Promise.resolve(["Crm", "Erp"]);
+    getEventTypes = () => Promise.resolve([]);
   }
   return { ...actual, Client: FakeClient, CookieAuth: () => ({}) };
 });
@@ -177,6 +197,80 @@ describe("Failed messages page", () => {
     );
     expect(mocks.histogram).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("Clear time window")).toBeTruthy();
+  });
+
+  it("narrows the list to a brushed range, and clears it again", async () => {
+    await renderPage();
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText("brush-range"));
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(2));
+    const narrowed = mocks.search.mock.calls[1][0] as api.FailedSearchRequest;
+    expect(narrowed.filter?.updatedAtFrom?.toISOString()).toBe(
+      "2026-09-25T02:00:00.000Z",
+    );
+    expect(narrowed.filter?.updatedAtTo?.toISOString()).toBe(
+      "2026-09-25T08:59:59.999Z",
+    );
+
+    fireEvent.click(screen.getByLabelText("Clear time window"));
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(3));
+    const cleared = mocks.search.mock.calls[2][0] as api.FailedSearchRequest;
+    expect(cleared.filter?.updatedAtFrom?.toISOString()).not.toBe(
+      "2026-09-25T02:00:00.000Z",
+    );
+    expect(mocks.histogram).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads a legacy bar link as the list window", async () => {
+    await renderPage("/Failed?period=7d&bucket=2026-09-25T06:00:00.000Z");
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalled());
+    const request = mocks.search.mock.calls[0][0] as api.FailedSearchRequest;
+    expect(request.filter?.updatedAtFrom?.toISOString()).toBe(
+      "2026-09-25T06:00:00.000Z",
+    );
+    expect(request.filter?.updatedAtTo?.toISOString()).toBe(
+      "2026-09-25T11:59:59.999Z",
+    );
+  });
+
+  it("searches IDs and error text from the one search box", async () => {
+    await renderPage();
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
+
+    const box = screen.getByLabelText("Search failures");
+    fireEvent.change(box, { target: { value: "session:s1 timeout 503" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(2));
+    const request = mocks.search.mock.calls[1][0] as api.FailedSearchRequest;
+    expect(request.filter?.sessionId).toBe("s1");
+    expect(request.filter?.errorText).toBe("timeout 503");
+    expect(request.filter?.eventId).toBeUndefined();
+    const chart = mocks.histogram.mock.calls.at(
+      -1,
+    )![0] as api.FailedHistogramRequest;
+    expect(chart.filter?.sessionId).toBe("s1");
+  });
+
+  it("filters by status from a legend tile", async () => {
+    await renderPage();
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
+
+    const totals = screen.getByLabelText("Totals");
+    fireEvent.click(
+      within(totals).getByRole("button", { name: /DeadLettered/ }),
+    );
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(2));
+    const request = mocks.search.mock.calls[1][0] as api.FailedSearchRequest;
+    expect(request.filter?.statuses).toEqual([
+      api.Statuses.Failed,
+      api.Statuses.Unsupported,
+    ]);
   });
 
   it("asks each endpoint once for the sessions its failures block", async () => {

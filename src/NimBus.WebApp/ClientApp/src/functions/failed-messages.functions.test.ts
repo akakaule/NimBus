@@ -4,9 +4,13 @@ import {
   EMPTY_FAILED_FILTER,
   deferredCountsBySession,
   errorTextOf,
+  parseSearchQuery,
   resolveWindow,
-  selectedBucketWindow,
+  searchQueryOf,
+  selectedWindow,
   toFailedSearchFilter,
+  toggleStatus,
+  windowParams,
 } from "./failed-messages.functions";
 
 describe("resolveWindow", () => {
@@ -59,21 +63,141 @@ describe("toFailedSearchFilter", () => {
   });
 });
 
-describe("selectedBucketWindow", () => {
-  it("spans one bucket of the chosen range from the selected start", () => {
-    const w = selectedBucketWindow({
+describe("selectedWindow", () => {
+  it("prefers the window params", () => {
+    const w = selectedWindow({
+      ...EMPTY_FAILED_FILTER,
+      windowStart: "2026-09-25T06:00:00.000Z",
+      windowEnd: "2026-09-25T18:00:00.000Z",
+      bucket: "2026-09-24T00:00:00.000Z",
+    });
+    expect(w?.from.toISOString()).toBe("2026-09-25T06:00:00.000Z");
+    expect(w?.to.toISOString()).toBe("2026-09-25T18:00:00.000Z");
+  });
+
+  it("falls back to one bucket of the range for a legacy bucket link", () => {
+    const w = selectedWindow({
       ...EMPTY_FAILED_FILTER,
       period: api.Period._7d,
       bucket: "2026-09-25T06:00:00.000Z",
     });
+    expect(w?.from.toISOString()).toBe("2026-09-25T06:00:00.000Z");
     expect(w?.to.toISOString()).toBe("2026-09-25T12:00:00.000Z");
   });
 
-  it("is undefined without a valid selection", () => {
-    expect(selectedBucketWindow(EMPTY_FAILED_FILTER)).toBeUndefined();
+  it("is undefined without a valid window", () => {
+    expect(selectedWindow(EMPTY_FAILED_FILTER)).toBeUndefined();
     expect(
-      selectedBucketWindow({ ...EMPTY_FAILED_FILTER, bucket: "x" }),
+      selectedWindow({ ...EMPTY_FAILED_FILTER, bucket: "x" }),
     ).toBeUndefined();
+    expect(
+      selectedWindow({
+        ...EMPTY_FAILED_FILTER,
+        windowStart: "2026-09-25T18:00:00.000Z",
+        windowEnd: "2026-09-25T06:00:00.000Z",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("windowParams", () => {
+  it("writes a window as ISO params and clears the legacy bucket", () => {
+    expect(
+      windowParams({
+        from: new Date("2026-09-25T06:00:00Z"),
+        to: new Date("2026-09-25T12:00:00Z"),
+      }),
+    ).toEqual({
+      bucket: "",
+      windowStart: "2026-09-25T06:00:00.000Z",
+      windowEnd: "2026-09-25T12:00:00.000Z",
+    });
+    expect(windowParams(undefined)).toEqual({
+      bucket: "",
+      windowStart: "",
+      windowEnd: "",
+    });
+  });
+});
+
+describe("parseSearchQuery", () => {
+  const guid = "b5ec63b6-8a1f-4e02-9c7d-4f3a2b1e0d96";
+
+  it("reads prefixed tokens into their fields and the rest as error text", () => {
+    expect(
+      parseSearchQuery("event:e1 message:m1 session:s1 503 timeout"),
+    ).toEqual({
+      eventId: "e1",
+      lastMessageId: "m1",
+      sessionId: "s1",
+      errorText: "503 timeout",
+    });
+  });
+
+  it("treats a bare GUID as an event ID", () => {
+    expect(parseSearchQuery(`  ${guid} `)).toEqual({
+      eventId: guid,
+      lastMessageId: "",
+      sessionId: "",
+      errorText: "",
+    });
+  });
+
+  it("keeps quoted text as error text, even when it looks like a GUID or a prefix", () => {
+    expect(parseSearchQuery(`"${guid}"`).errorText).toBe(guid);
+    expect(parseSearchQuery(`"event:x failed"`)).toEqual({
+      eventId: "",
+      lastMessageId: "",
+      sessionId: "",
+      errorText: "event:x failed",
+    });
+    expect(parseSearchQuery('session:"a b"').sessionId).toBe("a b");
+  });
+
+  it("clears every field for an empty query", () => {
+    expect(parseSearchQuery("   ")).toEqual({
+      eventId: "",
+      lastMessageId: "",
+      sessionId: "",
+      errorText: "",
+    });
+  });
+});
+
+describe("searchQueryOf", () => {
+  it("round-trips through parseSearchQuery", () => {
+    const cases = [
+      { eventId: "e1", lastMessageId: "", sessionId: "s 1", errorText: "503" },
+      { eventId: "", lastMessageId: "m1", sessionId: "", errorText: "a:b" },
+      {
+        eventId: "",
+        lastMessageId: "",
+        sessionId: "",
+        errorText: "b5ec63b6-8a1f-4e02-9c7d-4f3a2b1e0d96",
+      },
+      {
+        eventId: "b5ec63b6-8a1f-4e02-9c7d-4f3a2b1e0d96",
+        lastMessageId: "",
+        sessionId: "",
+        errorText: "",
+      },
+    ];
+    for (const fields of cases) {
+      const query = searchQueryOf({ ...EMPTY_FAILED_FILTER, ...fields });
+      expect(parseSearchQuery(query)).toEqual(fields);
+    }
+  });
+
+  it("is empty when no search field is set", () => {
+    expect(searchQueryOf(EMPTY_FAILED_FILTER)).toBe("");
+  });
+});
+
+describe("toggleStatus", () => {
+  it("switches one status off from all, and back to all", () => {
+    const off = toggleStatus([], "Failed");
+    expect(off).toEqual(["DeadLettered", "Unsupported"]);
+    expect(toggleStatus(off, "Failed")).toEqual([]);
   });
 });
 

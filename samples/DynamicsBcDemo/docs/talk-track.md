@@ -216,15 +216,14 @@ it is policy, not code in every integration."
 ### 6d — The same change, twice
 
 *Click:*
-1. Sales Hub, still signed in as *Maya Lindqvist* → *OPP-10017* → change **Est. revenue** again →
-   **Save**. Business Central's **CRM Opportunities** shows the new value within a second.
-2. Cockpit → **Delivery** → **Deliver the last opportunity change again**.
-3. nimbus-ops → **Endpoints** → **BusinessCentralEndpoint**: the repeat is **Skipped** with reason
+1. Cockpit → **Delivery** → **Deliver the last opportunity change again**. After 6c this is Maya's
+   throttled change to OPP-10017, sent again with the same MessageId.
+2. nimbus-ops → **Endpoints** → **BusinessCentralEndpoint**: the repeat is **Skipped** with reason
    **DuplicateDetected**. Business Central applied the change once.
 
 *Say:* "Source systems deliver at least once: a retry can send the same change twice. Every change
-carries a fingerprint, so the platform recognises the repeat. The Business Central side is
-idempotent as well: belt and braces."
+carries a fingerprint, so the platform recognises the repeat, even though the first delivery only
+got through on a retry. The Business Central side is idempotent as well: belt and braces."
 
 ## Scene 7 — Operating it (3 min)
 
@@ -326,9 +325,6 @@ Tour nimbus-ops:
 - **Leftovers from a rehearsal** (a failed message, an open circuit). Run `Reset-Demo.ps1`: it resets
   everything and redoes the prep in about 2 minutes. With a real namespace, purge the demo
   subscriptions first and pass `-NamespacePurged`.
-- **6d processes the repeat instead of skipping it.** Redeliver a change that went through on its
-  first attempt: one that only succeeded after a retry or a resubmit (such as the throttled change in
-  6c) is handled again. That is why 6d starts with a fresh change.
 - **Circuit still Open after the window.** It closes on the next successful probe. Retries land
   about 30 s after the failures. Keep talking through 6b's "nothing is lost" point.
 
@@ -340,6 +336,6 @@ Tour nimbus-ops:
 | Lead *ROV winch upgrade for research vessel* (Tailspin Marine Research), owner *Alex Rivera* | Scenes 2–4 |
 | *Fabrikam Offshore Energy* (C00010), in CRM after the initial sync | Scene 5 (optional) |
 | Lead *Connectors for offshore wind export cable* (City Power & Light), owner *Robin Hale* (no BC salesperson) | Scene 6a |
-| *OPP-10017* Proseware Cable Systems, owner *Maya Lindqvist* | Scene 6c |
+| *OPP-10017* Proseware Cable Systems, owner *Maya Lindqvist* | Scenes 6c and 6d |
 | *S-QUO1001*, Litware Renewables | Spare: a quote Business Central made on its own; CRM never hears of it |
 | *Wingtip Marine (warm-up)* and *OPP-10099* | Warm-up only |

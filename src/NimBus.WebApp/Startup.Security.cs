@@ -228,6 +228,9 @@ public partial class Startup
         // Spec 008: centralized audit-write contract. Scoped to the request's
         // audit workflow; its narrow store dependency resolves to the selected
         // provider singleton.
+        // Admin → Audit selection. Singleton so its short-TTL cache survives the
+        // scoped audit writer that consults it on every row.
+        services.AddSingleton<IAuditSettingsProvider, AuditSettingsProvider>();
         services.AddScoped<IAuditLogService, AuditLogService>();
         // Shared hand-off settlement core used by both the operator (EventImplementation)
         // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.

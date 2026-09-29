@@ -1299,6 +1299,26 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<HeartbeatSettings>> PutAdminHeartbeatSettingsAsync(HeartbeatSettings body);
 
         /// <summary>
+        /// Get which audit types are recorded
+        /// </summary>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AuditSettings>> GetAdminAuditSettingsAsync();
+
+        /// <summary>
+        /// Choose which audit types are recorded
+        /// </summary>
+
+        /// <remarks>
+        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts and updateAuditSettings itself are always recorded.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AuditSettings>> PutAdminAuditSettingsAsync(AuditSettings body);
+
+        /// <summary>
         /// Send a heartbeat to every monitored endpoint now
         /// </summary>
 
@@ -1709,6 +1729,31 @@ namespace NimBus.WebApp.ManagementApi
         {
 
             return _implementation.PutAdminHeartbeatSettingsAsync(body);
+        }
+
+        /// <summary>
+        /// Get which audit types are recorded
+        /// </summary>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/audit/settings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AuditSettings>> GetAdminAuditSettings()
+        {
+
+            return _implementation.GetAdminAuditSettingsAsync();
+        }
+
+        /// <summary>
+        /// Choose which audit types are recorded
+        /// </summary>
+        /// <remarks>
+        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts and updateAuditSettings itself are always recorded.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/admin/audit/settings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<AuditSettings>> PutAdminAuditSettings([Microsoft.AspNetCore.Mvc.FromBody] AuditSettings body)
+        {
+
+            return _implementation.PutAdminAuditSettingsAsync(body);
         }
 
         /// <summary>
@@ -15816,6 +15861,75 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class AuditSettings : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.Collections.Generic.List<string> _disabledAuditTypes;
+        private System.Collections.Generic.List<string> _configurableAuditTypes;
+
+        /// <summary>
+        /// Audit types that are not recorded, spelled as AuditEntry.auditType (camelCase).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("disabledAuditTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> DisabledAuditTypes    {
+            get { return _disabledAuditTypes; }
+            set
+            {
+                if (_disabledAuditTypes != value)
+                {
+                    _disabledAuditTypes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Read-only. The audit types that can be disabled; ignored on write.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("configurableAuditTypes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> ConfigurableAuditTypes    {
+            get { return _configurableAuditTypes; }
+            set
+            {
+                if (_configurableAuditTypes != value)
+                {
+                    _configurableAuditTypes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static AuditSettings FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<AuditSettings>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class HeartbeatOverviewRow : System.ComponentModel.INotifyPropertyChanged
     {
         private string _endpointId;
@@ -17914,6 +18028,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"clearEndpointAcknowledgement")]
         ClearEndpointAcknowledgement = 32,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateAuditSettings")]
+        UpdateAuditSettings = 33,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -18199,6 +18316,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"clearEndpointAcknowledgement")]
         ClearEndpointAcknowledgement = 32,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateAuditSettings")]
+        UpdateAuditSettings = 33,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -18405,6 +18525,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"clearEndpointAcknowledgement")]
         ClearEndpointAcknowledgement = 32,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"updateAuditSettings")]
+        UpdateAuditSettings = 33,
 
     }
 

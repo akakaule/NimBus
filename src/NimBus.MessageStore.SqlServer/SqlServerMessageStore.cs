@@ -171,6 +171,8 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<bool> SetHeartbeatSettings(HeartbeatSettings settings) => _endpointMetadata.SetHeartbeatSettings(settings);
     public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => _endpointMetadata.TryClaimHeartbeatSend(dueBefore);
     public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => _endpointMetadata.GetHeartbeatOverview();
+    public Task<AuditSettings> GetAuditSettings() => _endpointMetadata.GetAuditSettings();
+    public Task<bool> SetAuditSettings(AuditSettings settings) => _endpointMetadata.SetAuditSettings(settings);
     // ───────── Durable endpoint heartbeat history — implementation in SqlServerHeartbeatHistoryStore ─────────
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);

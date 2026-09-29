@@ -598,6 +598,10 @@ public class RateLimitEnforcementTests
 
         public Task<ActionResult<CopyResult>> PostAdminCopyAsync(string endpointId, CopyRequest body) => Ok<CopyResult>();
 
+        public Task<ActionResult<AuditSettings>> GetAdminAuditSettingsAsync() => Ok<AuditSettings>();
+
+        public Task<ActionResult<AuditSettings>> PutAdminAuditSettingsAsync(AuditSettings body) => Ok<AuditSettings>();
+
         public Task<ActionResult<HeartbeatSettings>> GetAdminHeartbeatSettingsAsync() => Ok<HeartbeatSettings>();
 
         public Task<ActionResult<HeartbeatSettings>> PutAdminHeartbeatSettingsAsync(HeartbeatSettings body) => Ok<HeartbeatSettings>();

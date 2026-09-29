@@ -153,4 +153,10 @@ public enum MessageAuditType
 
     /// <summary>Operator cleared an endpoint's Monitor acknowledgement.</summary>
     ClearEndpointAcknowledgement,
+
+    /// <summary>
+    /// A site Owner changed which audit types are recorded (the disabled types are
+    /// recorded as Data). Always recorded, whatever the selection.
+    /// </summary>
+    UpdateAuditSettings,
 }

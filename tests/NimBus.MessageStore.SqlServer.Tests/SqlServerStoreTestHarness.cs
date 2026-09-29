@@ -53,6 +53,7 @@ internal static class SqlServerStoreTestHarness
             -- empty tables (settings fall back to defaults, TryClaimServiceProbe
             -- creates the row on first use).
             TRUNCATE TABLE [{schema}].[HeartbeatSettings];
+            TRUNCATE TABLE [{schema}].[AuditSettings];
             TRUNCATE TABLE [{schema}].[ServiceHealth];";
         await using var cmd = new SqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();

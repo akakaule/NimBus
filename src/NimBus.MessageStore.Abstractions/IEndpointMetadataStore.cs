@@ -6,7 +6,8 @@ using NimBus.MessageStore.States;
 namespace NimBus.MessageStore.Abstractions;
 
 /// <summary>
-/// Storage operations for endpoint metadata, ownership, and heartbeat state.
+/// Storage operations for endpoint metadata, ownership, heartbeat state and the
+/// platform-wide audit settings.
 /// Implemented per storage provider.
 /// </summary>
 public interface IEndpointMetadataStore
@@ -82,4 +83,15 @@ public interface IEndpointMetadataStore
 
     /// <summary>One row per known endpoint: current status, round-trip and reported SDK version.</summary>
     Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview();
+
+    /// <summary>
+    /// The platform-wide audit-type selection; defaults (every type recorded) when nothing
+    /// has been written.
+    /// </summary>
+    Task<AuditSettings> GetAuditSettings();
+
+    /// <summary>Upserts the platform-wide audit-type selection, replacing the stored list.</summary>
+    /// <param name="settings">The selection to store.</param>
+    /// <returns>True when the record was written.</returns>
+    Task<bool> SetAuditSettings(AuditSettings settings);
 }

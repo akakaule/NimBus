@@ -34,6 +34,7 @@ public class AdminImplementation : IAdminApiController
     private readonly IHeartbeatService _heartbeatService;
     private readonly ILogger<AdminImplementation> _logger;
     private readonly ICosmosContainerAdmin? _containerAdmin;
+    private readonly IAuditSettingsProvider? _auditSettings;
 
     public AdminImplementation(
         IHttpContextAccessor contextAccessor,
@@ -45,7 +46,8 @@ public class AdminImplementation : IAdminApiController
         IEndpointAuthorizationService authorizationService,
         IHeartbeatService heartbeatService,
         ILogger<AdminImplementation>? logger = null,
-        ICosmosContainerAdmin? containerAdmin = null)
+        ICosmosContainerAdmin? containerAdmin = null,
+        IAuditSettingsProvider? auditSettings = null)
     {
         _adminService = adminService;
         _subscriptionAdminService = subscriptionAdminService;
@@ -57,6 +59,7 @@ public class AdminImplementation : IAdminApiController
         _heartbeatService = heartbeatService;
         _logger = logger ?? NullLogger<AdminImplementation>.Instance;
         _containerAdmin = containerAdmin;
+        _auditSettings = auditSettings;
     }
 
     public async Task<ActionResult<PlatformConfig>> GetAdminPlatformConfigAsync()
@@ -746,6 +749,67 @@ public class AdminImplementation : IAdminApiController
             body.From, body.To,
             body.Statuses?.ToList() ?? new(), body.BatchSize);
         return new OkObjectResult(result);
+    }
+
+    // ───────────── Audit settings ─────────────
+    //
+    // Which audit types are recorded. Owner-gated; the write is audited on both
+    // branches as UpdateAuditSettings, which the selection can never switch off.
+
+    public async Task<ActionResult<AuditSettings>> GetAdminAuditSettingsAsync()
+    {
+        if (!await IsSiteOwnerAsync())
+            return new ForbidResult();
+        if (_auditSettings is null)
+            return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+
+        return new OkObjectResult(ToAuditSettings(await _auditSettings.GetDisabledAsync()));
+    }
+
+    public async Task<ActionResult<AuditSettings>> PutAdminAuditSettingsAsync(AuditSettings body)
+    {
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.UpdateAuditSettings, _context,
+                accessDenied: true, data: JsonConvert.SerializeObject(new { body?.DisabledAuditTypes }));
+            return new ForbidResult();
+        }
+
+        if (body is null)
+            return new BadRequestObjectResult("An audit settings body is required.");
+        if (_auditSettings is null)
+            return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+
+        var disabled = new List<MessageAuditType>();
+        var rejected = new List<string>();
+        foreach (var name in body.DisabledAuditTypes ?? Enumerable.Empty<string>())
+        {
+            if (AuditSettingsProvider.TryParseName(name, out var type) && AuditSettingsProvider.Configurable.Contains(type))
+                disabled.Add(type);
+            else
+                rejected.Add(name ?? "null");
+        }
+
+        if (rejected.Count != 0)
+            return new BadRequestObjectResult($"These audit types cannot be disabled: {string.Join(", ", rejected)}");
+
+        var result = ToAuditSettings(await _auditSettings.SaveAsync(disabled));
+        await _auditLogService.LogAuditAsync(MessageAuditType.UpdateAuditSettings, _context,
+            data: JsonConvert.SerializeObject(new { result.DisabledAuditTypes }));
+        return new OkObjectResult(result);
+    }
+
+    // The contract spells audit types camelCase, as AuditEntry.auditType does.
+    private static AuditSettings ToAuditSettings(IReadOnlySet<MessageAuditType> disabled) => new()
+    {
+        DisabledAuditTypes = AuditSettingsProvider.Configurable.Where(disabled.Contains).Select(ToContractName).ToList(),
+        ConfigurableAuditTypes = AuditSettingsProvider.Configurable.Select(ToContractName).ToList(),
+    };
+
+    private static string ToContractName(MessageAuditType type)
+    {
+        var name = type.ToString();
+        return char.ToLowerInvariant(name[0]) + name[1..];
     }
 
     // ───────────── Platform heartbeat ─────────────

@@ -6,6 +6,7 @@ import TruncatedGuid from "components/common/truncated-guid";
 import { Badge } from "components/ui/badge";
 import { Button } from "components/ui/button";
 import { notifyInfo } from "functions/notifications.functions";
+import { formatAuditType } from "functions/audit.functions";
 
 interface IAuditTabProps {
   endpointId: string;
@@ -101,7 +102,8 @@ const AuditTab = (props: IAuditTabProps) => {
       [
         "auditType",
         {
-          value: entry.auditType ?? "—",
+          // Same wording as the Audit Log page's Action column.
+          value: entry.auditType ? formatAuditType(entry.auditType) : "—",
           searchValue: entry.auditType ?? "",
         },
       ],

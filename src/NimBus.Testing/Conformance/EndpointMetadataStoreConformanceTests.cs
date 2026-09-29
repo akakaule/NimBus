@@ -210,6 +210,46 @@ public abstract class EndpointMetadataStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetAuditSettings_always_returns_the_singleton_record()
+    {
+        var store = CreateStore();
+
+        var settings = await store.GetAuditSettings();
+
+        // A shared backend may already carry an operator's selection, so only the
+        // never-null contract is asserted against the store; the default is asserted
+        // on the type.
+        Assert.IsNotNull(settings);
+        Assert.AreEqual(AuditSettings.SingletonId, settings.Id);
+        Assert.IsNotNull(settings.DisabledAuditTypes);
+        Assert.AreEqual(0, new AuditSettings().DisabledAuditTypes.Count);
+    }
+
+    [TestMethod]
+    public async Task SetAuditSettings_round_trips_and_replaces_the_stored_selection()
+    {
+        var store = CreateStore();
+
+        Assert.IsTrue(await store.SetAuditSettings(new AuditSettings
+        {
+            DisabledAuditTypes = new List<string> { "SearchEvents", "FailureClassified" },
+        }));
+        var stored = await store.GetAuditSettings();
+        CollectionAssert.AreEquivalent(new[] { "SearchEvents", "FailureClassified" }, stored.DisabledAuditTypes);
+
+        // A write replaces the list rather than merging, so re-enabling a type sticks.
+        Assert.IsTrue(await store.SetAuditSettings(new AuditSettings
+        {
+            DisabledAuditTypes = new List<string> { "GetEventDetails" },
+        }));
+        var replaced = await store.GetAuditSettings();
+        CollectionAssert.AreEquivalent(new[] { "GetEventDetails" }, replaced.DisabledAuditTypes);
+
+        Assert.IsTrue(await store.SetAuditSettings(new AuditSettings()));
+        Assert.AreEqual(0, (await store.GetAuditSettings()).DisabledAuditTypes.Count);
+    }
+
+    [TestMethod]
     public async Task TryClaimHeartbeatSend_lets_exactly_one_caller_send_per_interval()
     {
         var store = CreateStore();

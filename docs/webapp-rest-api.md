@@ -407,6 +407,20 @@ audit row to two independent sinks:
 Both writes are best-effort: a failure to either sink is logged as a warning
 and absorbed — the user's action proceeds either way.
 
+### Choosing which actions are recorded
+
+A site Owner can switch individual audit types off in **Admin → Audit**
+(`GET`/`PUT /api/admin/audit/settings`) — for example `SearchEvents`, which
+fires on every list refresh. A disabled type is skipped by both sinks. Two
+rows are always written regardless: access-denied attempts, and
+`UpdateAuditSettings`, which records every change to the selection.
+
+The selection is one record per platform (`IEndpointMetadataStore.GetAuditSettings`),
+cached by each WebApp instance for 30 seconds; a save takes effect at once on
+the instance that saved it. If the record cannot be read, every type is
+recorded. `Comment` and `Retry` rows — event history written directly by the
+event trail and the Resolver — are not governed by the setting.
+
 ### Actions audited
 
 The `MessageAuditType` enum enumerates the audit-worthy actions and the
@@ -427,6 +441,7 @@ controller method that fires each one:
 | `PurgeMessages`       | `EndpointImplementation.PostEndpointPurgeAsync`, `AdminImplementation.PostAdminSessionPurgeAsync`, `AdminImplementation.PostAdminPurgeAsync` |
 | `Compose`             | `EventImplementation.PostComposeNewEventAsync`            |
 | `ReconcileStalePending` | `AdminImplementation.PostAdminStalePendingReconcileAsync` — one row per invocation (request + counts as `Data`) plus one per repaired event |
+| `UpdateAuditSettings` | `AdminImplementation.PutAdminAuditSettingsAsync` — the disabled types as `Data`; always recorded |
 
 `Retry` and `Comment` remain on the enum for backward compatibility with rows
 written before spec 008.

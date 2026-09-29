@@ -277,6 +277,45 @@ VALUES (@Id, @Enabled, @IntervalSeconds, @TimeoutSeconds, @LastSentAtUtc, @LastH
         return rows > 0;
     }
 
+    public async Task<AuditSettings> GetAuditSettings()
+    {
+        await using var conn = await OpenAsync();
+        var json = await conn.QuerySingleOrDefaultAsync<string?>(
+            $"SELECT DisabledAuditTypes FROM {T("AuditSettings")} WHERE Id = @Id",
+            new { Id = AuditSettings.SingletonId },
+            commandTimeout: _context.CommandTimeout);
+
+        return new AuditSettings
+        {
+            DisabledAuditTypes = string.IsNullOrEmpty(json)
+                ? new List<string>()
+                : JsonConvert.DeserializeObject<List<string>>(json) ?? new List<string>(),
+        };
+    }
+
+    public async Task<bool> SetAuditSettings(AuditSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Id)) settings.Id = AuditSettings.SingletonId;
+
+        var sql = $@"
+MERGE {T("AuditSettings")} AS target
+USING (SELECT @Id AS Id) AS source
+ON target.Id = source.Id
+WHEN MATCHED THEN UPDATE SET
+    DisabledAuditTypes = @DisabledAuditTypes,
+    UpdatedAtUtc = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (Id, DisabledAuditTypes)
+VALUES (@Id, @DisabledAuditTypes);";
+        await using var conn = await OpenAsync();
+        var rows = await conn.ExecuteAsync(sql, new
+        {
+            settings.Id,
+            DisabledAuditTypes = JsonConvert.SerializeObject(settings.DisabledAuditTypes ?? new List<string>()),
+        }, commandTimeout: _context.CommandTimeout);
+        return rows > 0;
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The rows-affected check is what makes at most one scaled-out instance

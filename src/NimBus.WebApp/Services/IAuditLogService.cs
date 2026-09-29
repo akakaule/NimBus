@@ -16,6 +16,11 @@ namespace NimBus.WebApp.Services;
 /// durable message store AND emits a structured "Webapp AuditEvent occurred"
 /// log event (which Application Insights captures via ILogger telemetry).</para>
 ///
+/// <para>A site Owner can switch audit types off in Admin → Audit
+/// (<see cref="IAuditSettingsProvider"/>); a disabled type writes to neither sink.
+/// Access-denied attempts and <see cref="MessageAuditType.UpdateAuditSettings"/> are
+/// always recorded.</para>
+///
 /// <para>Best-effort: if the message-store write or the structured-log emit
 /// fail, the failure is absorbed and logged as a warning — the privileged
 /// action MUST proceed regardless. See spec 008 NFR-002 and User Story 5.</para>

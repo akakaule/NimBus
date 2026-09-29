@@ -43,6 +43,8 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     private readonly Dictionary<(string EndpointId, DateTime FromUtc), HeartbeatGap> _heartbeatGaps = new();
     private readonly object _heartbeatLock = new();
     private HeartbeatSettings? _heartbeatSettings;
+    // Replaced whole on every write, so a volatile reference swap is enough.
+    private volatile AuditSettings? _auditSettings;
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -823,6 +825,18 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.FromResult(true);
     }
 
+    public virtual Task<AuditSettings> GetAuditSettings()
+        => Task.FromResult(CloneAuditSettings(_auditSettings) ?? new AuditSettings());
+
+    public virtual Task<bool> SetAuditSettings(AuditSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var stored = CloneAuditSettings(settings)!;
+        if (string.IsNullOrWhiteSpace(stored.Id)) stored.Id = AuditSettings.SingletonId;
+        _auditSettings = stored;
+        return Task.FromResult(true);
+    }
+
     public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         lock (_heartbeatLock)
@@ -1047,6 +1061,12 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         IntervalSeconds = source.IntervalSeconds,
         SdkVersion = source.SdkVersion,
         EndpointHeartbeatStatus = source.EndpointHeartbeatStatus,
+    };
+
+    private static AuditSettings? CloneAuditSettings(AuditSettings? source) => source == null ? null : new AuditSettings
+    {
+        Id = source.Id,
+        DisabledAuditTypes = new List<string>(source.DisabledAuditTypes ?? new List<string>()),
     };
 
     private static HeartbeatSettings? CloneSettings(HeartbeatSettings? source) => source == null ? null : new HeartbeatSettings

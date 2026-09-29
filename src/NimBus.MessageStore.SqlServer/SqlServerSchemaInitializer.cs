@@ -44,6 +44,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "HeartbeatGaps",
         "ServiceHealth",
         "EndpointAcknowledgements",
+        "AuditSettings",
     };
 
     private static readonly string[] RequiredViews =

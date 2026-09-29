@@ -3034,6 +3034,103 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Get which audit types are recorded
+     * @return OK
+     */
+    getAdminAuditSettings(): Promise<AuditSettings> {
+        let url_ = this.baseUrl + "/api/admin/audit/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminAuditSettings(_response);
+        });
+    }
+
+    protected processGetAdminAuditSettings(response: Response): Promise<AuditSettings> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AuditSettings.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AuditSettings>(null as any);
+    }
+
+    /**
+     * Choose which audit types are recorded
+     * @param body (optional) 
+     * @return OK
+     */
+    putAdminAuditSettings(body?: AuditSettings | undefined): Promise<AuditSettings> {
+        let url_ = this.baseUrl + "/api/admin/audit/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutAdminAuditSettings(_response);
+        });
+    }
+
+    protected processPutAdminAuditSettings(response: Response): Promise<AuditSettings> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = AuditSettings.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Bad Request", status, _responseText, _headers);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<AuditSettings>(null as any);
+    }
+
+    /**
      * Send a heartbeat to every monitored endpoint now
      * @return OK
      */
@@ -16001,6 +16098,85 @@ export interface IHeartbeatSettings {
     [key: string]: any;
 }
 
+export class AuditSettings implements IAuditSettings {
+    /** Audit types that are not recorded, spelled as AuditEntry.auditType (camelCase). */
+    disabledAuditTypes?: string[];
+    /** Read-only. The audit types that can be disabled; ignored on write. */
+    configurableAuditTypes?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IAuditSettings) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            if (Array.isArray(_data["disabledAuditTypes"])) {
+                this.disabledAuditTypes = [] as any;
+                for (let item of _data["disabledAuditTypes"])
+                    this.disabledAuditTypes!.push(item);
+            }
+            if (Array.isArray(_data["configurableAuditTypes"])) {
+                this.configurableAuditTypes = [] as any;
+                for (let item of _data["configurableAuditTypes"])
+                    this.configurableAuditTypes!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): AuditSettings {
+        data = typeof data === 'object' ? data : {};
+        let result = new AuditSettings();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        if (Array.isArray(this.disabledAuditTypes)) {
+            data["disabledAuditTypes"] = [];
+            for (let item of this.disabledAuditTypes)
+                data["disabledAuditTypes"].push(item);
+        }
+        if (Array.isArray(this.configurableAuditTypes)) {
+            data["configurableAuditTypes"] = [];
+            for (let item of this.configurableAuditTypes)
+                data["configurableAuditTypes"].push(item);
+        }
+        return data;
+    }
+
+    clone(): AuditSettings {
+        const json = this.toJSON();
+        let result = new AuditSettings();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IAuditSettings {
+    /** Audit types that are not recorded, spelled as AuditEntry.auditType (camelCase). */
+    disabledAuditTypes?: string[];
+    /** Read-only. The audit types that can be disabled; ignored on write. */
+    configurableAuditTypes?: string[];
+
+    [key: string]: any;
+}
+
 export class HeartbeatOverviewRow implements IHeartbeatOverviewRow {
     endpointId?: string;
     /** Null when the endpoint has never been configured either way, which means it is probed. */
@@ -17435,6 +17611,7 @@ export enum MessageAuditAuditType {
     UpdateSimulationConfig = "updateSimulationConfig",
     AcknowledgeEndpoint = "acknowledgeEndpoint",
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
+    UpdateAuditSettings = "updateAuditSettings",
 }
 
 export class MessageContent implements IMessageContent {
@@ -17574,6 +17751,7 @@ export enum AuditSearchFilterAuditType {
     UpdateSimulationConfig = "updateSimulationConfig",
     AcknowledgeEndpoint = "acknowledgeEndpoint",
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
+    UpdateAuditSettings = "updateAuditSettings",
 }
 
 export enum StalePendingRowVerdict {
@@ -17649,6 +17827,7 @@ export enum AuditEntryAuditType {
     UpdateSimulationConfig = "updateSimulationConfig",
     AcknowledgeEndpoint = "acknowledgeEndpoint",
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
+    UpdateAuditSettings = "updateAuditSettings",
 }
 
 export enum AgentSettleRequestOutcome {

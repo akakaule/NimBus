@@ -27,13 +27,19 @@ public sealed class AuditLogService : IAuditLogService
 
     private readonly ILogger<AuditLogService> _logger;
     private readonly IMessageTrackingStore _messageStore;
+    private readonly IAuditSettingsProvider? _settings;
 
+    /// <param name="logger">Structured-log sink (Application Insights).</param>
+    /// <param name="messageStore">Durable sink.</param>
+    /// <param name="settings">The Admin → Audit selection. When null every type is recorded.</param>
     public AuditLogService(
         ILogger<AuditLogService> logger,
-        IMessageTrackingStore messageStore)
+        IMessageTrackingStore messageStore,
+        IAuditSettingsProvider? settings = null)
     {
         _logger = logger;
         _messageStore = messageStore;
+        _settings = settings;
     }
 
     /// <inheritdoc/>
@@ -48,6 +54,14 @@ public sealed class AuditLogService : IAuditLogService
         string? auditorNameOverride = null,
         CancellationToken cancellationToken = default)
     {
+        // An operator can switch a type off in Admin → Audit; the selection governs both
+        // sinks. A denied attempt is recorded regardless — it is the security signal the
+        // log exists for, not routine traffic.
+        if (!accessDenied && _settings != null && !await IsRecordedAsync(type).ConfigureAwait(false))
+        {
+            return;
+        }
+
         // Build the entity upfront so both sinks see the same payload.
         var entity = new MessageAuditEntity
         {
@@ -105,6 +119,21 @@ public sealed class AuditLogService : IAuditLogService
                 ex,
                 "Audit App Insights emit failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}",
                 entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+        }
+    }
+
+    private async Task<bool> IsRecordedAsync(MessageAuditType type)
+    {
+        try
+        {
+            return await _settings!.IsRecordedAsync(type).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The provider already fails open on store faults; this guards anything else
+            // so the audit contract (never fail the user action) holds.
+            _logger.LogWarning(ex, "Audit settings check failed for AuditType={AuditType}; recording the row", type);
+            return true;
         }
     }
 

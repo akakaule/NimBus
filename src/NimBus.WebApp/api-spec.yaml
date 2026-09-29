@@ -1417,6 +1417,46 @@ paths:
           description: Bad Request
         '403':
           description: Forbidden
+  /api/admin/audit/settings:
+    get:
+      summary: Get which audit types are recorded
+      operationId: get-admin-audit-settings
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSettings'
+        '403':
+          description: Forbidden
+    put:
+      summary: Choose which audit types are recorded
+      description: >-
+        Replaces the disabled audit types. Only types listed in
+        configurableAuditTypes can be disabled; access-denied attempts and
+        updateAuditSettings itself are always recorded.
+      operationId: put-admin-audit-settings
+      tags:
+        - Admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditSettings'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSettings'
+        '400':
+          description: Bad Request
+        '403':
+          description: Forbidden
   /api/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
@@ -3760,6 +3800,7 @@ components:
             - updateSimulationConfig
             - acknowledgeEndpoint
             - clearEndpointAcknowledgement
+            - updateAuditSettings
         comment:
           type: string
           nullable: true
@@ -5060,6 +5101,7 @@ components:
             - updateSimulationConfig
             - acknowledgeEndpoint
             - clearEndpointAcknowledgement
+            - updateAuditSettings
         createdAtFrom:
           type: string
           format: date-time
@@ -5446,6 +5488,20 @@ components:
           format: date-time
           nullable: true
           description: When the last fan-out was claimed. Read-only — owned by the send claim.
+    AuditSettings:
+      title: AuditSettings
+      type: object
+      properties:
+        disabledAuditTypes:
+          type: array
+          description: Audit types that are not recorded, spelled as AuditEntry.auditType (camelCase).
+          items:
+            type: string
+        configurableAuditTypes:
+          type: array
+          description: Read-only. The audit types that can be disabled; ignored on write.
+          items:
+            type: string
     HeartbeatOverviewRow:
       title: HeartbeatOverviewRow
       type: object
@@ -5671,6 +5727,7 @@ components:
             - updateSimulationConfig
             - acknowledgeEndpoint
             - clearEndpointAcknowledgement
+            - updateAuditSettings
         comment:
           type: string
           nullable: true

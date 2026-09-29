@@ -341,6 +341,8 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<bool> SetHeartbeatSettings(HeartbeatSettings settings) => _endpointMetadata.SetHeartbeatSettings(settings);
     public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => _endpointMetadata.TryClaimHeartbeatSend(dueBefore);
     public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => _endpointMetadata.GetHeartbeatOverview();
+    public Task<AuditSettings> GetAuditSettings() => _endpointMetadata.GetAuditSettings();
+    public Task<bool> SetAuditSettings(AuditSettings settings) => _endpointMetadata.SetAuditSettings(settings);
     // ── Durable endpoint heartbeat history — implementation in CosmosDbHeartbeatHistoryStore ──
     public Task<List<HeartbeatUptimeDay>> GetHeartbeatUptimeDays(DateTime fromDayUtc)
         => _heartbeatHistory.GetHeartbeatUptimeDays(fromDayUtc);

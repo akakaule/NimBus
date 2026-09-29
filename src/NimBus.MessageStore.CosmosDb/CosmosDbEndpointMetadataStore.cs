@@ -262,6 +262,44 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         }
     }
 
+    public async Task<AuditSettings> GetAuditSettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<AuditSettings>(
+                AuditSettings.SingletonId,
+                new PartitionKey(AuditSettings.SingletonId));
+            return response.Resource ?? new AuditSettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new AuditSettings();
+        }
+    }
+
+    public async Task<bool> SetAuditSettings(AuditSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Id)) settings.Id = AuditSettings.SingletonId;
+        settings.DisabledAuditTypes ??= new();
+
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.UpsertItemAsync(settings, new PartitionKey(settings.Id));
+            _logger?.LogTrace(
+                "COSMOS UPSERT-RESPONSE: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, response.StatusCode);
+            return true;
+        }
+        catch (CosmosException e)
+        {
+            _logger?.LogError(e,
+                "COSMOS UPSERT-ERROR: AuditSettings upsert. Id: {Id}, HttpStatusCode: {StatusCode}", settings.Id, e.StatusCode);
+            throw;
+        }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The ETag precondition is what makes at most one scaled-out instance send

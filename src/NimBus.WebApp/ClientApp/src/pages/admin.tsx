@@ -6,6 +6,7 @@ import SubscriptionManager from "components/admin/subscription-manager";
 import Health from "components/admin/health";
 import FailureIntelligenceSettings from "components/admin/failure-intelligence-settings";
 import SimulationSettings from "components/admin/simulation-settings";
+import AuditSettings from "components/admin/audit-settings";
 import CosmosContainerManager from "components/admin/cosmos-container-manager";
 import { useStorageProvider } from "hooks/app-status";
 
@@ -27,6 +28,7 @@ export default function Admin() {
           {hasCosmosStorage && <Tab index={4}>Storage</Tab>}
           <Tab index={5} tabIndex={0}>Failure intelligence</Tab>
           <Tab index={6}>Simulation</Tab>
+          <Tab index={7}>Audit</Tab>
         </TabList>
         <TabPanels>
           <TabPanel index={0} className="p-6">
@@ -46,6 +48,9 @@ export default function Admin() {
           </TabPanel>
           <TabPanel index={6} className="p-6">
             <SimulationSettings />
+          </TabPanel>
+          <TabPanel index={7} className="p-6">
+            <AuditSettings />
           </TabPanel>
           {hasCosmosStorage && (
             <TabPanel index={4} className="p-6">

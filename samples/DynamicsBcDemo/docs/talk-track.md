@@ -202,10 +202,13 @@ shows who did what."
 ### 6c — Throttling
 
 *Click:*
-1. Cockpit → **Start 20 s throttling**.
-2. **Signed in as** *Maya Lindqvist* → *OPP-10017* (Proseware Cable Systems) → change **Est.
-   revenue** → **Save**.
-3. nimbus-ops shows the change failing with *429 Too Many Requests* and retrying with growing delays
+1. Prepare the change first: **Signed in as** *Maya Lindqvist* → *OPP-10017* (Proseware Cable
+   Systems) → change **Est. revenue**, but don't save yet. The form keeps the unsaved change while
+   you switch screens.
+2. Cockpit → **Start 20 s throttling**.
+3. Back in Sales Hub, **Save** right away. The throttling lasts only 20 seconds, and a change saved
+   after it goes straight through.
+4. nimbus-ops shows the change failing with *429 Too Many Requests* and retrying with growing delays
    (about 5, 10 and 20 s). It completes by itself within about 40 seconds, on the first retry after
    the window, and Business Central's **CRM Opportunities** shows the new value. The circuit stays
    **Closed**: throttling is paced, not an outage.
@@ -327,6 +330,8 @@ Tour nimbus-ops:
   subscriptions first and pass `-NamespacePurged`.
 - **Circuit still Open after the window.** It closes on the next successful probe. Retries land
   about 30 s after the failures. Keep talking through 6b's "nothing is lost" point.
+- **6c's change reaches Business Central at once, with no 429.** It was saved after the 20 seconds
+  of throttling. Start the throttling again, change **Est. revenue** once more and save right away.
 
 ## Cheat sheet (seed data)
 

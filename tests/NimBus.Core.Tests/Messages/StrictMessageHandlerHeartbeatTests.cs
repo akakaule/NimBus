@@ -171,6 +171,23 @@ public class StrictMessageHandlerHeartbeatTests
     }
 
     [TestMethod]
+    public async Task HandleEventRequest_Heartbeat_ProcessorStopsAfterAnswering_StillCompletes()
+    {
+        // The receiver stops its processor when the endpoint circuit opens, cancelling the
+        // token of every in-flight delivery. An answered heartbeat is settled like any other
+        // delivery rather than redelivered and answered twice after the restart.
+        using var processorStop = new CancellationTokenSource();
+        var ctx = CreateHeartbeatContext();
+        var response = new CountingResponseService { AfterHeartbeat = processorStop.Cancel };
+        var sut = new StrictMessageHandler(new FakeEventContextHandler(), response, NullLogger.Instance);
+
+        await sut.Handle(ctx, processorStop.Token);
+
+        Assert.AreEqual(1, response.HeartbeatCalls);
+        Assert.AreEqual(1, ctx.CompletedCalls);
+    }
+
+    [TestMethod]
     public async Task HandleEventRequest_NonHeartbeatEvent_TakesTheNormalPath()
     {
         var ctx = CreateHeartbeatContext(eventTypeId: "OrderPlaced");
@@ -275,8 +292,9 @@ public class StrictMessageHandlerHeartbeatTests
         public int DuplicateCalls { get; private set; }
         public int DeferralCalls { get; private set; }
         public int SendToDeferredSubscriptionCalls { get; private set; }
+        public Action? AfterHeartbeat { get; set; }
 
-        public Task SendHeartbeatResolutionResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Add("response-heartbeat"); HeartbeatCalls++; return Task.CompletedTask; }
+        public Task SendHeartbeatResolutionResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Add("response-heartbeat"); HeartbeatCalls++; AfterHeartbeat?.Invoke(); return Task.CompletedTask; }
         public Task SendResolutionResponse(IMessageContext mc, CancellationToken ct = default) { ResolutionCalls++; return Task.CompletedTask; }
         public Task SendSkipResponse(IMessageContext mc, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendDuplicateResponse(IMessageContext mc, CancellationToken ct = default) { _trace?.Add("response-duplicate"); DuplicateCalls++; return Task.CompletedTask; }
@@ -330,7 +348,8 @@ public class StrictMessageHandlerHeartbeatTests
         public int BlockSessionCalls { get; private set; }
         public int UnblockSessionCalls { get; private set; }
 
-        public Task Complete(CancellationToken ct = default) { Trace?.Add("complete"); CompletedCalls++; return Task.CompletedTask; }
+        // Like the Service Bus SDK, a completion made with a cancelled token fails.
+        public Task Complete(CancellationToken ct = default) { ct.ThrowIfCancellationRequested(); Trace?.Add("complete"); CompletedCalls++; return Task.CompletedTask; }
         public Task Abandon(TransientException ex) { AbandonCalls++; return Task.CompletedTask; }
         public Task DeadLetter(string reason, Exception? ex = null, CancellationToken ct = default) { DeadLetterCalls++; return Task.CompletedTask; }
         public Task BlockSession(CancellationToken ct = default) { Trace?.Add("block"); BlockSessionCalls++; return Task.CompletedTask; }

@@ -30,8 +30,13 @@ internal sealed class InMemoryBus : ISender
 
     public int MessageCount => _messages.Count;
 
+    /// <summary>The fake session that deliveries for <paramref name="sessionId"/> use.</summary>
+    public FakeServiceBusSession GetSession(string sessionId) => GetOrCreateSession(sessionId);
+
+    // Like the Service Bus sender, a send made with a cancelled token fails without effect.
     public Task Send(IMessage message, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
             _allSentMessages.Add(message);
@@ -43,6 +48,7 @@ internal sealed class InMemoryBus : ISender
 
     public Task Send(IEnumerable<IMessage> messages, int messageEnqueueDelay = 0, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         foreach (var message in messages)
         {
             lock (_lock)
@@ -135,6 +141,7 @@ internal sealed class InMemoryBus : ISender
 
     public Task<long> ScheduleMessage(IMessage message, DateTimeOffset scheduledEnqueueTime, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var enqueueDelay = (int)Math.Ceiling((scheduledEnqueueTime - DateTimeOffset.UtcNow).TotalMinutes);
         lock (_lock)
         {

@@ -300,6 +300,24 @@ public sealed class InboxMiddlewareTests
     }
 
     [TestMethod]
+    public async Task Success_is_recorded_when_the_processor_stops_after_the_handler_returns()
+    {
+        // The receiver stops its processor when the endpoint circuit opens, which cancels the
+        // token of every in-flight delivery. A success the handler already produced must still
+        // be recorded, or the redelivery after the restart runs the handler a second time.
+        using var processorStop = new CancellationTokenSource();
+        var store = new RecordingInboxStore { TrackRecords = true };
+        var inner = new RecordingHandler { OnHandle = _ => processorStop.Cancel() };
+        var sut = new InboxMiddleware(inner, store);
+
+        await sut.Handle(
+            CreateContext("retry-message", messageType: MessageType.RetryRequest, inboxMessageId: "source-message"),
+            processorStop.Token);
+
+        CollectionAssert.AreEqual(SourceThenRetry, store.RecordedMessageIds);
+    }
+
+    [TestMethod]
     public async Task Inbox_metrics_use_only_bounded_operation_tags()
     {
         using var capture = new InboxMetricCapture();
@@ -610,6 +628,8 @@ public sealed class InboxMiddlewareTests
             string messageId,
             CancellationToken cancellationToken = default)
         {
+            // Like a real provider, a write made with a cancelled token fails without effect.
+            cancellationToken.ThrowIfCancellationRequested();
             RecordCalls++;
             LastRecordedEndpointId = endpointId;
             LastRecordedMessageId = messageId;

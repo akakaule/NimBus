@@ -91,12 +91,16 @@ sequenceDiagram
     Pub->>Ep: EventRequest
     Ep->>Sub: main sub
     Sub->>Sub: handle (THROWS)
-    Sub->>Sub: BlockSession()
     Sub->>Ep: ErrorResponse (To=Resolver)
     Ep->>Res: forwarded
     Res->>Svc: status = Failed
+    Sub->>Sub: BlockSession()
+    Sub->>Ep: Complete EventRequest
+    Sub->>Ep: RetryRequest (scheduled, if a policy matches)
     Note over Ep: Session state<br/>BlockedByEventId = event1
 ```
+
+The response, the block, the completion and the retry schedule run to the end even if the receiver stops its processor in the middle of them; see [Settlement and receiver shutdown](#settlement-and-receiver-shutdown).
 
 > See [`error-handling.md`](error-handling.md) for how exception types map to this vs. transient redelivery, immediate dead-letter, or unsupported.
 
@@ -117,6 +121,8 @@ sequenceDiagram
     Sub->>Ep: Deferred message (To=Deferred, DeferralSequence=0)
     Note over Ep: Parked on Deferred sub<br/>BlockedByEventId = event1<br/>DeferredCount = 1
 ```
+
+A delivery of the blocking event itself (`EventId` = `BlockedByEventId`) is not parked: it is the redelivery of a message whose earlier delivery blocked the session but was never completed, or a second copy of the event. It is completed without running the handler and without a response, and the block stays with the event; see [A delivery of the blocking event itself](deferred-messages.md#a-delivery-of-the-blocking-event-itself).
 
 ### 4. Resubmission → Unblock → Reprocess Deferred
 
@@ -397,6 +403,16 @@ The Resolver projects the `HandoffCompletedRequest` itself as a plain Pending ro
 The failure path is symmetrical: `IHandoffClient.FailAsync(coords, errorText, errorType)` (which the WebApp's `POST /api/event/handoff/fail/{endpointId}/{eventId}/{messageId}` also calls) issues a `HandoffFailedRequest`, the subscriber's `HandleHandoffFailedRequest` synthesises an `EventContextHandlerException` that wraps a `HandoffFailedException(errorText, errorType)`, sends an `ErrorResponse` to the Resolver (status flips Pending to Failed with `errorText` preserved verbatim), and leaves the session blocked. The operator chooses Resubmit or Skip from the WebApp — both follow today's existing flows.
 
 `MarkPendingHandoff` is idempotent — calling it twice from the same handler invocation overwrites the metadata (last call wins). If the handler calls it AND then throws, the failure path takes precedence: an `ErrorResponse` is sent and the PendingHandoff metadata is discarded.
+
+---
+
+## Settlement and receiver shutdown
+
+A delivery's settlement is everything that follows its outcome: the response to the Resolver, any session-state change (block, unblock, park), the broker completion, and a scheduled `RetryRequest` or `ProcessDeferredRequest`. `StrictMessageHandler` runs it to the end without observing the cancellation token it was handed. That token belongs to the receiver's processor, which cancels it when it stops: on host shutdown, and whenever the [endpoint circuit](circuit-breaker.md) opens. An opening circuit stops deliveries in every session, including sessions whose handlers are healthy. A settlement abandoned half-way leaves state that nothing repairs: an `ErrorResponse` sent and the session blocked, but the message neither completed nor its retry scheduled.
+
+Only the reads that choose a path — the [inbox](inbox-pattern.md) pre-check and the session guards — and the handler itself observe the token. A handler that honours it stops without an outcome, so nothing is settled and the message is redelivered when the receiver restarts. A handler that returned, or failed with anything other than that cancellation, has an outcome, and its delivery settles in full; the inbox records a success under the same rule. Each settlement call stays bounded by the transport's own operation timeout, and the Service Bus processor's `StopProcessingAsync` keeps its receivers open until the in-flight handlers have returned.
+
+A process crash or a lost session lock can still interrupt a settlement. When that happens after the session was blocked, the redelivery finds the session blocked by its own event and is completed without running again; see [A delivery of the blocking event itself](deferred-messages.md#a-delivery-of-the-blocking-event-itself).
 
 ---
 

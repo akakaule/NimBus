@@ -109,7 +109,12 @@ public sealed class InboxMiddleware : IEventContextHandler
         // delivered the event with. That one goes first: a failure between the two records
         // must not leave the stand-in's own MessageId recorded without it, or the broker's
         // redelivery of the stand-in would be skipped as a duplicate and never record it.
-        var standsInFor = await GetDeliveryStoodInForAsync(context, identity.Value.MessageId, cancellationToken);
+        //
+        // The handler has succeeded, so the records run to the end without observing the
+        // caller's token: it is the processor's, cancelled when the receiver stops (for example
+        // when the endpoint circuit opens), and an unrecorded success runs the handler again on
+        // redelivery. StrictMessageHandler settles the delivery the same way.
+        var standsInFor = await GetDeliveryStoodInForAsync(context, identity.Value.MessageId);
         try
         {
             if (standsInFor is not null)
@@ -117,17 +122,13 @@ public sealed class InboxMiddleware : IEventContextHandler
                 await _inboxStore.RecordProcessedAsync(
                     identity.Value.EndpointId,
                     standsInFor,
-                    cancellationToken);
+                    CancellationToken.None);
             }
 
             await _inboxStore.RecordProcessedAsync(
                 identity.Value.EndpointId,
                 identity.Value.MessageId,
-                cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
+                CancellationToken.None);
         }
         catch (Exception)
         {
@@ -142,8 +143,7 @@ public sealed class InboxMiddleware : IEventContextHandler
     // failure; the resubmission then records only its own MessageId, as before.
     private async Task<string?> GetDeliveryStoodInForAsync(
         IMessageContext context,
-        string messageId,
-        CancellationToken cancellationToken)
+        string messageId)
     {
         var carried = InboxDuplicateDetector.GetStandInMessageId(context, messageId);
         if (carried is not null || !IsResubmission(context))
@@ -151,19 +151,15 @@ public sealed class InboxMiddleware : IEventContextHandler
 
         try
         {
-            if (!await context.IsSessionBlockedByThis(cancellationToken))
+            if (!await context.IsSessionBlockedByThis(CancellationToken.None))
                 return null;
 
-            var blockedBy = await context.GetBlockedByMessageId(cancellationToken);
+            var blockedBy = await context.GetBlockedByMessageId(CancellationToken.None);
             return string.IsNullOrWhiteSpace(blockedBy)
                 || blockedBy.Length > MaximumMessageIdLength
                 || string.Equals(blockedBy, messageId, StringComparison.Ordinal)
                     ? null
                     : blockedBy;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
         }
         catch (Exception exception)
         {

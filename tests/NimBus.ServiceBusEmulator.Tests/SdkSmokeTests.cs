@@ -517,6 +517,77 @@ public sealed class SdkSmokeTests
     [TestMethod]
     [TestCategory("CommonFidelity")]
     [Timeout(60_000)]
+    public async Task Stock_sdk_in_flight_handler_settles_after_stop_cancels_its_token()
+    {
+        // NimBus stops the session processor when the endpoint circuit opens, which cancels the
+        // token of every in-flight handler, and StrictMessageHandler then finishes the
+        // delivery's settlement on a token of its own. That relies on StopProcessingAsync
+        // keeping the session receiver and its lock until in-flight handlers return.
+        await using var emulator = await EmulatorProcess.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entityName = $"stop-{Guid.NewGuid():N}";
+        var admin = new ServiceBusAdministrationClient(emulator.ConnectionString);
+        await admin.CreateTopicAsync(entityName, timeout.Token);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(entityName, "consumer") { RequiresSession = true },
+            timeout.Token);
+        await using var client = new ServiceBusClient(emulator.ConnectionString);
+        await client.CreateSender(entityName).SendMessageAsync(
+            new ServiceBusMessage("in-flight") { SessionId = "S" },
+            timeout.Token);
+
+        var processor = client.CreateSessionProcessor(
+            entityName,
+            "consumer",
+            new ServiceBusSessionProcessorOptions { AutoCompleteMessages = false, MaxConcurrentSessions = 1 });
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        processor.ProcessMessageAsync += async args =>
+        {
+            handlerStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, args.CancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // The stop cancelled the handler's token.
+            }
+
+            try
+            {
+                await args.SetSessionStateAsync(BinaryData.FromString("blocked"), CancellationToken.None);
+                await args.CompleteMessageAsync(args.Message, CancellationToken.None);
+                settled.TrySetResult();
+            }
+            catch (Exception exception)
+            {
+                settled.TrySetException(exception);
+            }
+        };
+        processor.ProcessErrorAsync += _ => Task.CompletedTask;
+
+        await processor.StartProcessingAsync(timeout.Token);
+        await handlerStarted.Task.WaitAsync(timeout.Token);
+        await processor.StopProcessingAsync(timeout.Token);
+        await settled.Task.WaitAsync(timeout.Token);
+        await processor.DisposeAsync();
+
+        await using var receiver = await client.AcceptSessionAsync(
+            entityName,
+            "consumer",
+            "S",
+            cancellationToken: timeout.Token);
+        Assert.AreEqual("blocked", (await receiver.GetSessionStateAsync(timeout.Token))?.ToString());
+        Assert.IsNull(
+            await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(2), timeout.Token),
+            "The message completed after the stop must not be redelivered.");
+        await admin.DeleteTopicAsync(entityName, timeout.Token);
+    }
+
+    [TestMethod]
+    [TestCategory("CommonFidelity")]
+    [Timeout(60_000)]
     public async Task Broker_assigns_a_message_id_when_the_sender_omits_it()
     {
         // NimBus's ResponseService.CreateResponse relies on the broker assigning the

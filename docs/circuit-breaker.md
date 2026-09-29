@@ -52,7 +52,7 @@ stateDiagram-v2
 ```
 
 - **Closed:** receivers use their configured `MaxConcurrentSessions`.
-- **Open:** receivers are stopped. In-flight handlers finish through normal processor shutdown; queued messages are not received or settled.
+- **Open:** receivers are stopped; queued messages are not received or settled. Stopping a processor cancels the token of every in-flight delivery, in every session. A handler that honours the token stops without settling and its message is redelivered after the restart. A delivery whose handler already returned or failed settles in full regardless: its response, session block, completion and any scheduled retry do not observe the cancellation (see [settlement and receiver shutdown](message-flows.md#settlement-and-receiver-shutdown)).
 - **HalfOpen:** receivers are recreated with `MaxConcurrentSessions = 1`. Real messages that reach a handler are the probes. Success restores configured concurrency; a counted failure starts a fresh break.
 
 When a process hosts multiple `AddNimBusReceiver(...)` registrations, every receiver observes the same endpoint breaker and pauses or resumes together.

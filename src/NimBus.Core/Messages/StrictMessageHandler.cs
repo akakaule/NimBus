@@ -12,6 +12,18 @@ namespace NimBus.Core.Messages;
 
 public class StrictMessageHandler : MessageHandler
 {
+    // Once a delivery's outcome is decided, its settlement runs to the end on this token
+    // instead of the caller's: every response, session-state change, park, completion and
+    // retry schedule, and the reads between them. The caller's token is the processor's, and
+    // the receiver cancels it by stopping the processor, for example when the endpoint circuit
+    // opens because of failures in other sessions. A sequence abandoned half-way leaves state
+    // that nothing repairs: an ErrorResponse sent and the session blocked, but the message
+    // neither completed nor its retry scheduled. Only the reads that choose a path (the inbox
+    // pre-check and the session guards) and the handler itself observe the caller's token, so
+    // a stop that arrives before the outcome is decided still leaves the delivery unsettled
+    // for redelivery. Each settlement call stays bounded by the transport's own timeout.
+    private static CancellationToken SettlementToken => CancellationToken.None;
+
     private readonly IEventContextHandler _eventContextHandler;
     private readonly IResponseService _responseService;
     private readonly IRetryPolicyProvider? _retryPolicyProvider;
@@ -69,8 +81,8 @@ public class StrictMessageHandler : MessageHandler
             // carries a fresh id and consuming inbox rows for them is pure waste.
             if (IsHeartbeat(messageContext))
             {
-                await _responseService.SendHeartbeatResolutionResponse(messageContext, cancellationToken);
-                await CompleteMessage(messageContext, cancellationToken);
+                await _responseService.SendHeartbeatResolutionResponse(messageContext, SettlementToken);
+                await CompleteMessage(messageContext);
                 LogInfo(messageContext, "Successfully processed (Heartbeat)");
                 return;
             }
@@ -80,21 +92,32 @@ public class StrictMessageHandler : MessageHandler
             // duplicate skip, not defer behind the blocker.
             if (await IsInboxDuplicate(messageContext, cancellationToken))
             {
-                await SendDuplicateResponseAndComplete(messageContext, "DuplicateDetected", cancellationToken);
+                await SendDuplicateResponseAndComplete(messageContext, "DuplicateDetected");
                 return;
             }
 
-            await VerifySessionIsNotBlocked(messageContext, cancellationToken);
+            // Session guard: an event defers behind the event that blocks its session, except
+            // a delivery of the blocking event itself.
+            var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
+            if (IsThisEvent(messageContext, blockedBy))
+            {
+                await CompleteRedeliveryOfBlockingEvent(messageContext);
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(blockedBy))
+                throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
+
             var discardedFailure = await HandleEventContent(messageContext, cancellationToken);
             if (discardedFailure is not null)
             {
-                await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                await DiscardMessage(messageContext, discardedFailure);
                 return;
             }
 
             if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
             {
-                await SendDuplicateResponseAndComplete(messageContext, "DuplicateDetected", cancellationToken);
+                await SendDuplicateResponseAndComplete(messageContext, "DuplicateDetected");
                 return;
             }
 
@@ -105,35 +128,35 @@ public class StrictMessageHandler : MessageHandler
             // execution never reaches here — the catch branches below own it.
             if (messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
             {
-                await ParkPendingHandoff(messageContext, requestName: null, cancellationToken);
+                await ParkPendingHandoff(messageContext, requestName: null);
                 return;
             }
 
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendResolutionResponse(messageContext);
+            await CompleteMessage(messageContext);
             LogInfo(messageContext, "Successfully processed");
         }
         catch (EventHandlerNotFoundException exception)
         {
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogError(messageContext, "Failed to handle event", exception);
-            await SendUnsupportedResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendUnsupportedResponse(messageContext);
+            await CompleteMessage(messageContext);
         }
         catch (SessionBlockedException exception)
         {
             LogError(messageContext, "Failed to handle event", exception);
-            await SendDeferralResponse(messageContext, exception, cancellationToken);
-            await DeferMessageToSubscription(messageContext, cancellationToken);
+            await SendDeferralResponse(messageContext, exception);
+            await DeferMessageToSubscription(messageContext);
             throw;
         }
         catch (EventContextHandlerException exception)
         {
             LogError(messageContext, "Failed to handle event", exception);
-            await SendErrorResponse(messageContext, exception, cancellationToken);
-            await BlockSession(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
-            await CheckForRetry(messageContext, exception, cancellationToken);
+            await SendErrorResponse(messageContext, exception);
+            await BlockSession(messageContext);
+            await CompleteMessage(messageContext);
+            await CheckForRetry(messageContext, exception);
             throw;
         }
     }
@@ -158,15 +181,15 @@ public class StrictMessageHandler : MessageHandler
             {
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
                 {
-                    await UnblockSession(messageContext, cancellationToken);
-                    await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                    await UnblockSession(messageContext);
+                    await ContinueWithAnyDeferredMessages(messageContext);
                 }
                 else if (string.IsNullOrEmpty(await messageContext.GetBlockedByEventId(cancellationToken)))
                 {
-                    await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                    await ContinueWithAnyDeferredMessages(messageContext);
                 }
 
-                await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected", cancellationToken);
+                await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected");
                 return;
             }
 
@@ -177,24 +200,24 @@ public class StrictMessageHandler : MessageHandler
             // and send a ResolutionResponse, falsely completing the handoff.
             if (discardedFailure is null && messageContext.HandlerOutcome == HandlerOutcome.PendingHandoff)
             {
-                await ParkPendingHandoff(messageContext, "RetryRequest", cancellationToken);
+                await ParkPendingHandoff(messageContext, "RetryRequest");
                 return;
             }
 
-            await UnblockSession(messageContext, cancellationToken);
-            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+            await UnblockSession(messageContext);
+            await ContinueWithAnyDeferredMessages(messageContext);
             if (discardedFailure is not null)
             {
-                await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                await DiscardMessage(messageContext, discardedFailure);
                 return;
             }
             if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
             {
-                await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected", cancellationToken);
+                await SendDuplicateResponseAndComplete(messageContext, "RetryRequest DuplicateDetected");
                 return;
             }
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendResolutionResponse(messageContext);
+            await CompleteMessage(messageContext);
             LogInfo(messageContext, "Successfully processed (RetryRequest)");
         }
         catch (SessionBlockedException exception)
@@ -203,15 +226,15 @@ public class StrictMessageHandler : MessageHandler
             // the retry is answered as resolved without running the handler.
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendResolutionResponse(messageContext);
+            await CompleteMessage(messageContext);
         }
         catch (EventContextHandlerException exception)
         {
             LogError(messageContext, "Failed to handle event (RetryRequest)", exception);
-            await SendErrorResponse(messageContext, exception, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
-            await CheckForRetry(messageContext, exception, cancellationToken);
+            await SendErrorResponse(messageContext, exception);
+            await CompleteMessage(messageContext);
+            await CheckForRetry(messageContext, exception);
             // Settled here rather than rethrown: report the failure through the context so
             // pipeline behaviors (the circuit breaker recorder) do not see a success.
             messageContext.HandledFailure = exception;
@@ -232,9 +255,9 @@ public class StrictMessageHandler : MessageHandler
             if (await IsInboxDuplicate(messageContext, cancellationToken))
             {
                 if (await messageContext.IsSessionBlockedByThis(cancellationToken))
-                    await UnblockSession(messageContext, cancellationToken);
-                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
-                await SendDuplicateResponseAndComplete(messageContext, "Resubmission DuplicateDetected", cancellationToken);
+                    await UnblockSession(messageContext);
+                await ContinueWithAnyDeferredMessages(messageContext);
+                await SendDuplicateResponseAndComplete(messageContext, "Resubmission DuplicateDetected");
                 return;
             }
 
@@ -252,49 +275,49 @@ public class StrictMessageHandler : MessageHandler
                 // work is genuinely in flight — but leave the block alone; A's
                 // eventual settlement resolves through the misaddressed-settlement
                 // catches in HandleHandoffCompleted/FailedRequest.
-                var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
+                var blockedBy = await messageContext.GetBlockedByEventId(SettlementToken);
                 if (!string.IsNullOrEmpty(blockedBy)
                     && !blockedBy.Equals(messageContext.EventId, StringComparison.OrdinalIgnoreCase))
                 {
-                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
-                    await CompleteMessage(messageContext, cancellationToken);
+                    await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, SettlementToken);
+                    await CompleteMessage(messageContext);
                     LogInfo(messageContext, $"Successfully processed (Resubmission, PendingHandoff) — session owned by event '{blockedBy}', block left intact");
                     return;
                 }
 
-                await ParkPendingHandoff(messageContext, "Resubmission", cancellationToken);
+                await ParkPendingHandoff(messageContext, "Resubmission");
                 return;
             }
 
-            if (await messageContext.IsSessionBlockedByThis(cancellationToken))
-                await UnblockSession(messageContext, cancellationToken);
-            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+            if (await messageContext.IsSessionBlockedByThis(SettlementToken))
+                await UnblockSession(messageContext);
+            await ContinueWithAnyDeferredMessages(messageContext);
             if (discardedFailure is not null)
             {
-                await DiscardMessage(messageContext, discardedFailure, cancellationToken);
+                await DiscardMessage(messageContext, discardedFailure);
                 return;
             }
             if (messageContext.HandlerOutcome == HandlerOutcome.DuplicateDetected)
             {
-                await SendDuplicateResponseAndComplete(messageContext, "Resubmission DuplicateDetected", cancellationToken);
+                await SendDuplicateResponseAndComplete(messageContext, "Resubmission DuplicateDetected");
                 return;
             }
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendResolutionResponse(messageContext);
+            await CompleteMessage(messageContext);
             LogInfo(messageContext, "Successfully processed (Resubmission)");
         }
         catch (EventHandlerNotFoundException exception)
         {
             messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
             LogError(messageContext, "Failed to handle event (Resubmission)", exception);
-            await SendUnsupportedResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendUnsupportedResponse(messageContext);
+            await CompleteMessage(messageContext);
         }
         catch (EventContextHandlerException exception)
         {
             LogError(messageContext, "Failed to handle event (Resubmission)", exception);
-            await SendErrorResponse(messageContext, exception, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendErrorResponse(messageContext, exception);
+            await CompleteMessage(messageContext);
             // Settled rather than rethrown, as in HandleRetryRequest.
             messageContext.HandledFailure = exception;
         }
@@ -308,15 +331,15 @@ public class StrictMessageHandler : MessageHandler
             LogInfo(messageContext, "Handle (Skip)");
             AuthorizeManagerRequest(messageContext);
             await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
-            await UnblockSession(messageContext, cancellationToken);
-            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
-            await SendSkipResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await UnblockSession(messageContext);
+            await ContinueWithAnyDeferredMessages(messageContext);
+            await SendSkipResponse(messageContext);
+            await CompleteMessage(messageContext);
         }
         catch (SessionBlockedException)
         {
-            await SendSkipResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendSkipResponse(messageContext);
+            await CompleteMessage(messageContext);
         }
 
         LogInfo(messageContext, "Successfully processed (Skip)");
@@ -330,12 +353,12 @@ public class StrictMessageHandler : MessageHandler
             LogInfo(messageContext, "Handle (HandoffCompleted)");
             AuthorizeManagerRequest(messageContext);
             await VerifySessionIsBlockedByThis(messageContext, cancellationToken);
-            await UnblockSession(messageContext, cancellationToken);
-            await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+            await UnblockSession(messageContext);
+            await ContinueWithAnyDeferredMessages(messageContext);
             // Existing ResolutionResponse path flips Pending → Completed on the
             // original audit row. The user handler is intentionally NOT invoked.
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendResolutionResponse(messageContext);
+            await CompleteMessage(messageContext);
             LogInfo(messageContext, "Successfully processed (HandoffCompleted)");
         }
         catch (SessionBlockedException exception)
@@ -352,10 +375,10 @@ public class StrictMessageHandler : MessageHandler
             // but never resume work behind a newer event's block.
             if (string.IsNullOrEmpty(exception.BlockedByEventId))
             {
-                await ContinueWithAnyDeferredMessages(messageContext, cancellationToken);
+                await ContinueWithAnyDeferredMessages(messageContext);
             }
-            await SendResolutionResponse(messageContext, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendResolutionResponse(messageContext);
+            await CompleteMessage(messageContext);
         }
     }
 
@@ -372,8 +395,8 @@ public class StrictMessageHandler : MessageHandler
             // operator-supplied error text preserved verbatim. Session stays
             // blocked — the operator decides Resubmit / Skip from the WebApp.
             var handoffError = BuildHandoffError(messageContext);
-            await SendErrorResponse(messageContext, handoffError, cancellationToken);
-            await CompleteMessage(messageContext, cancellationToken);
+            await SendErrorResponse(messageContext, handoffError);
+            await CompleteMessage(messageContext);
             LogInfo(messageContext, "Successfully processed (HandoffFailed)");
         }
         catch (SessionBlockedException exception)
@@ -385,7 +408,7 @@ public class StrictMessageHandler : MessageHandler
             // metadata and Complete so the failure is surfaced where an operator
             // looks instead of silently dead-lettering via the base handler.
             LogError(messageContext, "HandoffFailed settlement does not match a blocked session — no matching event to fail", exception);
-            await CompleteMessage(messageContext, cancellationToken);
+            await CompleteMessage(messageContext);
         }
     }
 
@@ -402,15 +425,15 @@ public class StrictMessageHandler : MessageHandler
             messageContext.GetEventIdOrDefault(),
             messageContext.GetMessageIdOrDefault(),
             messageContext.GetSessionIdOrDefault());
-        await CompleteMessage(messageContext, cancellationToken);
+        await CompleteMessage(messageContext);
     }
 
     // HandleProcessDeferredRequest is intentionally NOT overridden here.
     // Deferred message processing is handled by a separate DeferredProcessorFunction
     // in each subscriber app, not by the core message handler.
 
-    private Task CompleteMessage(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-        messageContext.Complete(cancellationToken);
+    private static Task CompleteMessage(IMessageContext messageContext) =>
+        messageContext.Complete(SettlementToken);
 
     // The user property is authoritative; the deserialized body is the fallback for
     // senders that only stamp the event type inside the content.
@@ -430,14 +453,37 @@ public class StrictMessageHandler : MessageHandler
         return await _inboxDuplicateDetector.IsDuplicateAsync(messageContext, cancellationToken);
     }
 
-    private async Task SendDuplicateResponseAndComplete(
-        IMessageContext messageContext,
-        string logSuffix,
-        CancellationToken cancellationToken)
+    private async Task SendDuplicateResponseAndComplete(IMessageContext messageContext, string logSuffix)
     {
-        await _responseService.SendDuplicateResponse(messageContext, cancellationToken);
-        await CompleteMessage(messageContext, cancellationToken);
+        await _responseService.SendDuplicateResponse(messageContext, SettlementToken);
+        await CompleteMessage(messageContext);
         LogInfo(messageContext, $"Successfully processed ({logSuffix})");
+    }
+
+    private static bool IsThisEvent(IMessageContext messageContext, string? blockedByEventId) =>
+        !string.IsNullOrEmpty(blockedByEventId)
+        && blockedByEventId.Equals(messageContext.GetEventIdOrDefault(), StringComparison.OrdinalIgnoreCase);
+
+    // The session is blocked by this very event: an earlier delivery of it sent its
+    // ErrorResponse or PendingHandoffResponse and blocked the session, but was never completed
+    // (the process stopped or the session lock was lost), or a second copy of the event
+    // arrived. The outcome is recorded and the block keeps its own way out (an operator's
+    // resubmit or skip, the Manager's handoff settlement), so the delivery is completed without
+    // a response: a duplicate response would be recorded as Skipped over the Failed or pending
+    // outcome. The handler is not run again, because session state cannot tell a failure's
+    // block from a handoff's and rerunning a handoff repeats its external job. Nor is the
+    // delivery parked like other blocked events: the drain after the block clears would replay
+    // it and run the event a second time, even after an operator skipped it.
+    private async Task CompleteRedeliveryOfBlockingEvent(IMessageContext messageContext)
+    {
+        messageContext.HandlerOutcome = HandlerOutcome.NotDispatched;
+        _logger.LogWarning(
+            "Completing a delivery of the event that blocks its session without running it again; the event's outcome is already recorded. EventTypeId:{EventTypeId}, EventId:{EventId}, MessageId:{MessageId}, SessionId:{SessionId}",
+            messageContext.EventTypeId,
+            messageContext.GetEventIdOrDefault(),
+            messageContext.GetMessageIdOrDefault(),
+            messageContext.GetSessionIdOrDefault());
+        await CompleteMessage(messageContext);
     }
 
     // Shared parking sequence for a handler that signalled MarkPendingHandoff:
@@ -447,50 +493,47 @@ public class StrictMessageHandler : MessageHandler
     // Used by the EventRequest, RetryRequest and ResubmissionRequest paths —
     // the latter two must NOT fall through to SendResolutionResponse, which
     // would falsely flip the event to Completed.
-    private async Task ParkPendingHandoff(IMessageContext messageContext, string? requestName, CancellationToken cancellationToken)
+    private async Task ParkPendingHandoff(IMessageContext messageContext, string? requestName)
     {
-        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, cancellationToken);
-        await BlockSession(messageContext, cancellationToken);
-        await CompleteMessage(messageContext, cancellationToken);
+        await _responseService.SendPendingHandoffResponse(messageContext, messageContext.HandoffMetadata, SettlementToken);
+        await BlockSession(messageContext);
+        await CompleteMessage(messageContext);
         LogInfo(messageContext, requestName == null
             ? "Successfully processed (PendingHandoff)"
             : $"Successfully processed ({requestName}, PendingHandoff)");
     }
 
-    private async Task DeferMessageToSubscription(IMessageContext messageContext, CancellationToken cancellationToken = default)
+    private async Task DeferMessageToSubscription(IMessageContext messageContext)
     {
-        int deferralSequence = await messageContext.GetNextDeferralSequenceAndIncrement(cancellationToken);
-        await _responseService.SendToDeferredSubscription(messageContext, deferralSequence, cancellationToken);
-        await messageContext.IncrementDeferredCount(cancellationToken);
-        await messageContext.Complete(cancellationToken);
+        int deferralSequence = await messageContext.GetNextDeferralSequenceAndIncrement(SettlementToken);
+        await _responseService.SendToDeferredSubscription(messageContext, deferralSequence, SettlementToken);
+        await messageContext.IncrementDeferredCount(SettlementToken);
+        await CompleteMessage(messageContext);
     }
 
-    private Task SendResolutionResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-        _responseService.SendResolutionResponse(messageContext, cancellationToken);
+    private Task SendResolutionResponse(IMessageContext messageContext) =>
+        _responseService.SendResolutionResponse(messageContext, SettlementToken);
 
-    private Task SendSkipResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-        _responseService.SendSkipResponse(messageContext, cancellationToken);
+    private Task SendSkipResponse(IMessageContext messageContext) =>
+        _responseService.SendSkipResponse(messageContext, SettlementToken);
 
-    private Task SendErrorResponse(IMessageContext messageContext, EventContextHandlerException exception, CancellationToken cancellationToken = default) =>
-        _responseService.SendErrorResponse(messageContext, exception, cancellationToken);
+    private Task SendErrorResponse(IMessageContext messageContext, EventContextHandlerException exception) =>
+        _responseService.SendErrorResponse(messageContext, exception, SettlementToken);
 
-    private Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception, CancellationToken cancellationToken = default) =>
-        _responseService.SendDeferralResponse(messageContext, exception, cancellationToken);
+    private Task SendDeferralResponse(IMessageContext messageContext, SessionBlockedException exception) =>
+        _responseService.SendDeferralResponse(messageContext, exception, SettlementToken);
 
-    private Task BlockSession(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-        messageContext.BlockSession(cancellationToken);
+    private static Task BlockSession(IMessageContext messageContext) =>
+        messageContext.BlockSession(SettlementToken);
 
-    private Task UnblockSession(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-        messageContext.UnblockSession(cancellationToken);
+    private static Task UnblockSession(IMessageContext messageContext) =>
+        messageContext.UnblockSession(SettlementToken);
 
-    private Task SendRetryResponse(IMessageContext messageContext, int messageDelayMinutes, CancellationToken cancellationToken = default) =>
-        _responseService.SendRetryResponse(messageContext, messageDelayMinutes, cancellationToken);
+    private Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay) =>
+        _responseService.SendRetryResponse(messageContext, messageDelay, SettlementToken);
 
-    private Task SendRetryResponse(IMessageContext messageContext, TimeSpan messageDelay, CancellationToken cancellationToken = default) =>
-        _responseService.SendRetryResponse(messageContext, messageDelay, cancellationToken);
-
-    private Task SendUnsupportedResponse(IMessageContext messageContext, CancellationToken cancellationToken = default) =>
-        _responseService.SendUnsupportedResponse(messageContext, cancellationToken);
+    private Task SendUnsupportedResponse(IMessageContext messageContext) =>
+        _responseService.SendUnsupportedResponse(messageContext, SettlementToken);
 
     private void AuthorizeManagerRequest(IMessageContext messageContext)
     {
@@ -505,13 +548,6 @@ public class StrictMessageHandler : MessageHandler
             var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
             throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
         }
-    }
-
-    private async Task VerifySessionIsNotBlocked(IMessageContext messageContext, CancellationToken cancellationToken = default)
-    {
-        var blockedBy = await messageContext.GetBlockedByEventId(cancellationToken);
-        if (!string.IsNullOrEmpty(blockedBy))
-            throw new SessionBlockedException($"Session {messageContext.SessionId} is blocked by {blockedBy}", blockedBy);
     }
 
     private async Task<DiscardedFailure?> HandleEventContent(IMessageContext context, CancellationToken cancellationToken = default)
@@ -576,10 +612,7 @@ public class StrictMessageHandler : MessageHandler
         }
     }
 
-    private async Task DiscardMessage(
-        IMessageContext messageContext,
-        DiscardedFailure discardedFailure,
-        CancellationToken cancellationToken)
+    private async Task DiscardMessage(IMessageContext messageContext, DiscardedFailure discardedFailure)
     {
         _logger.LogWarning(
             discardedFailure.Exception,
@@ -593,24 +626,24 @@ public class StrictMessageHandler : MessageHandler
             messageContext,
             discardedFailure.Exception,
             discardedFailure.ClassifierName,
-            cancellationToken);
-        await CompleteMessage(messageContext, cancellationToken);
+            SettlementToken);
+        await CompleteMessage(messageContext);
         // Settled rather than rethrown, as in HandleRetryRequest. The circuit breaker does not
         // count it: only the retry disposition does.
         messageContext.HandledFailure = discardedFailure.Exception;
     }
 
-    private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext, CancellationToken cancellationToken = default)
+    private async Task ContinueWithAnyDeferredMessages(IMessageContext messageContext)
     {
-        var deferredCount = await messageContext.GetDeferredCount(cancellationToken);
+        var deferredCount = await messageContext.GetDeferredCount(SettlementToken);
         if (deferredCount > 0)
         {
-            await _responseService.SendProcessDeferredRequest(messageContext, cancellationToken);
+            await _responseService.SendProcessDeferredRequest(messageContext, SettlementToken);
             LogInfo(messageContext, $"Send ProcessDeferredRequest ({deferredCount} deferred messages)");
         }
     }
 
-    private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception, CancellationToken cancellationToken = default)
+    private async Task CheckForRetry(IMessageContext messageContext, EventContextHandlerException exception)
     {
         // No registered IRetryPolicyProvider means no retry — the failure
         // surfaces as an error response. (The legacy RetryDefinitions
@@ -629,7 +662,7 @@ public class StrictMessageHandler : MessageHandler
         if (policy != null && retryCount < policy.MaxRetries)
         {
             var delay = policy.GetDelay(retryCount);
-            await SendRetryResponse(messageContext, delay, cancellationToken);
+            await SendRetryResponse(messageContext, delay);
         }
     }
 

@@ -104,6 +104,7 @@ The inbox deduplicates redeliveries whose first processing attempt reached the i
 - The handler's database transaction and the inbox write are separate. If handler side effects commit and the process or inbox write fails before the record is durable, redelivery invokes the handler again.
 - Two genuinely concurrent first deliveries can both pass the check before either records the ID. Both handlers can run; the provider's record operation is idempotent so both successful writes do not fail.
 - A crash after the inbox record but before broker settlement causes a redelivery, but that delivery is recognized and skipped.
+- A receiver stop after the handler returns (host shutdown, or the [endpoint circuit](circuit-breaker.md) opening) interrupts neither the record nor the settlement: both run to the end without observing the processor's cancellation (see [Settlement and receiver shutdown](message-flows.md#settlement-and-receiver-shutdown)).
 
 Process-manager transitions must therefore remain idempotent. Derive outgoing message IDs deterministically from stable workflow identity, logical transition, and workflow version or attempt, and make application-side state transitions safe to retry. Do not use the inbox as a substitute for a transaction in the handler's own data store.
 

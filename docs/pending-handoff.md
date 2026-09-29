@@ -165,6 +165,17 @@ Calling it multiple times is idempotent — the last call wins. You can
 also do business logic before the call; only the values at handler-return
 time are read.
 
+Once the handler has returned, the runtime finishes the park (response,
+session block, completion) even if the receiver stops meanwhile, for
+example because the endpoint circuit opened. If the process dies or loses
+the session lock after the block is written but before the completion,
+the broker redelivers the message; the redelivery finds the session
+blocked by its own event and is completed without calling the handler
+again, so the external job is not registered twice (see
+[A delivery of the blocking event itself](deferred-messages.md#a-delivery-of-the-blocking-event-itself)).
+A crash before the block is written still runs the handler again, so
+registering the external work should stay idempotent.
+
 ## Settlement side — completing or failing the work
 
 The external system (or a worker that watches it) tells NimBus how the

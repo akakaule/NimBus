@@ -137,12 +137,17 @@ When `HandleEventContent()` throws a non-transient exception in `StrictMessageHa
 1. An `ErrorResponse` is sent to the Resolver (records event as **Failed**)
 2. `BlockSession()` sets `BlockedByEventId` to this event's ID in session state
 3. The message is completed (removed from the queue)
+4. `CheckForRetry()` schedules a `RetryRequest` when a retry policy matches
+
+These steps, like the deferral steps below, run to the end even when the receiver stops
+its processor in the middle of them, for example because the endpoint circuit opened; see
+[Settlement and receiver shutdown](message-flows.md#settlement-and-receiver-shutdown).
 
 ### 2. Subsequent Messages Are Deferred
 
 When the next message arrives for the blocked session:
 
-1. `VerifySessionIsNotBlocked()` checks `BlockedByEventId`
+1. The session guard reads `BlockedByEventId`
 2. `SessionBlockedException` is thrown
 3. A `DeferralResponse` is sent to the Resolver (records event as **Deferred**)
 4. `DeferMessageToSubscription()`:
@@ -150,6 +155,29 @@ When the next message arrives for the blocked session:
    - Sends message to the **"Deferred"** subscription via `SendToDeferredSubscription()`
    - Increments `DeferredCount` in session state
    - Completes the original message
+
+#### A delivery of the blocking event itself
+
+A message whose own `EventId` blocks the session is not deferred. It gets there in one of
+two ways: an earlier delivery of it sent its `ErrorResponse` or `PendingHandoffResponse` and
+blocked the session, then the process stopped or lost the session lock before completing
+the message, so the broker redelivered it; or a second copy of the event arrived, such as a
+second parked copy that the drain replays after the first one blocked the session again. The
+subscriber completes it **without running the handler and without a response**, logs a
+warning, and leaves the block and the event's recorded outcome as they are:
+
+- **Not parked.** A copy parked behind its own block would be replayed by the drain that
+  follows the block's resolution, running the event a second time, even after an operator
+  skipped it.
+- **Not run again.** Session state does not record whether the block is a failure's or a
+  pending handoff's, and running a handed-off handler again would repeat its external job.
+- **No response.** The Resolver already holds the event's outcome. A duplicate response is
+  recorded as Skipped and would overwrite a Failed or pending row.
+
+The event then resolves the usual way: an operator resubmits or skips a failure, and the
+Manager's settlement completes or fails a handoff. When the lost completion belonged to a
+failure, its automatic retry is lost with it, because `CheckForRetry()` runs after the
+completion; the event waits for an operator like a failure without a matching retry policy.
 
 ### 3. The Session Unblocks
 
@@ -249,6 +277,8 @@ The deferred message flow is covered by dedicated tests:
 | Deferring to subscription | `HandleEventRequest_WhenSessionIsBlocked_SendsToDeferredSubscription` |
 | Deferral sequencing | `HandleEventRequest_WhenSessionBlocked_GetsDeferralSequence` |
 | Deferred count tracking | `HandleEventRequest_WhenSessionBlocked_IncrementsDeferredCount` |
+| Delivery of the blocking event itself | `HandleEventRequest_SessionBlockedByItsOwnEvent_CompletesWithoutRunningOrParking`, `Redelivery_into_a_session_blocked_by_its_own_event_is_completed_without_running_again` |
+| Settlement when the receiver stops | `HandleEventRequest_SessionBlocked_ProcessorStopsWhileParking_StillParksAndCompletes`, `Failed_event_is_completed_and_retried_when_the_circuit_opens_after_its_session_is_blocked` |
 | Unblocking | `HandleSkipRequest_WhenSessionIsBlockedByThis_UnblocksSession` |
 | Legacy continuation | `HandleContinuationRequest_CompletesLegacyRequestWithoutProcessing` |
 | Deferred drain | `ProcessDeferredMessagesAsync_PartialBatches_DrainsRemainingMessages` |

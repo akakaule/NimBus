@@ -16,6 +16,15 @@ off the screen.
 
 ## Before the meeting (15 minutes)
 
+**Short path:** from the repo root, run `./samples/DynamicsBcDemo/Reset-Demo.ps1 -Open` (PowerShell 7).
+
+- It restarts the stack on go-live morning, runs the warm-up (step 2), switches on the heartbeat
+  schedule (step 3) and opens the tabs (steps 4 and 5).
+- It takes about two minutes, or less with `-NoBuild` when nothing changed.
+- Then only step 6 is left.
+
+The long path:
+
 1. **Start the stack about 10 minutes early.** From the repo root, run
    `aspire run --apphost samples/DynamicsBcDemo/DynamicsBcDemo.AppHost/DynamicsBcDemo.AppHost.csproj`.
    Wait until every resource in the Aspire dashboard (https://localhost:17180) is healthy and
@@ -314,8 +323,9 @@ Tour nimbus-ops:
   web clients poll every few seconds; refresh the page.
 - **The initial sync seems to do nothing.** Check nimbus-ops → **Endpoints** →
   **D365SalesEndpoint**. Running it again is safe.
-- **Leftovers from a rehearsal** (a failed message, an open circuit). Restart the AppHost: it resets
-  everything in about 2 minutes. With a real namespace, purge the demo subscriptions first.
+- **Leftovers from a rehearsal** (a failed message, an open circuit). Run `Reset-Demo.ps1`: it resets
+  everything and redoes the prep in about 2 minutes. With a real namespace, purge the demo
+  subscriptions first and pass `-NamespacePurged`.
 - **6d processes the repeat instead of skipping it.** Redeliver a change that went through on its
   first attempt: one that only succeeded after a retry or a resubmit (such as the throttled change in
   6c) is handled again. That is why 6d starts with a fresh change.

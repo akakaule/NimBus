@@ -190,6 +190,24 @@ state in memory. Every run starts on go-live morning: CRM holds leads, one prosp
 account, but none of BC's customers yet. No blocked sessions or scheduled retries are left over from
 a rehearsal.
 
+To reset and get ready to present in one go (about two minutes), run:
+
+```powershell
+# from the repository root (PowerShell 7)
+./samples/DynamicsBcDemo/Reset-Demo.ps1
+```
+
+It restarts the AppHost and then does the talk track's prep:
+
+- runs the warm-up on the throwaway *Wingtip Marine (warm-up)* records;
+- switches on the nimbus-ops heartbeat schedule.
+
+Its switches:
+
+- `-NoBuild` skips the build when nothing changed.
+- `-Open` opens the presenter's pages in your browser.
+- `-RestartOnly` skips the prep.
+
 ### Using a real Service Bus namespace
 
 For client-facing runs, a real namespace (Standard tier) is the more robust choice:
@@ -201,7 +219,8 @@ NIMBUS_SB_EMULATOR=false aspire run --apphost samples/DynamicsBcDemo/DynamicsBcD
 
 A real namespace keeps broker state between runs. Use a namespace of its own, or purge the demo's
 subscriptions in nimbus-ops (Admin → Subscriptions) before presenting, because the seed ids are
-fixed.
+fixed. `Reset-Demo.ps1` refuses to run against a real namespace until you confirm that with
+`-NamespacePurged`.
 
 ## Demo controls
 
@@ -259,6 +278,7 @@ samples/DynamicsBcDemo/
   BusinessCentral.Adapter/     worker: prospects, opportunities, credit checks, resilience
   BusinessCentral.Web/         BC look-alike + /demo cockpit + /demo/alerts (React, Fluent UI)
   docs/talk-track.md           the presenter's script
+  Reset-Demo.ps1               restarts the demo on go-live morning and does the presenter's prep
 tests/DynamicsBcDemo.Tests/    catalog, BC rules, adapter resilience, CRM ownership, change publishing, mirroring
 ```
 

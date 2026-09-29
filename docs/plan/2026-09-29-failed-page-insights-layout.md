@@ -1,6 +1,45 @@
 # Failed page: Application Insights layout and transaction details panel
 
-Status: proposed (2026-09-29).
+Status: implemented (2026-09-29) on branch `claude/failed-page-insights-mockup-7c76e8`.
+
+## Implementation notes
+
+What shipped differs from the plan below in these places:
+
+- **One branch, five commits.** The three PRs landed as three `feat(webapp)` commits, then two
+  follow-up fixes from a live run against the local Aspire stack.
+- **Brush.** The recharts `Brush` sits in its own small chart under the main one, with a
+  panorama of the totals. A `Brush` inside the main chart would zoom it, and the chart must keep
+  the whole range. Drag steps settle for 350 ms before the list reloads.
+- **Filter pills.** Endpoint and event-type picks apply at once, because the combobox's options
+  list covered the popover's Apply button. Only From and To get removable pills. The search box
+  shows the ID and error-text fields as its own text (`session:s1 503`), so it needs no echo
+  line.
+- **Reloads.** A pill, legend tile or brush change reloads through the URL only. The search box
+  bumps `refresh` only when the query is unchanged. Doing both made the list load twice.
+- **Tabs.** The list tab is named *Failures*, not *Individual items*, because *View as* already
+  uses that name for items versus table.
+- **Table view.** Rows still navigate to Event Details. `DataTable` has no row-click hook, so
+  only the item view opens the panel.
+- **Flow colours.** The gantt has its own hex `FLOW_COLORS` in `functions/flow-gantt.functions.ts`.
+  `MESSAGE_COLORS` in `flow-timeline.tsx` holds Tailwind classes, not colours, so it was not
+  moved. Read audits (`get…`, `search…`) are left out of the flow.
+- **Side panel.** It focuses the dialog itself rather than its first control. The Tab trap
+  cycles through every focusable control.
+
+Verification (2026-09-29):
+
+- `npm run test:ci`: 71 files, 527 tests pass. `npm run lint`: 0 errors; the 14 warnings are
+  pre-existing, none in changed files. `npm run build` passes.
+- `dotnet build src/NimBus.sln -c Release`: 0 errors on the second run. The first run of a
+  reused worktree hit MSB3030 (stale SPA assets), as expected.
+  `dotnet test tests/NimBus.WebApp.Tests -c Release --no-build`: 718 passed, 2 skipped.
+- A live run on the local Aspire stack (SQL storage, SB emulator) with failures from the
+  AspirePubSub publisher. It exercised:
+  - the pills, the search box and a brush drag
+  - opening the panel from an item and from a deep link
+  - Next, and Escape returning focus to the item
+  - light and dark themes
 
 The Failed page (`/Failed`) today stacks five stat tiles, a histogram, a nine-field filter grid,
 a view toggle and a `DataTable`. This plan restyles it after Application Insights' *Transaction

@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as api from "api-client";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Page from "components/page";
 import DataTable, {
   ITableBodyAction,
@@ -19,6 +19,10 @@ import FailedFilterPills, {
   FailedSearchBox,
 } from "components/failed-messages/failed-filter-pills";
 import FailedLegend from "components/failed-messages/failed-legend";
+import FailedItemList, {
+  failureIdOf,
+  failureRouteOf,
+} from "components/failed-messages/failed-item-list";
 import FailedErrorGroupsView from "components/failed-messages/failed-error-groups";
 import { useUrlFilters } from "hooks/use-url-filters";
 import { formatMoment } from "functions/endpoint.functions";
@@ -116,6 +120,7 @@ export default function FailedMessages() {
   ) as View;
   const split = applied.split === "endpoint" ? "endpoint" : "status";
   const client = React.useMemo(() => new api.Client(api.CookieAuth()), []);
+  const navigate = useNavigate();
 
   const [histogram, setHistogram] = React.useState<api.FailedHistogram>();
   const [histogramLoading, setHistogramLoading] = React.useState(true);
@@ -127,6 +132,10 @@ export default function FailedMessages() {
   const [blocked, setBlocked] = React.useState<Record<string, number>>({});
   const [backlog, setBacklog] = React.useState<number>();
   const [hideReported, setHideReported] = React.useState(false);
+  // Checked items in the item view (the table keeps its own selection).
+  const [selected, setSelected] = React.useState<Set<string>>(
+    () => new Set(),
+  );
   const [hiddenColumns, setHiddenColumns] =
     React.useState<Set<string>>(loadHiddenColumns);
   const headCells = React.useMemo(
@@ -245,7 +254,10 @@ export default function FailedMessages() {
         if (current !== ticket.current) return;
         const rows = response.events ?? [];
         setEvents((prev) => (append ? [...prev, ...rows] : rows));
-        if (!append) setBlocked({});
+        if (!append) {
+          setBlocked({});
+          setSelected(new Set());
+        }
         setContinuationToken(response.continuationToken ?? undefined);
         void loadBlocked(rows, current);
       } catch (e) {
@@ -295,6 +307,7 @@ export default function FailedMessages() {
       if (valid.length === 0) return;
       const ids = new Set(valid.map((t) => t.eventId));
       setEvents((prev) => prev.filter((e) => !ids.has(e.eventId)));
+      setSelected(new Set());
       Promise.allSettled(
         valid.map((t) =>
           action === "Resubmit"
@@ -343,7 +356,7 @@ export default function FailedMessages() {
       const ids = new Set(selected.map((r) => r.id));
       act(
         name as "Resubmit" | "Skip",
-        events.filter((e) => ids.has(`${e.endpointId}/${e.eventId}`)),
+        events.filter((e) => ids.has(failureIdOf(e))),
       );
       return false;
     },
@@ -363,8 +376,8 @@ export default function FailedMessages() {
     const blockedCount = blocked[`${e.endpointId}/${e.sessionId}`] ?? 0;
     const error = errorTextOf(e);
     return {
-      id: `${e.endpointId}/${e.eventId}`,
-      route: `/Message/Index/${e.endpointId}/${e.eventId}/0`,
+      id: failureIdOf(e),
+      route: failureRouteOf(e),
       bodyActions: bodyActions(e),
       tone: e.isReported ? "reported" : undefined,
       data: new Map([
@@ -724,6 +737,22 @@ export default function FailedMessages() {
             icon="◌"
             title="No failures match"
             description="No unresolved failures match these filters in this window. Try a wider range or fewer filters."
+          />
+        ) : applied.display !== "table" ? (
+          <FailedItemList
+            events={visible}
+            blocked={blocked}
+            selected={selected}
+            onSelectedChange={setSelected}
+            onAct={act}
+            onOpen={(e) => navigate(failureRouteOf(e))}
+            onNarrow={(field, value) => narrow({ [field]: value })}
+            hasMore={!!continuationToken}
+            isLoading={listLoading}
+            onLoadMore={() => {
+              if (continuationToken && !listLoading)
+                void fetchPage(continuationToken, true);
+            }}
           />
         ) : (
           <DataTable

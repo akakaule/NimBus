@@ -128,6 +128,11 @@ const histogram = new api.FailedHistogram({
   }),
 });
 
+const listItems = () =>
+  within(screen.getByRole("list", { name: "Failures" })).queryAllByRole(
+    "listitem",
+  );
+
 const renderPage = async (url = "/Failed") => {
   const { default: FailedMessages } = await import("./failed-messages");
   render(
@@ -169,7 +174,7 @@ describe("Failed messages page", () => {
   it("loads the chart for the range and the list within it", async () => {
     await renderPage();
 
-    await waitFor(() => expect(captured.rows?.length).toBe(3));
+    await waitFor(() => expect(listItems()).toHaveLength(3));
     const histogramRequest = mocks.histogram.mock
       .calls[0][0] as api.FailedHistogramRequest;
     expect(histogramRequest.period).toBe(api.Period._1d);
@@ -178,7 +183,37 @@ describe("Failed messages page", () => {
     const searchRequest = mocks.search.mock
       .calls[0][0] as api.FailedSearchRequest;
     expect(searchRequest.filter?.updatedAtFrom).toBeDefined();
+    expect(screen.queryByTestId("data-table-stub")).toBeNull();
+  });
+
+  it("shows the table when View as is Table", async () => {
+    await renderPage("/Failed?display=table");
+
+    await waitFor(() => expect(captured.rows?.length).toBe(3));
     expect(captured.rows?.[0].route).toBe("/Message/Index/Crm/e1/0");
+    expect(screen.queryByRole("list", { name: "Failures" })).toBeNull();
+  });
+
+  it("resubmits an item and removes it from the list", async () => {
+    mocks.search
+      .mockResolvedValueOnce(
+        new api.SearchResponse({
+          events: [event("e1", "Crm", "s1"), event("e2", "Erp", "s2")],
+        }),
+      )
+      .mockResolvedValue(
+        new api.SearchResponse({ events: [event("e2", "Erp", "s2")] }),
+      );
+    await renderPage();
+    await waitFor(() => expect(listItems()).toHaveLength(2));
+
+    fireEvent.click(
+      within(listItems()[0]).getByRole("button", { name: "Resubmit" }),
+    );
+
+    expect(mocks.resubmit).toHaveBeenCalledWith("e1", "m-e1");
+    await waitFor(() => expect(listItems()).toHaveLength(1));
+    expect(within(listItems()[0]).getByText("e2")).toBeTruthy();
   });
 
   it("narrows the list, but not the chart, to a selected bar", async () => {
@@ -307,7 +342,7 @@ describe("Failed messages page", () => {
     expect(request.filter?.endpointIds).toEqual(["Crm"]);
   });
 
-  it("resubmits a row and removes it from the list", async () => {
+  it("resubmits a table row and removes it from the list", async () => {
     // After the resubmit the page reloads; the server no longer lists e1.
     mocks.search
       .mockResolvedValueOnce(
@@ -324,7 +359,7 @@ describe("Failed messages page", () => {
           events: [event("e2", "Erp", "s2"), event("e3", "Crm", "s3")],
         }),
       );
-    await renderPage();
+    await renderPage("/Failed?display=table");
     await waitFor(() => expect(captured.rows?.length).toBe(3));
 
     const resubmit = captured.rows![0].bodyActions!.find(

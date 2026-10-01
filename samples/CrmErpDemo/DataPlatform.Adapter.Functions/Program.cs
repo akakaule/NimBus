@@ -12,7 +12,7 @@ using NimBus.SDK.Extensions;
 var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 builder.Services
     .AddOpenTelemetry()

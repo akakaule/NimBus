@@ -51,12 +51,12 @@ public static class BcResilience
     /// Throttling and outages are retried by NimBus with exponential backoff (broker-scheduled, so
     /// every attempt is audited). There is deliberately no default policy: a rejection (4xx) is a
     /// data problem, so the message fails and waits for an operator to fix BC and resubmit.
-    /// Rules match on the exception type name, which is part of the text NimBus matches.
+    /// Rules match on the exception type, and a throttled retry waits at least BC's Retry-After.
     /// </summary>
     public static void ConfigureRetries(DefaultRetryPolicyProvider policies, BcResilienceOptions options)
     {
         policies
-            .AddExceptionRule(nameof(BcThrottledException), new RetryPolicy
+            .AddExceptionRule<BcThrottledException>(new RetryPolicy
             {
                 MaxRetries = options.ThrottledMaxRetries,
                 Strategy = BackoffStrategy.Exponential,
@@ -64,7 +64,7 @@ public static class BcResilience
                 MaxDelay = TimeSpan.FromSeconds(options.ThrottledMaxDelaySeconds),
                 Jitter = JitterMode.Bounded,
             })
-            .AddExceptionRule(nameof(BcUnavailableException), new RetryPolicy
+            .AddExceptionRule<BcUnavailableException>(new RetryPolicy
             {
                 MaxRetries = options.UnavailableMaxRetries,
                 Strategy = BackoffStrategy.Exponential,

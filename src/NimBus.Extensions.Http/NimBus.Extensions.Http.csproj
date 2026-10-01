@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <Description>HTTP helpers for NimBus adapters: a cached Microsoft Entra bearer-token handler for Dataverse, Business Central, F&amp;O and other external-system clients.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- TokenCredential only; the caller chooses the credential (Azure.Identity or otherwise). -->
+    <PackageReference Include="Azure.Core" Version="1.60.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>

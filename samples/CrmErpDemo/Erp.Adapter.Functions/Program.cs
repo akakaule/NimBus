@@ -19,7 +19,13 @@ using NimBus.SDK.Extensions;
 var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
-builder.AddServiceDefaults();
+
+// This demo adapter stays deliberately minimal: no NimBus retry rules, inbox or circuit breaker (a
+// Functions trigger can't be paused by a breaker anyway), and its HTTP clients retry inside the
+// standard resilience handler. The e2e suite is tuned to that timing. For the shape a production
+// adapter should follow, see samples/DynamicsBcDemo/BusinessCentral.Adapter and
+// docs/building-adapters.md#resilience.
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 builder.Services
     .AddOpenTelemetry()

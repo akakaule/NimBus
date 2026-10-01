@@ -13,7 +13,7 @@ using NimBus.SDK.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 // Only wire ServiceBus when a real connection string is present. Without this guard,
 // Aspire.Azure.Messaging.ServiceBus throws at startup on missing config, Kestrel never

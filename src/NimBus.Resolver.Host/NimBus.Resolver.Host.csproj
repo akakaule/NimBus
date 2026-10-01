@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!-- The Resolver as a plain worker (no Functions host), shipped as a dotnet tool so an adapter
+         repository's local Aspire stack can run it from nuget.org (AddNimBusResolver). Azure
+         deployments keep using the Functions app in Akaule.NimBus.Deploy. -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nimbus-resolver</ToolCommandName>
+    <Description>The NimBus Resolver as a standalone worker, runnable as a dotnet tool for local development.</Description>
+    <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NimBus.Resolver\NimBus.Resolver.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.CosmosDb\NimBus.MessageStore.CosmosDb.csproj" />
+    <ProjectReference Include="..\NimBus.MessageStore.SqlServer\NimBus.MessageStore.SqlServer.csproj" />
+    <ProjectReference Include="..\NimBus.SDK\NimBus.SDK.csproj" />
+    <ProjectReference Include="..\NimBus.ServiceDefaults\NimBus.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

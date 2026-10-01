@@ -5,7 +5,17 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>NimBus.ServiceBusEmulator</AssemblyName>
     <RootNamespace>NimBus.ServiceBusEmulator</RootNamespace>
+    <!-- Shipped as a dotnet tool so an adapter repository can run it from nuget.org
+         (AddNimBusServiceBusEmulator(name) runs it with `dotnet tool exec`). -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nimbus-sb-emulator</ToolCommandName>
+    <Description>A local, in-memory Azure Service Bus emulator for NimBus development (sessions, scheduling, deferral, dead-lettering), runnable as a dotnet tool.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="NimBus.ServiceBusEmulator.Tests" />

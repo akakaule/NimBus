@@ -152,7 +152,7 @@ public class RetryPolicyProviderTests
         provider.AddExceptionRule("timeout", exceptionPolicy);
         provider.SetDefaultPolicy(defaultPolicy);
 
-        var result = provider.GetRetryPolicy("OrderPlaced", null!);
+        var result = provider.GetRetryPolicy("OrderPlaced", (string)null!);
         Assert.AreSame(defaultPolicy, result);
     }
 
@@ -190,5 +190,118 @@ public class RetryPolicyProviderTests
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
             new DefaultRetryPolicyProvider().AddExceptionRule("timeout", null!));
+    }
+
+    // ── Typed exception rules ───────────────────────────────────────
+
+    [TestMethod]
+    public void TypedRule_MatchesTheExceptionAndItsSubclasses()
+    {
+        var policy = MakePolicy();
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule<ThrottledException>(policy);
+
+        Assert.AreSame(policy, provider.GetRetryPolicy("OrderPlaced", new ThrottledException("busy")));
+        Assert.AreSame(policy, provider.GetRetryPolicy("OrderPlaced", new VeryThrottledException("busier")));
+        Assert.IsNull(provider.GetRetryPolicy("OrderPlaced", new InvalidOperationException("ThrottledException in text only")));
+    }
+
+    [TestMethod]
+    public void TypedRule_MatchesAnInnerException()
+    {
+        var policy = MakePolicy();
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule<ThrottledException>(policy);
+
+        var wrapped = new InvalidOperationException("outer", new AggregateException(new ThrottledException("busy")));
+
+        Assert.AreSame(policy, provider.GetRetryPolicy("OrderPlaced", wrapped));
+    }
+
+    [TestMethod]
+    public void TypedRule_HonoursEventTypeScope()
+    {
+        var policy = MakePolicy();
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule<ThrottledException>(policy, "OrderPlaced");
+
+        Assert.AreSame(policy, provider.GetRetryPolicy("OrderPlaced", new ThrottledException("busy")));
+        Assert.IsNull(provider.GetRetryPolicy("OrderShipped", new ThrottledException("busy")));
+    }
+
+    [TestMethod]
+    public void TypedAndStringRules_FirstRegisteredMatchWins()
+    {
+        var stringPolicy = MakePolicy(1);
+        var typedPolicy = MakePolicy(2);
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule("busy", stringPolicy)
+            .AddExceptionRule<ThrottledException>(typedPolicy);
+
+        Assert.AreSame(stringPolicy, provider.GetRetryPolicy("OrderPlaced", new ThrottledException("busy")));
+        Assert.AreSame(typedPolicy, provider.GetRetryPolicy("OrderPlaced", new ThrottledException("slow down")));
+    }
+
+    [TestMethod]
+    public void TypedRule_FallsThroughToEventTypeAndDefaultPolicies()
+    {
+        var eventPolicy = MakePolicy(4);
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule<ThrottledException>(MakePolicy())
+            .AddEventTypePolicy("OrderPlaced", eventPolicy);
+
+        Assert.AreSame(eventPolicy, provider.GetRetryPolicy("OrderPlaced", new InvalidOperationException("boom")));
+    }
+
+    [TestMethod]
+    public void StringOverload_NeverMatchesTypedRules()
+    {
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule<ThrottledException>(MakePolicy());
+
+        Assert.IsNull(provider.GetRetryPolicy("OrderPlaced", "NimBus.Core.Tests.ThrottledException: busy"));
+    }
+
+    [TestMethod]
+    public void ExceptionOverload_StillMatchesStringRulesAgainstTheExceptionText()
+    {
+        var policy = MakePolicy();
+        var provider = new DefaultRetryPolicyProvider()
+            .AddExceptionRule("timed out", policy);
+
+        var wrapped = new InvalidOperationException("outer", new TimeoutException("the call timed out"));
+
+        Assert.AreSame(policy, provider.GetRetryPolicy("OrderPlaced", wrapped));
+    }
+
+    [TestMethod]
+    public void CustomProvider_ExceptionOverloadForwardsTheExistingText()
+    {
+        IRetryPolicyProvider provider = new TextRecordingProvider();
+        var inner = new TimeoutException("inner");
+        var outer = new InvalidOperationException("outer", inner);
+
+        provider.GetRetryPolicy("OrderPlaced", outer, "Billing");
+
+        var recorded = (TextRecordingProvider)provider;
+        Assert.AreEqual($"{inner} {outer}", recorded.LastText);
+        Assert.AreEqual("Billing", recorded.LastEndpoint);
+    }
+
+    private class ThrottledException(string message) : Exception(message);
+
+    private sealed class VeryThrottledException(string message) : ThrottledException(message);
+
+    private sealed class TextRecordingProvider : IRetryPolicyProvider
+    {
+        public string? LastText { get; private set; }
+        public string? LastEndpoint { get; private set; }
+
+        public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null)
+        {
+            LastText = exceptionMessage;
+            LastEndpoint = endpoint;
+            return null!;
+        }
     }
 }

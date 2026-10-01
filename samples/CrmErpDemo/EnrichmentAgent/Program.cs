@@ -5,7 +5,7 @@ using NimBus.Agents;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 // DI: select Claude classifier when ANTHROPIC_API_KEY is available, otherwise fall back to the
 // deterministic fake (used in CI, in-memory tests, and local dev without a key).

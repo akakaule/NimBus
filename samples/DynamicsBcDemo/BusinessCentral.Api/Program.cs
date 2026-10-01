@@ -17,7 +17,7 @@ using NimBus.SDK.Hosting;
 // Every change is published to NimBus through the transactional outbox.
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 // Without a Service Bus connection string the API still starts (events stay in the outbox), so a
 // DB-only smoke test works and the SPA never sees connection refused.

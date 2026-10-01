@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -241,6 +242,54 @@ describe("Failed messages page", () => {
     expect(screen.queryByRole("list", { name: "Failures" })).toBeNull();
   });
 
+  it("switches between items and table through the View as pill without reloading", async () => {
+    await renderPage();
+    await waitFor(() => expect(listItems()).toHaveLength(3));
+
+    fireEvent.click(screen.getByRole("button", { name: "View as" }));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    expect(await screen.findByTestId("data-table-stub")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View as" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Individual items", exact: true }),
+    );
+    await waitFor(() => expect(listItems()).toHaveLength(3));
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.histogram).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a brushed window when the current time preset is selected again", async () => {
+    await renderPage(
+      "/Failed?windowStart=2026-09-25T06:00:00.000Z&windowEnd=2026-09-25T07:00:00.000Z",
+    );
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Time range" }));
+    fireEvent.click(screen.getByRole("button", { name: "Last 24 hours" }));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Clear time window")).toBeNull(),
+    );
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.histogram).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.search.mock.calls[1][0].filter.updatedAtFrom.toISOString(),
+    ).not.toBe("2026-09-25T06:00:00.000Z");
+  });
+
+  it("refreshes an unchanged search", async () => {
+    await renderPage();
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(screen.getByLabelText("Search failures"), {
+      key: "Enter",
+    });
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(2));
+    expect(mocks.histogram).toHaveBeenCalledTimes(2);
+  });
+
   it("resubmits an item and removes it from the list", async () => {
     mocks.search
       .mockResolvedValueOnce(
@@ -440,6 +489,47 @@ describe("Failed messages page", () => {
     const request = mocks.search.mock.calls[1][0] as api.FailedSearchRequest;
     expect(request.continuationToken).toBe("page-2");
   });
+
+  it.each(["close", "previous"])(
+    "does not advance a pending Next request after %s",
+    async (navigation) => {
+      let finishPage!: (response: api.SearchResponse) => void;
+      const nextPage = new Promise<api.SearchResponse>((resolve) => {
+        finishPage = resolve;
+      });
+      mocks.search
+        .mockResolvedValueOnce(
+          new api.SearchResponse({
+            events: [event("e1", "Crm", "s1"), event("e2", "Erp", "s2")],
+            continuationToken: "page-2",
+          }),
+        )
+        .mockReturnValueOnce(nextPage);
+      await renderPage("/Failed?open=Erp/e2");
+      expect(await screen.findByText("panel Erp/e2 2 of 2")).toBeTruthy();
+
+      fireEvent.click(screen.getByText("panel-next"));
+      await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(2));
+      if (navigation === "close") {
+        fireEvent.keyDown(document, { key: "Escape" });
+        await waitFor(() => expect(screen.queryByTestId("panel")).toBeNull());
+      } else {
+        fireEvent.click(screen.getByText("panel-previous"));
+        expect(await screen.findByText("panel Crm/e1 1 of 2")).toBeTruthy();
+      }
+
+      await act(async () => {
+        finishPage(
+          new api.SearchResponse({ events: [event("e3", "Crm", "s3")] }),
+        );
+        await nextPage;
+      });
+      expect(listItems()).toHaveLength(3);
+      if (navigation === "close")
+        expect(screen.queryByTestId("panel")).toBeNull();
+      else expect(screen.getByText("panel Crm/e1 1 of 3")).toBeTruthy();
+    },
+  );
 
   it("resubmits from the panel and moves on to the next failure", async () => {
     await renderPage("/Failed?open=Crm/e1");

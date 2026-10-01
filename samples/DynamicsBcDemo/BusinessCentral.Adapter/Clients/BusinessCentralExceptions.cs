@@ -1,8 +1,10 @@
+using NimBus.Core.Messages;
+
 namespace BusinessCentral.Adapter.Clients;
 
-// The three ways a Business Central call can fail, as distinct exception TYPES. NimBus retry rules
-// match on text that includes the exception type name (and the stack trace), so rules are keyed on
-// these names rather than on a bare status code like "429", which could also match a line number.
+// The three ways a Business Central call can fail, as distinct exception TYPES, so retry rules use
+// AddExceptionRule<T>() and the circuit breaker Exclude<T>() instead of matching text such as "429",
+// which could also match a line number in a stack trace.
 // None of the names contains "Validation": the default permanent-failure classifier would
 // dead-letter those if one were ever registered.
 
@@ -12,10 +14,11 @@ public abstract class BusinessCentralException(string message, Exception? innerE
 
 /// <summary>
 /// 429 Too Many Requests: the per-user rate limit is exceeded. Transient; NimBus retries it with
-/// exponential backoff. Excluded from the circuit breaker — throttling is paced, not an outage.
+/// exponential backoff, waiting at least BC's Retry-After. Excluded from the circuit breaker —
+/// throttling is paced, not an outage.
 /// </summary>
 public sealed class BcThrottledException(string message, TimeSpan? retryAfter)
-    : BusinessCentralException(message)
+    : BusinessCentralException(message), IRetryAfterHint
 {
     public TimeSpan? RetryAfter { get; } = retryAfter;
 }

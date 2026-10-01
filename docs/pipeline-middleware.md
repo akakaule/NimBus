@@ -144,7 +144,7 @@ Middleware is resolved from DI, so constructor injection works for any registere
 
 For the full classification of how each exception type is handled (transient redelivery, retry, dead-letter), see [`error-handling.md`](error-handling.md).
 
-Wrap `next()` in try/catch to handle or transform exceptions:
+Wrap `next()` in try/catch to observe or transform exceptions:
 
 ```csharp
 public async Task Handle(IMessageContext context, MessagePipelineDelegate next, CancellationToken ct)
@@ -153,13 +153,20 @@ public async Task Handle(IMessageContext context, MessagePipelineDelegate next, 
     {
         await next(context, ct);
     }
-    catch (TimeoutException ex)
+    catch (SqlException ex) when (ex.IsTransient)
     {
-        // Transform to transient for retry
-        throw new TransientException("Timeout — will retry", ex);
+        // A blip in the adapter's own database: redeliver the identical message.
+        throw new TransientException("Integration database unavailable — redelivering", ex);
     }
 }
 ```
+
+`TransientException` abandons the message: Service Bus redelivers it after the
+lock expires, with no audit record and no retry policy. Use it for
+infrastructure faults like this one. For a slow or failing downstream API,
+throw a typed exception from the client and retry it with
+`AddExceptionRule<T>` instead; see
+[error-handling.md](error-handling.md#when-to-throw-what).
 
 ### Short-Circuiting
 

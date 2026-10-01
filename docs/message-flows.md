@@ -296,7 +296,7 @@ sequenceDiagram
 
 ### 11. Transient Failure → Abandon → Redeliver
 
-When the handler throws `TransientException` (network blip, throttling, deadlock — anything recoverable), NimBus **does not** call SB Abandon explicitly — `MessageContext.Abandon` is a deliberate no-op. The peek-lock simply expires after ~30 seconds and Service Bus redelivers the same message. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path.
+When the handler throws `TransientException` (an infrastructure fault where redelivering the identical message is enough, such as a lost session lock), NimBus **does not** call SB Abandon explicitly — `MessageContext.Abandon` is a deliberate no-op. The peek-lock simply expires after ~30 seconds and Service Bus redelivers the same message. No notification is sent to the Resolver, so audit visibility is intentionally minimal for this path. Each attempt counts toward the subscription's max delivery count. Downstream outages and throttling belong on the [scheduled retry](#6-retry-automatic) path instead, through typed exceptions and `AddExceptionRule<T>` (see [error-handling.md](error-handling.md#when-to-throw-what)).
 
 Resolver treats Cosmos DB 429s more deliberately. Scheduled replacements and
 broker redeliveries consume one shared ten-attempt budget

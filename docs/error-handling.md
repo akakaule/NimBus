@@ -93,11 +93,15 @@ exceptions to `DeadLetter`; every other ordinary exception maps to `Retry`.
 
 ### Transient failure (abandon + redeliver)
 
-The handler raises `TransientException` to signal a recoverable downstream
-issue (network blip, throttling, deadlock). NimBus does not call SB Abandon
-explicitly — `MessageContext.Abandon` is a no-op so the SB peek-lock can
-expire on its own and the message is redelivered. No notification reaches the
-Resolver, so audit visibility is intentionally minimal for this path.
+The handler (or the transport) raises `TransientException` to signal an
+infrastructure fault where redelivering the same message is enough, such as a
+lost session lock. NimBus does not call SB Abandon explicitly —
+`MessageContext.Abandon` is a no-op so the SB peek-lock can expire on its own
+and the message is redelivered. No notification reaches the Resolver, so audit
+visibility is intentionally minimal for this path, and every attempt counts
+toward the subscription's max delivery count. For downstream outages and
+throttling, use typed exceptions and retry rules instead (see
+[When to throw what](#when-to-throw-what)).
 
 ```mermaid
 sequenceDiagram
@@ -235,16 +239,28 @@ the source of truth and operators can recover via the Manager.
 
 | Situation | Throw |
 |---|---|
-| Downstream API timed out / connection refused / 503 | `TransientException` — let SB redeliver. Idempotent handlers are required for this to be safe. |
+| Downstream API timed out, refused the connection, or answered 408 / 5xx | Your own "unavailable" exception type, retried with an `AddExceptionRule<T>` rule. Each attempt is a broker-scheduled `RetryRequest` with its own audit record, and the session stays blocked so later events wait in order. |
+| Downstream API answered 429 | Your own "throttled" exception type that implements `IRetryAfterHint`, retried with an `AddExceptionRule<T>` rule, so the retry waits at least the server's `Retry-After`. Exclude it from the circuit breaker. |
+| Downstream API rejected the request (other 4xx) and an operator can fix the data | Your own "rejected" exception type with no retry rule. It is recorded as `Failed` and the session blocks until an operator resubmits or skips it. |
 | Downstream API returned 400 with a structural problem the message can't fix on retry | Return `DeadLetter` from `IFailureDispositionClassifier` when operators need the DLQ payload; return `Discard` when a skipped audit record is sufficient |
-| Downstream API returned 500 / 502 transient | Throw a regular `Exception` — recorded as `Failed`, retried per policy |
 | Known poison event/version that should neither retry nor create DLQ noise | Return `Discard`; NimBus records `Skipped`, completes, and lets the session continue |
 | Don't have a handler for this event type | Don't catch `EventHandlerNotFoundException` — let it bubble; you'll see it as `Unsupported` |
 
-For outages and throttling of an external system, the reference adapters throw
-their own typed exceptions and retry them with `AddExceptionRule<T>` rules, so
-each attempt is a broker-scheduled retry with its own audit record. See
+Any other exception is recorded as `Failed` and retried only if a retry rule,
+an event-type policy or the default policy matches it. The typed failures,
+rules and breaker settings are worked through in
 [building-adapters.md#resilience](building-adapters.md#resilience).
+
+`TransientException` is not the tool for downstream outages. It takes the
+[abandon path](#transient-failure-abandon--redeliver): no audit record reaches
+the Resolver, retry policies and `Retry-After` are ignored, the same message is
+redelivered only after its lock expires, and each attempt spends a Service Bus
+delivery, so after 10 the message is dead-lettered by the broker rather than
+failed in NimBus. Reserve it for infrastructure faults where redelivering the
+identical message is the right answer and nothing is worth recording — NimBus
+itself throws it for a lost session lock or a transient Service Bus SDK error.
+Handlers that throw it must be idempotent. The circuit breaker counts it like
+any other retryable failure.
 
 ### When NOT to swallow
 

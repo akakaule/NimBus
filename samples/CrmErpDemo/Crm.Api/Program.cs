@@ -9,7 +9,7 @@ using NimBus.SDK.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 // Only wire the real ServiceBus client if a connection string was provided.
 // Without this guard, Aspire.Azure.Messaging.ServiceBus throws at startup when

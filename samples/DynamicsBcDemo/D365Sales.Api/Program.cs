@@ -13,7 +13,7 @@ using NimBus.SDK.Extensions;
 // they would leave Dataverse through a Service Endpoint and the NimBus Dataverse adapter.
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 var hasServiceBus = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("servicebus"));
 if (hasServiceBus)

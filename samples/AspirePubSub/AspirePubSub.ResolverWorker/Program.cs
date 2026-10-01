@@ -4,7 +4,7 @@ using NimBus.ServiceBus;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 builder.Configuration["ResolverId"] = "Resolver";
 builder.Services.AddResolver();
 

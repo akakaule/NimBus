@@ -9,7 +9,7 @@ using NimBus.SDK.Extensions;
 // to retry, resubmit and group, while Billing stays healthy next to it.
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 builder.AddAzureServiceBusClient("servicebus");
 

@@ -23,16 +23,43 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
     }
 
     /// <summary>
-    /// Adds a retry rule that matches when the exception message contains the specified text.
+    /// Adds a retry rule that matches when the exception text contains the specified text.
     /// Optionally scoped to specific event types.
     /// </summary>
+    /// <remarks>
+    /// The text is <c>"{exception.InnerException} {exception}"</c>, which includes type names, messages
+    /// and stack traces, so a short fragment such as <c>"429"</c> can match unrelated text. Prefer
+    /// <see cref="AddExceptionRule{TException}(RetryPolicy, string[])"/> for exceptions you own.
+    /// </remarks>
     public DefaultRetryPolicyProvider AddExceptionRule(string exceptionContains, RetryPolicy policy, params string[] eventTypeIds)
     {
         _exceptionRules.Add(new ExceptionRetryRule
         {
             ExceptionContains = exceptionContains ?? throw new ArgumentNullException(nameof(exceptionContains)),
             Policy = policy ?? throw new ArgumentNullException(nameof(policy)),
-            EventTypeIds = eventTypeIds?.Length > 0 ? new HashSet<string>(eventTypeIds, StringComparer.OrdinalIgnoreCase) : null
+            EventTypeIds = ToEventTypeSet(eventTypeIds)
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a retry rule that matches when the handler's exception, or any of its inner exceptions,
+    /// is a <typeparamref name="TException"/> (including subclasses). Optionally scoped to specific
+    /// event types.
+    /// </summary>
+    /// <remarks>
+    /// Typed and text rules are checked together in registration order; the first match wins.
+    /// Typed rules only match through <see cref="GetRetryPolicy(string, Exception, string?)"/>, which is
+    /// the overload the message handler uses.
+    /// </remarks>
+    public DefaultRetryPolicyProvider AddExceptionRule<TException>(RetryPolicy policy, params string[] eventTypeIds)
+        where TException : Exception
+    {
+        _exceptionRules.Add(new ExceptionRetryRule
+        {
+            ExceptionType = typeof(TException),
+            Policy = policy ?? throw new ArgumentNullException(nameof(policy)),
+            EventTypeIds = ToEventTypeSet(eventTypeIds)
         });
         return this;
     }
@@ -46,15 +73,23 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
         return this;
     }
 
-    public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null)
+    /// <inheritdoc />
+    public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null) =>
+        Resolve(eventTypeId, exceptionMessage, exception: null);
+
+    /// <inheritdoc />
+    public RetryPolicy GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
+        Resolve(eventTypeId, $"{exception?.InnerException} {exception}", exception);
+
+    private RetryPolicy Resolve(string eventTypeId, string exceptionText, Exception? exception)
     {
-        // 1. Check exception-based rules first (most specific)
+        // 1. Check exception-based rules first (most specific), in registration order
         foreach (var rule in _exceptionRules)
         {
             if (rule.EventTypeIds != null && !rule.EventTypeIds.Contains(eventTypeId))
                 continue;
 
-            if (!string.IsNullOrEmpty(exceptionMessage) && exceptionMessage.Contains(rule.ExceptionContains, StringComparison.OrdinalIgnoreCase))
+            if (rule.Matches(exceptionText, exception))
                 return rule.Policy;
         }
 
@@ -66,10 +101,31 @@ public class DefaultRetryPolicyProvider : IRetryPolicyProvider
         return _defaultPolicy;
     }
 
+    private static HashSet<string> ToEventTypeSet(string[] eventTypeIds) =>
+        eventTypeIds?.Length > 0 ? new HashSet<string>(eventTypeIds, StringComparer.OrdinalIgnoreCase) : null;
+
     private class ExceptionRetryRule
     {
         public string ExceptionContains { get; set; }
+        public Type ExceptionType { get; set; }
         public RetryPolicy Policy { get; set; }
         public HashSet<string> EventTypeIds { get; set; }
+
+        public bool Matches(string exceptionText, Exception? exception)
+        {
+            if (ExceptionType != null)
+            {
+                for (var current = exception; current != null; current = current.InnerException)
+                {
+                    if (ExceptionType.IsInstanceOfType(current))
+                        return true;
+                }
+
+                return false;
+            }
+
+            return !string.IsNullOrEmpty(exceptionText)
+                && exceptionText.Contains(ExceptionContains, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

@@ -851,6 +851,90 @@ public class StrictMessageHandlerTests
     }
 
     [TestMethod]
+    [DataRow(30, 120, null, 120, DisplayName = "A longer hint wins")]
+    [DataRow(90, 20, null, 90, DisplayName = "A shorter hint is ignored")]
+    [DataRow(30, 600, 180, 180, DisplayName = "A hint is capped at MaxDelay")]
+    [DataRow(30, 0, null, 30, DisplayName = "A zero hint is ignored")]
+    public async Task HandleEventRequest_RetryAfterHint_LengthensThePolicyDelay(
+        int policySeconds, int hintSeconds, int? maxDelaySeconds, int expectedSeconds)
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new HintedException(TimeSpan.FromSeconds(hintSeconds)) };
+        var sender = new InMemoryMessageBus();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy
+            {
+                MaxRetries = 1,
+                BaseDelay = TimeSpan.FromSeconds(policySeconds),
+                MaxDelay = maxDelaySeconds is int max ? TimeSpan.FromSeconds(max) : null,
+            },
+        };
+        var sut = new StrictMessageHandler(handler, new ResponseService(sender), NullLogger.Instance, retryProvider);
+        var before = DateTimeOffset.UtcNow;
+
+        await sut.Handle(ctx);
+
+        var after = DateTimeOffset.UtcNow;
+        var scheduled = sender.ScheduledMessages.Single();
+        Assert.IsTrue(scheduled.ScheduledTime >= before.AddSeconds(expectedSeconds));
+        Assert.IsTrue(scheduled.ScheduledTime <= after.AddSeconds(expectedSeconds));
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RetryAfterHintOnAnInnerException_IsUsed()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        var thrown = new InvalidOperationException("outer", new HintedException(TimeSpan.FromSeconds(300)));
+        var handler = new FakeEventContextHandler { ThrowOnHandle = thrown };
+        var sender = new InMemoryMessageBus();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy { MaxRetries = 1, BaseDelay = TimeSpan.FromSeconds(10) },
+        };
+        var sut = new StrictMessageHandler(handler, new ResponseService(sender), NullLogger.Instance, retryProvider);
+        var before = DateTimeOffset.UtcNow;
+
+        await sut.Handle(ctx);
+
+        Assert.IsTrue(sender.ScheduledMessages.Single().ScheduledTime >= before.AddSeconds(300));
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RetryAfterHint_DoesNotRetryWhenThePolicyIsExhausted()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        ctx.RetryCount = 2;
+        var handler = new FakeEventContextHandler { ThrowOnHandle = new HintedException(TimeSpan.FromSeconds(30)) };
+        var sender = new InMemoryMessageBus();
+        var retryProvider = new FakeRetryPolicyProvider
+        {
+            PolicyToReturn = new RetryPolicy { MaxRetries = 2, BaseDelay = TimeSpan.FromSeconds(10) },
+        };
+        var sut = new StrictMessageHandler(handler, new ResponseService(sender), NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(0, sender.ScheduledMessages.Count);
+    }
+
+    [TestMethod]
+    public async Task HandleEventRequest_RetryLookupReceivesTheHandlerException()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest, eventTypeId: "OrderPlaced");
+        var thrown = new HintedException(TimeSpan.FromSeconds(5));
+        var handler = new FakeEventContextHandler { ThrowOnHandle = thrown };
+        var retryProvider = new ExceptionRecordingRetryPolicyProvider();
+        var sut = new StrictMessageHandler(handler, new FakeResponseService(), NullLogger.Instance, retryProvider);
+
+        await sut.Handle(ctx);
+
+        Assert.IsNotNull(retryProvider.LastException);
+        Assert.AreSame(thrown, retryProvider.LastException.InnerException,
+            "The provider must see the exception chain, not just its text");
+    }
+
+    [TestMethod]
     public async Task HandleEventRequest_LegacyResponseService_RoundsPrecisePolicyDelay()
     {
         var trace = new OperationTrace();
@@ -1964,6 +2048,24 @@ public class StrictMessageHandlerTests
             GetRetryPolicyCalls++;
             LastEventTypeId = eventTypeId;
             return PolicyToReturn;
+        }
+    }
+
+    private sealed class HintedException(TimeSpan? retryAfter) : Exception("throttled"), IRetryAfterHint
+    {
+        public TimeSpan? RetryAfter { get; } = retryAfter;
+    }
+
+    private sealed class ExceptionRecordingRetryPolicyProvider : IRetryPolicyProvider
+    {
+        public Exception? LastException { get; private set; }
+
+        public RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null) => null!;
+
+        public RetryPolicy GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null)
+        {
+            LastException = exception;
+            return null!;
         }
     }
 

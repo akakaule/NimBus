@@ -241,6 +241,11 @@ the source of truth and operators can recover via the Manager.
 | Known poison event/version that should neither retry nor create DLQ noise | Return `Discard`; NimBus records `Skipped`, completes, and lets the session continue |
 | Don't have a handler for this event type | Don't catch `EventHandlerNotFoundException` — let it bubble; you'll see it as `Unsupported` |
 
+For outages and throttling of an external system, the reference adapters throw
+their own typed exceptions and retry them with `AddExceptionRule<T>` rules, so
+each attempt is a broker-scheduled retry with its own audit record. See
+[building-adapters.md#resilience](building-adapters.md#resilience).
+
 ### When NOT to swallow
 
 A pipeline middleware that catches and swallows handler exceptions makes the
@@ -310,8 +315,37 @@ delay `d`:
 must stay close to the configured backoff; full jitter provides a wider spread
 when many sessions are likely to fail together.
 
+To retry only some failures, match the exception type:
+
+```csharp
+sub.ConfigureRetryPolicies(policies => policies
+    .AddExceptionRule<PartnerApiUnavailableException>(new RetryPolicy
+    {
+        MaxRetries = 4,
+        Strategy   = BackoffStrategy.Exponential,
+        BaseDelay  = TimeSpan.FromSeconds(15),
+        MaxDelay   = TimeSpan.FromMinutes(2),
+    }));
+```
+
+`AddExceptionRule<TException>` matches the handler's exception or any inner
+exception of that type, subclasses included. The older
+`AddExceptionRule(string, ...)` matches a substring of the exception text,
+which includes stack traces, so prefer the typed form. Exception rules are
+checked in registration order before event-type policies and the default
+policy; the first match wins.
+
+If the exception (or an inner exception) implements `IRetryAfterHint`, the
+retry waits for the longer of the policy delay and its `RetryAfter`, capped at
+`MaxDelay`. Use it to honour an HTTP `Retry-After` header. The policy still
+decides whether to retry.
+
 Without a retry policy, handler failures stay in `Failed` until an operator
 resubmits or skips them — there is no implicit retry.
+
+For the adapter pattern that combines typed failures, these rules, the circuit
+breaker and the inbox, see
+[building-adapters.md#resilience](building-adapters.md#resilience).
 
 For widespread downstream outages, an opt-in endpoint circuit breaker can stop hosted receivers before every session consumes its retry budget. It counts retry/transient handler outcomes but never changes their exception or settlement behavior; an open circuit leaves messages untouched on the subscription. See [`circuit-breaker.md`](circuit-breaker.md).
 

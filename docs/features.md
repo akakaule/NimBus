@@ -10,7 +10,7 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Ordering | Session-based FIFO processing | Messages are grouped by `SessionId` to guarantee ordered handling per business key. | `NimBus.Core`, `NimBus.ServiceBus` |
 | Developer API | Typed publisher/subscriber API | DI registrations for publishers, subscribers, handlers, and receiver hosting. | `NimBus.SDK` |
 | Event modeling | SessionKey + metadata attributes | `[SessionKey]`, validation, and description attributes for ordering and schema/documentation. | `NimBus.Core` |
-| Reliability | Retry policies with backoff | Per-event and exception-pattern retry policies with fixed/linear/exponential strategies. | `NimBus.Core` |
+| Reliability | Retry policies with backoff | Per-event, exception-type and exception-text retry policies with fixed/linear/exponential strategies, jitter, and `Retry-After` hints (`IRetryAfterHint`). | `NimBus.Core` |
 | Reliability | Endpoint circuit breaker | Opt-in failure-rate breaker pauses hosted receivers, probes at concurrency one, and restores processing without consuming delivery attempts while open. | `NimBus.Core`, `NimBus.SDK` |
 | Reliability | Permanent failure classification | Classify unrecoverable exceptions and dead-letter immediately without retry budget use. | `NimBus.Core` |
 | Reliability | Session blocking + deferral | When a message fails, later messages in the same session are deferred to preserve order. | `NimBus.Core`, `NimBus.ServiceBus` |
@@ -31,6 +31,8 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 | Observability | Platform heartbeat + Resolver liveness | Admin → Health probes every catalog endpoint with no adapter-side handler and settles a Resolver liveness probe, reporting status, round-trip and SDK version. | `NimBus.Core`, `NimBus.Resolver`, `NimBus.WebApp` |
 | Testing | In-memory test transport | Run the full pipeline in tests without Azure Service Bus. | `NimBus.Testing` |
 | Local development | Aspire orchestration | Local AppHost orchestrates provisioner, resolver, webapp, publisher, and subscriber. | `NimBus.AppHost`, `NimBus.ServiceDefaults` |
+| Local development | Local stack from packages | An adapter repository's AppHost runs the Service Bus emulator, topology provisioning, Resolver and WebApp as dotnet tools, without a NimBus source checkout. | `Akaule.NimBus.AspireHosting`, `Akaule.NimBus.ServiceBusEmulator`, `Akaule.NimBus.Resolver.Host`, `Akaule.NimBus.WebApp`, `Akaule.NimBus.CommandLine` |
+| Local development | Service defaults | OpenTelemetry with NimBus instrumentation, health checks and service discovery; the standard HTTP resilience handler is opt-in. | `Akaule.NimBus.ServiceDefaults` |
 
 ## Extension framework
 
@@ -46,4 +48,5 @@ This document is a concise catalog of the current NimBus feature set, grouped in
 |---|---|---|
 | Notifications | Sends configurable notifications on lifecycle events (failure/dead-letter by default) through pluggable channels (`INotificationChannel`). | `NimBus.Extensions.Notifications` |
 | Identity | Adds ASP.NET Core Identity username/password auth for WebApp, with email confirmation/reset flow and optional dual-login with Entra ID. | `NimBus.Extensions.Identity` |
+| Entra bearer tokens for HTTP clients | `AddAzureBearerToken(...)` adds a cached Microsoft Entra token to an `IHttpClientFactory` client, for adapters calling Dataverse, Business Central or Finance and Operations. | `Akaule.NimBus.Extensions.Http` |
 | Integration Intelligence | On-demand, idempotent, audited classification of a persisted failed or dead-lettered occurrence with bounded redacted evidence and deterministic operator guidance. | `Akaule.NimBus.Extensions.IntegrationIntelligence`, `NimBus.WebApp` |

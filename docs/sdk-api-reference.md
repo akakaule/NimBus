@@ -387,12 +387,16 @@ All methods have default no-op implementations. Override only the hooks you need
 ### RetryPolicy
 
 ```csharp
-public record RetryPolicy
+public class RetryPolicy
 {
-    public int MaxRetries { get; init; }
-    public BackoffStrategy Strategy { get; init; }
-    public TimeSpan BaseDelay { get; init; }
-    public TimeSpan? MaxDelay { get; init; }
+    public int MaxRetries { get; set; }
+    public BackoffStrategy Strategy { get; set; } = BackoffStrategy.Fixed;
+    public TimeSpan BaseDelay { get; set; } = TimeSpan.FromMinutes(1);
+    public TimeSpan? MaxDelay { get; set; }
+    public JitterMode Jitter { get; set; } = JitterMode.None;
+    public double BoundedJitterFactor { get; set; } = 0.25;
+
+    public TimeSpan GetDelay(int retryAttempt, Random? rng = null);
 }
 ```
 
@@ -404,23 +408,78 @@ public record RetryPolicy
 | `Linear` | `BaseDelay × (attempt + 1)` |
 | `Exponential` | `BaseDelay × 2^attempt` |
 
-All strategies respect `MaxDelay` cap if set.
+### JitterMode
+
+| Mode | Delay |
+|---|---|
+| `None` | The calculated delay `d` |
+| `Full` | `d × (1 + U[0, 1))` |
+| `Bounded` | `d × (1 + U[0, BoundedJitterFactor))` |
+
+`MaxDelay` caps the delay after jitter.
 
 ### Registration
+
+`ConfigureRetryPolicies` configures a `DefaultRetryPolicyProvider`:
 
 ```csharp
 sub.ConfigureRetryPolicies(policies =>
 {
+    // Exception type: the exception or any inner exception, subclasses included
+    policies.AddExceptionRule<PartnerApiUnavailableException>(new RetryPolicy { ... });
+
+    // Exception text: a case-insensitive substring of "{exception.InnerException} {exception}"
+    policies.AddExceptionRule("timeout", new RetryPolicy { ... });
+
+    // Either kind of exception rule, limited to some event types
+    policies.AddExceptionRule<PartnerApiThrottledException>(new RetryPolicy { ... }, "OrderPlaced", "OrderCancelled");
+
     // Per event type
     policies.AddEventTypePolicy("OrderPlaced", new RetryPolicy { ... });
-
-    // Per exception message pattern
-    policies.AddExceptionPolicy("timeout", new RetryPolicy { ... });
 
     // Default fallback
     policies.SetDefaultPolicy(new RetryPolicy { ... });
 });
 ```
+
+Exception rules, typed and text, are checked in registration order and the
+first match wins. Then the event type policy applies, then the default. With no
+match, the message is not retried. Text rules see stack traces too, so a short
+fragment can match unrelated text; prefer typed rules for exceptions you own.
+
+### IRetryAfterHint
+
+```csharp
+public interface IRetryAfterHint
+{
+    TimeSpan? RetryAfter { get; }
+}
+```
+
+When the handler's exception, or an inner exception, implements
+`IRetryAfterHint`, the retry is scheduled after the longer of the policy delay
+and `RetryAfter`, capped at the policy's `MaxDelay`. The policy still decides
+whether a retry happens. Implement it on an exception that carries an HTTP
+`Retry-After` value.
+
+### IRetryPolicyProvider
+
+```csharp
+public interface IRetryPolicyProvider
+{
+    RetryPolicy GetRetryPolicy(string eventTypeId, string exceptionMessage, string? endpoint = null);
+
+    RetryPolicy GetRetryPolicy(string eventTypeId, Exception exception, string? endpoint = null) =>
+        GetRetryPolicy(eventTypeId, $"{exception?.InnerException} {exception}", endpoint);
+}
+```
+
+The message handler calls the `Exception` overload. Its default implementation
+forwards to the string overload, so existing custom providers keep working;
+override it to match on types. A `null` policy means no retry.
+
+See [building-adapters.md#resilience](building-adapters.md#resilience) for how
+an adapter combines these.
 
 ---
 
@@ -749,8 +808,13 @@ await fixture.DeliverAll();
 ### DI Registration
 
 ```csharp
-services.AddNimBusTestTransport();  // replaces Service Bus with in-memory
+services.AddNimBusTestTransport(sub =>
+    sub.AddHandlersFromAssemblyContaining<OrderPlacedHandler>());  // replaces Service Bus with in-memory
 ```
+
+See [building-adapters.md#adapter-testing](building-adapters.md#adapter-testing)
+for testing an adapter's handlers, failure mapping, retry rules and circuit
+breaker.
 
 ### Scheduled Messages (testing)
 

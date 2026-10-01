@@ -41,6 +41,8 @@ services.AddNimBusSubscriber(options =>
 
 `Exclude<TException>()` and `Exclude(predicate)` inspect the exception and its inner-exception chain.
 
+For how an adapter chooses what to exclude (throttling and rejected requests, but not outages), and how to test the breaker with a manual `TimeProvider`, see [building-adapters.md#resilience](building-adapters.md#resilience) and [building-adapters.md#adapter-testing](building-adapters.md#adapter-testing).
+
 ## State flow
 
 ```mermaid

@@ -203,3 +203,21 @@ Branch: `feat/adapter-resilience-and-packaging` (from master `e9996280`). The fi
 - Containers.
 - CrmErpDemo behaviour changes.
 - Releasing: a follow-up v4.3.0, once merged.
+
+## Implementation notes (where the result differs from the plan)
+
+- `AddNimBusWebApp` exposes an external `https` endpoint as well as `http`, with `httpsPort`/`httpPort`
+  parameters instead of a single `port`. The SPA builds its API base URL as `https://{host}:{port}`
+  (`CookieAuth` in `ClientApp/src/api-client/index.extensions.ts`), so an HTTP-only WebApp loads but
+  every API call fails. Found during the end-to-end check.
+- The WebApp sets its content root to its own directory when it starts in a directory without the
+  built SPA (`Program.ResolveContentRoot`); a tool runs in the AppHost directory.
+- `NimBusTools` (the `dotnet tool exec` helper) lives in `NimBus.ServiceBusEmulator.AspireHosting`,
+  exposed to `NimBus.AspireHosting` with `InternalsVisibleTo`; both packages ship at one version.
+- The D365 adapter's SQL inbox uses its own table, `D365SalesInboxMessages`, in the shared platform
+  database, so the two adapters never race to create the same table.
+- `IRetryPolicyProvider.GetRetryPolicy(string, Exception, string?)` makes a call with a `null` literal
+  as the second argument ambiguous; pass `(string)null` or `(Exception)null`.
+- Verified end to end: every package packed to a local feed; a scratch adapter repository that referenced
+  only that feed and nuget.org ran the emulator, topology, Resolver, WebApp and an adapter under
+  `aspire run`, and a published event was Completed in the WebApp.

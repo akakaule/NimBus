@@ -369,7 +369,8 @@ export default function FailedMessages() {
   // A search that changes nothing still reloads, so an operator can re-run it to see new
   // failures; a changed filter reloads through the URL on its own.
   const search = (patch: Partial<FailedFilterValues>) => {
-    if (searchKey({ ...applied, ...patch }) === key) setRefresh((n) => n + 1);
+    if (JSON.stringify({ ...applied, ...patch }) === JSON.stringify(applied))
+      setRefresh((n) => n + 1);
     else narrow(patch);
   };
 
@@ -405,12 +406,17 @@ export default function FailedMessages() {
   const pendingNext = React.useRef<string>(undefined);
   React.useEffect(() => {
     const from = pendingNext.current;
-    if (!from || listLoading) return;
+    if (!from) return;
+    if (from !== openId) {
+      pendingNext.current = undefined;
+      return;
+    }
+    if (listLoading) return;
     pendingNext.current = undefined;
     const i = visible.findIndex((e) => failureIdOf(e) === from);
     if (i >= 0 && i + 1 < visible.length)
       setOpen(failureIdOf(visible[i + 1]), true);
-  }, [visible, listLoading, setOpen]);
+  }, [visible, listLoading, openId, setOpen]);
   const onNextFailure =
     openIndex < 0
       ? undefined

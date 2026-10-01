@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { SidePanel } from "./side-panel";
 
 afterEach(cleanup);
@@ -52,5 +53,31 @@ describe("SidePanel", () => {
     fireEvent.keyDown(document, { key: "Tab" });
 
     expect(document.activeElement).toBe(screen.getByText("first"));
+  });
+
+  it("wraps Shift+Tab from the initially focused dialog to the last control", async () => {
+    render(<Harness open onClose={vi.fn()} />);
+    expect(document.activeElement).toBe(
+      screen.getByRole("dialog", { name: "Details" }),
+    );
+
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+
+    expect(document.activeElement).toBe(screen.getByText("last"));
+  });
+
+  it("keeps focus on an empty dialog when Tab is pressed", async () => {
+    render(<Harness open={false} onClose={vi.fn()} />);
+    render(
+      <SidePanel isOpen onClose={vi.fn()} label="Empty">
+        Loading…
+      </SidePanel>,
+    );
+
+    await userEvent.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("dialog", { name: "Empty" }),
+    );
   });
 });

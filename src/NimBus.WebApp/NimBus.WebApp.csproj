@@ -3,7 +3,12 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <SpaRoot>ClientApp\</SpaRoot>
-    <IsPackable>false</IsPackable>
+    <!-- Shipped as a dotnet tool so an adapter repository's local Aspire stack can run it from
+         nuget.org (AddNimBusWebApp). Azure deployments keep using webapp.zip in Akaule.NimBus.Deploy. -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nimbus-webapp</ToolCommandName>
+    <Description>The NimBus management WebApp, runnable as a dotnet tool for local development.</Description>
     <TypeScriptCompileBlocked>true</TypeScriptCompileBlocked>
     <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
     <DefaultItemExcludes>$(DefaultItemExcludes);$(SpaRoot)node_modules\**</DefaultItemExcludes>
@@ -44,11 +49,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Don't publish the SPA source files, but do show them in the project files list -->
     <Content Remove="$(SpaRoot)**" />
     <None Remove="$(SpaRoot)**" />
     <None Include="$(SpaRoot)**" Exclude="$(SpaRoot)node_modules\**" />
     <Content Include="$(SpaRoot)build\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The tool's own copy under tools/ is all it needs; skip the duplicate content/ folders. -->
+    <Content Update="@(Content)" Pack="false" />
   </ItemGroup>
 
   <ItemGroup>

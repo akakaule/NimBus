@@ -934,7 +934,7 @@ function SubscriptionTable({
             const row = feedback[name];
             const missing = sub.missingRuleNames ?? [];
             const canInspectDeadLetters =
-              topicName === "Resolver" &&
+              topicName.toLowerCase() === "resolver" &&
               sub.requiresSession === true &&
               !sub.forwardTo &&
               (sub.deadLetterMessageCount ?? 0) > 0;

@@ -213,8 +213,8 @@ See [`events.md`](./events.md) for field-level event schemas and full mapping ta
 
 | Event | Trigger | Published via |
 |---|---|---|
-| `{EventX}` | {Source-system webhook / scheduled delta poll / plugin} | `IPublisherClient.PublishAsync` on `{EndpointName}` |
-| `{EventY}` | {} | `IPublisherClient.PublishAsync` on `{EndpointName}` |
+| `{EventX}` | {Source-system webhook / scheduled delta poll / plugin} | `IPublisherClient.Publish` on `{EndpointName}` |
+| `{EventY}` | {} | `IPublisherClient.Publish` on `{EndpointName}` |
 
 ### 3.3 Triggers  <!-- [HUMAN] — when is the adapter activated? (batch? realtime?) -->
 
@@ -275,7 +275,7 @@ These can be combined.}
 
 ### 4.3 Transient-fault retry  <!-- [AUTO] — from NimBus retry policy configuration; [HUMAN] — confirm budgets -->
 
-NimBus retry is configured per event via `IRetryPolicyProvider`. Wire-up location: `Program.cs` inside `AddNimBusSubscriber("{EndpointName}", sub => sub.RetryPolicies(...))` (or via a registered `IRetryPolicyProvider` singleton).
+NimBus retry is configured with `sub.ConfigureRetryPolicies(p => ...)` inside `AddNimBusSubscriber("{EndpointName}", sub => ...)`: exception rules (`p.AddExceptionRule(nameof({ThrottledException}), new RetryPolicy { ... })`, matched against the exception text including type names and stack traces), per-event policies (`p.AddEventTypePolicy(...)`) and an optional default (`p.SetDefaultPolicy(...)`). Without a matching rule a failure is not retried: the message fails and its session blocks for an operator. A circuit breaker (`sub.WithCircuitBreaker(...)`), if configured, is documented here too: thresholds and excluded exception types.
 
 Known transient faults that are retried:
 
@@ -296,7 +296,7 @@ Pick the stance per handler and document it. Both are valid; mixing is fine.
 | **Throw** | `{HandlerA}`, `{HandlerB}` | Throws (e.g. `InvalidDataException`) → NimBus marks the message as failed; operator replays from the WebApp after the prerequisite arrives. | {Core entity — missing prerequisite is a data-integrity signal} |
 | **Silent-skip** | `{HandlerC}` | Log + return; message resolved successfully. | {Reference data that will arrive eventually; retry will not help} |
 
-For "Throw" handlers that must short-circuit retry (validation failures), classify them as permanent via `IPermanentFailureClassifier` so they bypass the retry loop and route straight to the Resolver as `Failed`.
+For "Throw" handlers that must short-circuit retry (validation failures), classify them as permanent via `sub.ConfigurePermanentFailureClassifier(...)` or a custom `IFailureDispositionClassifier` (`sub.WithFailureDispositions(...)`). Permanent failures are dead-lettered instead of retried. Without a classifier, a "Throw" handler's exception simply has no retry rule, so the message fails at once and its session blocks until the operator resubmits or skips it.
 
 ### 4.5 Mapping layer  <!-- [AUTO] -->
 
@@ -311,9 +311,10 @@ For "Throw" handlers that must short-circuit retry (validation failures), classi
 NimBus pipeline behaviours registered via `services.AddNimBus(n => n.AddPipelineBehavior<...>())`, in order:
 
 1. `LoggingMiddleware`
-2. `MetricsMiddleware`
-3. `ValidationMiddleware`
-4. {custom behaviours}
+2. `ValidationMiddleware`
+3. {custom behaviours}
+
+Metrics and traces come from the NimBus OpenTelemetry instrumentation (`AddNimBusInstrumentation`), not from a pipeline behaviour. Lifecycle observers (`n.AddLifecycleObserver<T>()`): {list}.
 
 Order matters — behaviours run in registration order on the inbound side and in reverse on the outbound side.
 
@@ -347,7 +348,7 @@ sequenceDiagram
     Adp->>Src: fetch details ({REST/OData/SOAP})
     Src-->>Adp: response
     Adp->>Adp: transform to canonical event
-    Adp->>NB: PublishAsync `{EventName}`
+    Adp->>NB: Publish `{EventName}`
     NB-->>Tgt: deliver (session-aware)
     Tgt->>Tgt: process / persist
     Tgt-->>NB: ack
@@ -496,7 +497,7 @@ Keep this list to ≤5 bullets. File-level defects do not belong here; they belo
 |---|---|---|---|
 | Unit | {MSTest / xUnit / NUnit} + {NSubstitute / spy} | Per-handler logic: mapping, echo-loop, error paths | `tests/{Adapter}.UnitTests` |
 | Integration | {MSTest + WebApplicationFactory} + `NimBus.Testing` (in-memory transport) | Full DI + in-memory NimBus + fake {source/target} | `tests/{Adapter}.IntegrationTests` |
-| Contract | Build-time check | Every `Consumes<>` / `Produces<>` declaration matches `AddNimBusSubscriber` / `IPublisherClient.PublishAsync` wiring | Build-time |
+| Contract | Build-time check | Every `Consumes<>` / `Produces<>` declaration matches `AddNimBusSubscriber` / `IPublisherClient.Publish` wiring | Build-time |
 | End-to-end | Scripted replay | Real Service Bus (test env) + real source/target | {Test plan link} |
 
 **Key cases covered.**

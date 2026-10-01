@@ -70,12 +70,12 @@ For each handler: record class name, consumed event type, repositories and servi
 
 Signals:
 
-- `IPublisherClient.PublishAsync(event, ...)` calls — the canonical publish path.
+- `IPublisherClient.Publish(event, ...)` calls — the canonical publish path. The overload `Publish(event, sessionId, correlationId, messageId)` sets an explicit session and MessageId; record the MessageId recipe (deterministic per source change, or the default content hash).
 - A webhook / HTTP endpoint (`/events`, `/webhook/...`, plugin receiver) that resolves an event type and forwards to `IPublisherClient`.
 - Scheduled services: `IHostedService`, `BackgroundService`, or a Functions `[Timer]` trigger.
-- Within a handler, calls to `context.RespondAsync(...)` (from `IEventHandlerContext`) — these are response messages back through the same endpoint.
+- Request/reply: `sub.AddRequestHandler<TRequest, TResponse, THandler>()` with an `IRequestHandler<TRequest, TResponse>` that returns the response — the reply is sent back to the requester by NimBus.
 
-Map each publish call-site to the event it emits. For round-trip flows (consume + respond), document both directions in the same handler row in §5.
+Map each publish call-site to the event it emits. For round-trip flows (request + reply), document both directions in the same handler row in §5.
 
 ## Outbox
 
@@ -93,7 +93,8 @@ If the outbox is wired up, document this in TDD §4 (the publish path is decoupl
 Signals:
 
 - `services.AddNimBus(n => { n.AddPipelineBehavior<X>(); })` calls.
-- Built-in behaviours: `LoggingMiddleware`, `MetricsMiddleware`, `ValidationMiddleware` (in `NimBus.Core.Pipeline`).
+- Built-in behaviours: `LoggingMiddleware` and `ValidationMiddleware` (in `NimBus.Core.Pipeline`). Metrics come from the NimBus OpenTelemetry instrumentation (`AddNimBusInstrumentation`), not from a middleware.
+- Lifecycle observers: `n.AddLifecycleObserver<T>()` (`IMessageLifecycleObserver`, e.g. circuit-state reporting).
 - Custom `IMessagePipelineBehavior` implementations.
 
 Record the order of registration — pipeline behaviours run in registration order, so the order is part of the contract.
@@ -102,11 +103,14 @@ Record the order of registration — pipeline behaviours run in registration ord
 
 Signals:
 
-- `IRetryPolicyProvider` / `DefaultRetryPolicyProvider` registered in DI.
-- A `subscriber.RetryPolicies(provider => ...)` block (or equivalent) inside `AddNimBusSubscriber`.
-- Per-event retry rules: `provider.Configure<TEvent>(p => p.WithMaxAttempts(N).WithBackoff(...))`.
-- Polly directly (`IAsyncPolicy`, `Polly.Policy.WrapAsync`) — flag as an alignment risk: NimBus has its own retry pipeline and bypassing it loses Resolver visibility.
-- Exception predicates checking message substrings like `deadlock`, `timeout`, `lock`, `429`, `503`.
+- A `sub.ConfigureRetryPolicies(p => ...)` block inside `AddNimBusSubscriber`, using `DefaultRetryPolicyProvider`:
+  - `p.AddExceptionRule("<text>", new RetryPolicy { ... }, eventTypeIds...)` — matches a substring of `"{inner exception} {exception}"`, i.e. type names, messages **and stack traces**. Rules keyed on exception type names (`nameof(MyThrottledException)`) are robust; rules keyed on `429`/`503`/`timeout` text are a risk (flag them).
+  - `p.AddEventTypePolicy("<EventTypeId>", new RetryPolicy { ... })` — per event type.
+  - `p.SetDefaultPolicy(...)` — absent means a failure without a matching rule is not retried (the session blocks for an operator).
+- `RetryPolicy` fields: `MaxRetries`, `Strategy` (`Fixed` / `Linear` / `Exponential`), `BaseDelay`, `MaxDelay`, `Jitter` (`None` / `Full` / `Bounded`).
+- `IRetryPolicyProvider` registered in DI (custom provider).
+- Circuit breaker: `sub.WithCircuitBreaker(c => { ...; c.Exclude<T>(); })`.
+- Polly directly (`IAsyncPolicy`, `Polly.Policy.WrapAsync`) or an HttpClient resilience handler (`AddStandardResilienceHandler`, including one added to every client by a ServiceDefaults project) — flag as an alignment risk: hidden retries run inside one NimBus attempt, are invisible in the Resolver and can outlive the Service Bus lock.
 - Service Bus delivery-count handling — terminal failure after N delivery attempts is also part of the retry story.
 
 Record the exact set of matched fault signatures, the number of attempts, and the backoff formula.
@@ -115,10 +119,11 @@ Record the exact set of matched fault signatures, the number of attempts, and th
 
 Signals:
 
-- `IPermanentFailureClassifier` implementations.
+- `sub.ConfigurePermanentFailureClassifier(c => c.AddPermanentExceptionType<T>() / .AddPermanentExceptionNamePattern("..."))` — registers `DefaultPermanentFailureClassifier`, which treats `FormatException`, `InvalidCastException`, `ArgumentException`, `NotSupportedException` and type names containing `Serialization`, `Deserialization` or `Validation` as permanent.
+- `sub.WithFailureDispositions(classifier)` — a custom `IFailureDispositionClassifier` returning `Retry`, `DeadLetter` or `Discard`.
 - Handlers that throw a specific exception type to short-circuit retry (e.g. `InvalidDataException`, `ValidationException`).
 
-Permanent failures bypass retry and route to the Resolver as `Failed`. Document the classifier rules in TDD §4.4.
+Without a registered classifier, every failure is retried according to the retry policies. With one, failures it classifies as permanent are **dead-lettered** (not retried). Document the classifier rules in TDD §4.4.
 
 ## Missing-reference policy
 

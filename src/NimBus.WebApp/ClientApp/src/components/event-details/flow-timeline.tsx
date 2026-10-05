@@ -137,7 +137,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
             <div className={`ml-4 p-3 rounded-md border ${color.bg} ${color.border}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${color.dot} text-white`}>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-sm ${color.dot} text-white`}>
                     {color.label}
                   </span>
                   {entry.from && entry.to && (
@@ -151,14 +151,14 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
                 </span>
               </div>
               {entry.errorText && (
-                <p className="text-xs mt-2 text-red-700 bg-red-100 dark:text-red-200 dark:bg-red-950/40 rounded px-2 py-1 font-mono break-all">
+                <p className="text-xs mt-2 text-red-700 bg-red-100 dark:text-red-200 dark:bg-red-950/40 rounded-sm px-2 py-1 font-mono break-all">
                   {entry.errorText}
                 </p>
               )}
               {entry.exceptionStackTrace && (
                 <details className="mt-2">
                   <summary className="text-[10px] text-red-600 dark:text-red-400 cursor-pointer hover:underline">Exception details</summary>
-                  <pre className="text-[10px] mt-1 text-red-800 bg-red-50 dark:text-red-200 dark:bg-red-950/30 rounded px-2 py-1 overflow-x-auto max-h-40 whitespace-pre-wrap break-all">
+                  <pre className="text-[10px] mt-1 text-red-800 bg-red-50 dark:text-red-200 dark:bg-red-950/30 rounded-sm px-2 py-1 overflow-x-auto max-h-40 whitespace-pre-wrap break-all">
                     {entry.exceptionStackTrace}
                   </pre>
                 </details>
@@ -166,7 +166,7 @@ export default function FlowTimeline({ messages, audits }: FlowTimelineProps) {
               {entry.eventContent && (
                 <details className="mt-2">
                   <summary className="text-[10px] text-muted-foreground cursor-pointer hover:underline">Payload</summary>
-                  <pre className="text-[10px] mt-1 bg-muted rounded px-2 py-1 overflow-x-auto max-h-48 whitespace-pre-wrap">
+                  <pre className="text-[10px] mt-1 bg-muted rounded-sm px-2 py-1 overflow-x-auto max-h-48 whitespace-pre-wrap">
                     {formatJson(entry.eventContent)}
                   </pre>
                 </details>

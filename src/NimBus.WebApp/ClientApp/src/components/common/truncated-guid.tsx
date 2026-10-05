@@ -98,7 +98,7 @@ export default function TruncatedGuid({
             type="button"
             onClick={handleCopyClick}
             aria-label="Copy to clipboard"
-            className="bg-transparent border-0 p-0 m-0 cursor-pointer text-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0"
+            className="bg-transparent border-0 p-0 m-0 cursor-pointer text-foreground opacity-0 group-hover:opacity-60 hover:opacity-100! transition-opacity shrink-0"
           >
             <svg
               aria-hidden="true"

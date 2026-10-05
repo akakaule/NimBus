@@ -80,7 +80,7 @@ export default function FailureClassificationExplainer({ thresholds, onChange }:
           const top = category.id === sample.category;
           return <div key={category.id} className="grid grid-cols-[minmax(0,14rem)_1fr_2.5rem] items-center gap-2 text-xs">
             <span className={cn("truncate font-mono", top && "font-semibold")}>{category.id}</span>
-            <span className="relative h-3 rounded bg-muted"><span className={cn("block h-full rounded", top ? "bg-primary" : "bg-muted-foreground opacity-40")} style={{ width: `${value * 100}%` }} />
+            <span className="relative h-3 rounded-sm bg-muted"><span className={cn("block h-full rounded-sm", top ? "bg-primary" : "bg-muted-foreground opacity-40")} style={{ width: `${value * 100}%` }} />
               {top && <span aria-hidden className="absolute -inset-y-0.5 w-0.5 bg-foreground opacity-60" style={{ left: `${thresholds.minimumCategoryConfidence * 100}%` }} />}</span>
             <span className="text-right font-mono">{fixed(value)}</span>
           </div>;

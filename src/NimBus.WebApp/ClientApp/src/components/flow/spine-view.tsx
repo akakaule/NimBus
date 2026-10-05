@@ -296,7 +296,7 @@ export const SpineView = ({
                   >
                     <div className="flex items-center justify-between gap-2">
                       {t.namespace !== "" ? (
-                        <span className="font-mono text-[9.5px] font-semibold tracking-[0.1em] uppercase text-nimbus-purple bg-nimbus-purple-50 px-1.5 py-[3px] rounded-nb-sm truncate">
+                        <span className="font-mono text-[9.5px] font-semibold tracking-widest uppercase text-nimbus-purple bg-nimbus-purple-50 px-1.5 py-[3px] rounded-nb-sm truncate">
                           {t.namespace}
                         </span>
                       ) : (

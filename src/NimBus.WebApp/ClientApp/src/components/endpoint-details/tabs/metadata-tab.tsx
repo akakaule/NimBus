@@ -27,7 +27,7 @@ const MetadataTab = () => {
 
   return (
     <div className="grid grid-cols-1 gap-6 w-full">
-      <div className="w-full border border-input rounded">
+      <div className="w-full border border-input rounded-sm">
         {fetchDone && <MetadataColumn metadata={endpointMetadata} />}
       </div>
     </div>

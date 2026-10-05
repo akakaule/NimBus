@@ -96,7 +96,7 @@ export function OperationGroup({
         <div className="flex-1 min-w-0">
           <AccordionTrigger
             itemId={id}
-            className="border-0 hover:bg-transparent data-[expanded]:bg-transparent py-4 px-5 rounded-t-nb-md"
+            className="border-0 hover:bg-transparent data-expanded:bg-transparent py-4 px-5 rounded-t-nb-md"
           >
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <span

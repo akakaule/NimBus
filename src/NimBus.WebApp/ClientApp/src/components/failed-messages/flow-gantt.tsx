@@ -124,7 +124,7 @@ export default function FlowGantt({
                         />
                       ) : (
                         <span
-                          className="absolute top-2 -ml-[5px] h-2.5 w-2.5 rotate-45"
+                          className="absolute top-2 ml-[-5px] h-2.5 w-2.5 rotate-45"
                           style={{ left: `${left}%`, background: color }}
                         />
                       )}

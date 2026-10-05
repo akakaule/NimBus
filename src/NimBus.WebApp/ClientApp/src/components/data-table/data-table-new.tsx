@@ -667,13 +667,13 @@ function EndpointFilter({
             {endpointIds.map((id) => (
               <label
                 key={id}
-                className="flex items-center gap-2 px-2 py-1 hover:bg-accent rounded cursor-pointer"
+                className="flex items-center gap-2 px-2 py-1 hover:bg-accent rounded-sm cursor-pointer"
               >
                 <input
                   type="checkbox"
                   checked={checkedEndpointIds?.includes(id) ?? false}
                   onChange={(e) => checked(id, e.target.checked)}
-                  className="rounded border-input text-primary focus:ring-primary"
+                  className="rounded-sm border-input text-primary focus:ring-primary"
                 />
                 <span className="text-sm truncate">{id}</span>
               </label>

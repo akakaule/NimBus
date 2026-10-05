@@ -154,7 +154,7 @@ export default function AuditFilterBar({
           <select
             value={draft.auditType}
             onChange={(e) => update("auditType", e.target.value)}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-0 focus:border-primary focus:ring-primary-200"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-offset-0 focus:border-primary focus:ring-primary-200"
           >
             <option value="">All types</option>
             {auditTypeOptions.map((opt) => (

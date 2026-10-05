@@ -165,9 +165,9 @@ const TabStrip: React.FC<TabStripProps> = ({ tabs, activeTab, onChange }) => (
           className={cn(
             "bg-transparent border-0 px-[18px] py-[11px] text-[13.5px] font-semibold cursor-pointer",
             "border-b-2 border-transparent -mb-px inline-flex items-center gap-2",
-            "transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset",
+            "transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-inset",
             isActive
-              ? "text-primary-600 border-b-primary bg-gradient-to-b from-transparent to-primary-tint"
+              ? "text-primary-600 border-b-primary bg-linear-to-b from-transparent to-primary-tint"
               : "text-ink-2 hover:text-ink",
             isDisabled && "opacity-40 cursor-not-allowed hover:text-ink-2",
           )}

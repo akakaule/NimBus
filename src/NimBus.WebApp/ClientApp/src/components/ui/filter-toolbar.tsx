@@ -124,7 +124,7 @@ export const FilterSearch = ({
         "w-full text-[13px] text-foreground bg-background dark:bg-muted",
         "border border-border rounded-nb-md pl-9 pr-3 py-2",
         "placeholder:text-muted-foreground",
-        "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30",
+        "focus:outline-hidden focus:border-primary focus:ring-2 focus:ring-primary/30",
       )}
     />
   </div>

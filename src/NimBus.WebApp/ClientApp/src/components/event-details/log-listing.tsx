@@ -66,7 +66,7 @@ function LogEntry({ l }: { l: api.EventLogEntry }) {
                 <b>Payload</b>
               </td>
               <td className="py-2">
-                <code className="bg-muted px-2 py-1 rounded text-sm">
+                <code className="bg-muted px-2 py-1 rounded-sm text-sm">
                   {l.payload}
                 </code>
               </td>

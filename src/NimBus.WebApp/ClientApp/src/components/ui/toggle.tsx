@@ -41,7 +41,7 @@ const Toggle = forwardRef<HTMLButtonElement, ToggleProps>(
         }}
         className={cn(
           "inline-flex items-center gap-2 align-middle select-none",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-tint rounded-full",
+          "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-tint rounded-full",
           disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
           className,
         )}

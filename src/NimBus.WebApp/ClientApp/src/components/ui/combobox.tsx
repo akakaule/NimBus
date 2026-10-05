@@ -102,7 +102,7 @@ const Combobox = ({
               {selectedLabels.map((label, idx) => (
                 <span
                   key={idx}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200 text-xs rounded"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200 text-xs rounded-sm"
                 >
                   {label}
                   <button
@@ -132,7 +132,7 @@ const Combobox = ({
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 min-w-[100px] outline-none text-sm py-1 px-1 bg-transparent"
+            className="flex-1 min-w-[100px] outline-hidden text-sm py-1 px-1 bg-transparent"
             placeholder={
               value.length === 0
                 ? placeholder

@@ -257,8 +257,8 @@ export default function FailedItemList({
             >
               <span className="h-12 w-[5px] rounded-[1px] bg-muted" />
               <span className="flex flex-1 flex-col gap-2">
-                <span className="h-4 w-64 animate-pulse rounded bg-muted" />
-                <span className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+                <span className="h-4 w-64 animate-pulse rounded-sm bg-muted" />
+                <span className="h-3 w-3/4 animate-pulse rounded-sm bg-muted" />
               </span>
             </li>
           ))}

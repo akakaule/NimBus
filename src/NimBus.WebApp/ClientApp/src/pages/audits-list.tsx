@@ -231,7 +231,7 @@ export default function AuditsList() {
           <label htmlFor="audits-page-size">Rows per page:</label>
           <select
             id="audits-page-size"
-            className="bg-card text-foreground border border-border rounded px-2 py-1"
+            className="bg-card text-foreground border border-border rounded-sm px-2 py-1"
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value))}
             disabled={loading}

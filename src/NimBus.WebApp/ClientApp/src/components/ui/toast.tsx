@@ -223,7 +223,7 @@ const ToastItem = ({
       </div>
       <button
         onClick={onClose}
-        className="shrink-0 p-1 text-muted-foreground hover:text-foreground rounded"
+        className="shrink-0 p-1 text-muted-foreground hover:text-foreground rounded-sm"
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
           <path

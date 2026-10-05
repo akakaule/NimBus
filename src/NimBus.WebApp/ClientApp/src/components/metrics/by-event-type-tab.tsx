@@ -364,7 +364,7 @@ export default function ByEventTypeTab({
             >
               <span
                 aria-hidden="true"
-                className="inline-block w-2.5 h-2.5 rounded-sm"
+                className="inline-block w-2.5 h-2.5 rounded-xs"
                 style={{ background: colorOf(s.eventTypeId ?? "") }}
               />
               {s.eventTypeId}
@@ -437,7 +437,7 @@ export default function ByEventTypeTab({
                         >
                           <span
                             aria-hidden="true"
-                            className="inline-block w-2 h-2 rounded-sm"
+                            className="inline-block w-2 h-2 rounded-xs"
                             style={{ background: e.color }}
                           />
                           <span className="truncate max-w-[220px]">
@@ -481,7 +481,7 @@ export default function ByEventTypeTab({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search…"
               aria-label="Search event types"
-              className="border border-input rounded-md bg-background text-sm px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+              className="border border-input rounded-md bg-background text-sm px-2.5 py-1.5 outline-hidden focus:ring-2 focus:ring-primary focus:border-primary"
             />
             <span className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">
               {tableRows.length} of {series.length} · {periodLabel}

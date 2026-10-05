@@ -370,7 +370,7 @@ export function StalePendingReconcileCard({
               )}
 
               {rows.length > 0 && (
-                <div className="max-h-[32rem] overflow-auto rounded-nb-md border border-border">
+                <div className="max-h-128 overflow-auto rounded-nb-md border border-border">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-card shadow-[inset_0_-1px_0_0] shadow-border">
                       <tr className="text-left text-xs uppercase text-muted-foreground">
@@ -405,7 +405,7 @@ export function StalePendingReconcileCard({
                           <td className="px-3 py-1.5 align-top">
                             <TruncatedGuid guid={row.responseMessageId} />
                           </td>
-                          <td className="min-w-[18rem] px-3 py-1.5 align-top font-mono text-[11.5px] text-muted-foreground break-words">
+                          <td className="min-w-[18rem] px-3 py-1.5 align-top font-mono text-[11.5px] text-muted-foreground wrap-break-word">
                             {row.detail}
                           </td>
                         </tr>

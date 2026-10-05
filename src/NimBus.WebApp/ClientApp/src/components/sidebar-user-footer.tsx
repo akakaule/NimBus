@@ -102,7 +102,7 @@ const SidebarUserFooter: React.FC = () => {
       <span
         className={cn(
           "w-7 h-7 rounded-full inline-flex items-center justify-center text-[11px] font-bold text-white shrink-0",
-          "bg-gradient-to-br from-[#E8743C] to-[#C2412E]",
+          "bg-linear-to-br from-[#E8743C] to-[#C2412E]",
         )}
         aria-hidden="true"
       >
@@ -126,8 +126,8 @@ const SidebarUserFooter: React.FC = () => {
         aria-label="Sign out"
         className={cn(
           "shrink-0 p-1.5 rounded-md text-[#C9C1AB]",
-          "hover:bg-white/[0.04] hover:text-[#F4F2EA] transition-colors",
-          "focus:outline-none focus:ring-2 focus:ring-primary",
+          "hover:bg-white/4 hover:text-[#F4F2EA] transition-colors",
+          "focus:outline-hidden focus:ring-2 focus:ring-primary",
         )}
       >
         <SignOutIcon />

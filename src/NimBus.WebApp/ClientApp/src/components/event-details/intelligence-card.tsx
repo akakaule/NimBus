@@ -114,7 +114,7 @@ function OccurrenceCard(props: IntelligenceCardProps) {
   const categoryMeaning = FAILURE_CATEGORIES.find(item => item.id === classification?.category)?.meaning;
   return (
     <Card className="mb-4 border-primary/30">
-      <CardHeader className="flex-row items-center justify-between gap-4">
+      <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
         <div>
           <CardTitle className="text-base">Failure intelligence{props.occurrenceLabel ? ` · ${props.occurrenceLabel}` : ""}</CardTitle>
           <CardDescription>Advisory analysis of this failure occurrence. It never retries or changes the message.</CardDescription>

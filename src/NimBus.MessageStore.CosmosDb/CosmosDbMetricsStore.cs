@@ -23,33 +23,37 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         _getMessagesContainer = getMessagesContainer;
     }
 
-    public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+    [Obsolete("Use GetEndpointMetrics(from, to). This overload will be removed in v5.")]
+    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => GetEndpointMetrics(from, DateTime.UtcNow);
+
+    public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from, DateTime to)
     {
         var container = await _getMessagesContainer();
         var fromIso = from.ToString("o");
+        var toIso = to.ToString("o");
 
         // The three aggregates are independent — run them concurrently so the
         // endpoint overview costs one round-trip's latency instead of three.
         var publishedTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.message[\"From\"] AS endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'EventRequest' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             "GROUP BY c.message[\"From\"], c.message.EventTypeId",
-            fromIso);
+            fromIso, toIso);
 
         var failedTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ErrorResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
+            fromIso, toIso);
 
         var handledTask = RunEventTypeCountQuery(container,
             "SELECT COUNT(1) AS count, c.endpointId, c.message.EventTypeId FROM c " +
             "WHERE c.message.MessageType = 'ResolutionResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
+            fromIso, toIso);
 
         await Task.WhenAll(publishedTask, failedTask, handledTask);
 
@@ -61,7 +65,10 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         };
     }
 
-    public async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+    [Obsolete("Use GetEndpointLatencyMetrics(from, to). This overload will be removed in v5.")]
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => GetEndpointLatencyMetrics(from, DateTime.UtcNow);
+
+    public async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from, DateTime to)
     {
         // Server-side aggregation over all ResolutionResponse / ErrorResponse
         // documents in the period. Two queries (one per timing series) so we
@@ -71,6 +78,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         // EventRequest doesn't carry timings; only the response does).
         var container = await _getMessagesContainer();
         var fromIso = from.ToString("o");
+        var toIso = to.ToString("o");
         var outcomeFilter =
             "(c.message.MessageType = 'ResolutionResponse' OR " +
             " c.message.MessageType = 'ErrorResponse' OR " +
@@ -88,11 +96,11 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
             "       MAX(c.message.QueueTimeMs) AS max " +
             "FROM c " +
             $"WHERE {outcomeFilter} " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             "AND IS_DEFINED(c.message.QueueTimeMs) " +
             "AND c.message.QueueTimeMs != null " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
+            fromIso, toIso);
 
         var processingRowsTask = RunLatencyAggregateQuery(container,
             "SELECT c.endpointId, c.message.EventTypeId, " +
@@ -102,11 +110,11 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
             "       MAX(c.message.ProcessingTimeMs) AS max " +
             "FROM c " +
             $"WHERE {outcomeFilter} " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             "AND IS_DEFINED(c.message.ProcessingTimeMs) " +
             "AND c.message.ProcessingTimeMs != null " +
             "GROUP BY c.endpointId, c.message.EventTypeId",
-            fromIso);
+            fromIso, toIso);
 
         await Task.WhenAll(queueRowsTask, processingRowsTask);
         var queueRows = await queueRowsTask;
@@ -140,19 +148,23 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return new EndpointLatencyMetricsResult { Latencies = grouped.Values.ToList() };
     }
 
-    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
+    [Obsolete("Use GetFailedMessageInsights(from, to). This overload will be removed in v5.")]
+    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => GetFailedMessageInsights(from, DateTime.UtcNow);
+
+    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from, DateTime to)
     {
         var container = await _getMessagesContainer();
         var fromIso = from.ToString("o");
+        var toIso = to.ToString("o");
 
         var sql = "SELECT c.endpointId, c.message.EventTypeId, " +
                   "c.message.MessageContent.ErrorContent.ErrorText, " +
                   "c.message.EnqueuedTimeUtc, c.message.EventId " +
                   "FROM c " +
                   "WHERE c.message.MessageType = 'ErrorResponse' " +
-                  "AND c.message.EnqueuedTimeUtc >= @from";
+                  "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to";
 
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso).WithParameter("@to", toIso);
         // Bound page size so a high-failure window streams in pages instead of
         // materialising one huge response (each row already projects just the
         // fields below, never the full document). The loop still drains every match.
@@ -179,39 +191,44 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return results;
     }
 
-    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    [Obsolete("Use GetTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
+    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+        => GetTimeSeriesMetrics(from, DateTime.UtcNow, substringLength, bucketLabel);
+
+    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
     {
         var container = await _getMessagesContainer();
         var fromIso = from.ToString("o");
+        var toIso = to.ToString("o");
 
         // The three bucket aggregates are independent — run them concurrently.
         var publishedBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'EventRequest' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
-            fromIso);
+            fromIso, toIso);
 
         var handledBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'ResolutionResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
-            fromIso);
+            fromIso, toIso);
 
         var failedBucketsTask = RunBucketCountQuery(container,
             $"SELECT COUNT(1) AS count, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'ErrorResponse' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             $"GROUP BY SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})",
-            fromIso);
+            fromIso, toIso);
 
         await Task.WhenAll(publishedBucketsTask, handledBucketsTask, failedBucketsTask);
         var publishedBuckets = await publishedBucketsTask;
         var handledBuckets = await handledBucketsTask;
         var failedBuckets = await failedBucketsTask;
 
-        var allBucketKeys = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+        var allBucketKeys = GenerateBucketKeys(from, to, substringLength)
             .Concat(publishedBuckets.Keys)
             .Concat(handledBuckets.Keys)
             .Concat(failedBuckets.Keys)
@@ -229,10 +246,15 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return new TimeSeriesResult { BucketSize = bucketLabel, DataPoints = dataPoints };
     }
 
-    public async Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    [Obsolete("Use GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
+    public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+        => GetEventTypeTimeSeriesMetrics(from, DateTime.UtcNow, substringLength, bucketLabel);
+
+    public async Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
     {
         var container = await _getMessagesContainer();
         var fromIso = from.ToString("o");
+        var toIso = to.ToString("o");
 
         // Same `SELECT VALUE { agg, non-agg }` restriction as GetEndpointMetrics —
         // use plain column aliases instead. Result rows: { count, eventTypeId, bucket }.
@@ -240,10 +262,10 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
             $"SELECT COUNT(1) AS count, c.message.EventTypeId AS eventTypeId, " +
             $"SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength}) AS bucket " +
             "FROM c WHERE c.message.MessageType = 'EventRequest' " +
-            "AND c.message.EnqueuedTimeUtc >= @from " +
+            "AND c.message.EnqueuedTimeUtc >= @from AND c.message.EnqueuedTimeUtc < @to " +
             $"GROUP BY c.message.EventTypeId, SUBSTRING(c.message.EnqueuedTimeUtc, 0, {substringLength})";
 
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso).WithParameter("@to", toIso);
         var iterator = container.GetItemQueryIterator<EventTypeBucketCountRow>(query);
 
         // Cross-partition GROUP BY can surface partial aggregates per physical
@@ -279,9 +301,9 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return new EventTypeTimeSeriesResult { BucketSize = bucketLabel, Series = series };
     }
 
-    private static async Task<List<LatencyAggregateRow>> RunLatencyAggregateQuery(ICosmosContainerAdapter container, string sql, string fromIso)
+    private static async Task<List<LatencyAggregateRow>> RunLatencyAggregateQuery(ICosmosContainerAdapter container, string sql, string fromIso, string toIso)
     {
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso).WithParameter("@to", toIso);
         var iterator = container.GetItemQueryIterator<LatencyAggregateRow>(query);
         var results = new List<LatencyAggregateRow>();
         while (iterator.HasMoreResults)
@@ -292,9 +314,9 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return results;
     }
 
-    private static async Task<Dictionary<string, int>> RunBucketCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
+    private static async Task<Dictionary<string, int>> RunBucketCountQuery(ICosmosContainerAdapter container, string sql, string fromIso, string toIso)
     {
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso).WithParameter("@to", toIso);
         var iterator = container.GetItemQueryIterator<BucketCountResult>(query);
         var results = new Dictionary<string, int>();
 
@@ -330,7 +352,7 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
             _ => TimeSpan.FromHours(1)
         };
 
-        while (current <= to)
+        while (current < to)
         {
             var key = current.ToString("o")[..substringLength];
             keys.Add(key);
@@ -340,9 +362,9 @@ internal sealed class CosmosDbMetricsStore : IMetricsStore
         return keys;
     }
 
-    private static async Task<List<EndpointEventTypeCount>> RunEventTypeCountQuery(ICosmosContainerAdapter container, string sql, string fromIso)
+    private static async Task<List<EndpointEventTypeCount>> RunEventTypeCountQuery(ICosmosContainerAdapter container, string sql, string fromIso, string toIso)
     {
-        var query = new QueryDefinition(sql).WithParameter("@from", fromIso);
+        var query = new QueryDefinition(sql).WithParameter("@from", fromIso).WithParameter("@to", toIso);
         var iterator = container.GetItemQueryIterator<MetricsEventTypeCountResult>(query);
         var results = new List<EndpointEventTypeCount>();
 

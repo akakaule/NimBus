@@ -186,7 +186,7 @@ public sealed class StoreResultCacheTests
         Assert.AreEqual(1, store.Calls);
     }
 
-    private sealed class FailedInsightsStore : InMemoryMessageStore, IMetricsStore
+    private sealed class FailedInsightsStore : InMemoryMessageStore
     {
         public int Calls { get; private set; }
         public Func<Task<List<FailedMessageInfo>>> Read { get; set; } = () => Task.FromResult(new List<FailedMessageInfo>
@@ -195,7 +195,7 @@ public sealed class StoreResultCacheTests
             new() { EndpointId = "erp", EventTypeId = "Account", ErrorText = "Timeout: connection unavailable", EnqueuedTimeUtc = DateTime.UtcNow },
         });
 
-        public new Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
+        public override Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from, DateTime to)
         {
             Calls++;
             return Read();
@@ -251,10 +251,10 @@ public sealed class StoreResultCacheTests
             return base.DownloadEndpointStateCount(endpointId);
         }
 
-        public override Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+        public override Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from, DateTime to)
         {
             Interlocked.Increment(ref _metricsCalls);
-            return base.GetEndpointMetrics(from);
+            return base.GetEndpointMetrics(from, to);
         }
     }
 

@@ -2481,6 +2481,20 @@ paths:
           required: true
           schema:
             $ref: '#/components/schemas/Period'
+        - name: from
+          in: query
+          required: false
+          description: Custom window start (inclusive). Used with `to` instead of `period`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Successfully returned metrics overview
@@ -2488,6 +2502,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MetricsOverview'
+        '400':
+          description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
       tags:
         - Metrics
   /api/metrics/latency:
@@ -2500,6 +2516,20 @@ paths:
           required: true
           schema:
             $ref: '#/components/schemas/Period'
+        - name: from
+          in: query
+          required: false
+          description: Custom window start (inclusive). Used with `to` instead of `period`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Latency percentiles per endpoint and event type
@@ -2507,6 +2537,8 @@ paths:
             application\json:
               schema:
                 $ref: '#/components/schemas/LatencyOverview'
+        '400':
+          description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
       tags:
         - Metrics
   /api/metrics/failed-insights:
@@ -2519,6 +2551,20 @@ paths:
           required: true
           schema:
             $ref: '#/components/schemas/Period'
+        - name: from
+          in: query
+          required: false
+          description: Custom window start (inclusive). Used with `to` instead of `period`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Failed message insights grouped by error pattern
@@ -2526,6 +2572,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FailedInsightsOverview'
+        '400':
+          description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
       tags:
         - Metrics
   /api/metrics/timeseries:
@@ -2538,6 +2586,20 @@ paths:
           required: true
           schema:
             $ref: '#/components/schemas/Period'
+        - name: from
+          in: query
+          required: false
+          description: Custom window start (inclusive). Used with `to` instead of `period`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Time-bucketed message counts
@@ -2545,6 +2607,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TimeSeriesOverview'
+        '400':
+          description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
       tags:
         - Metrics
   /api/metrics/timeseries-by-eventtype:
@@ -2557,6 +2621,20 @@ paths:
           required: true
           schema:
             $ref: '#/components/schemas/Period'
+        - name: from
+          in: query
+          required: false
+          description: Custom window start (inclusive). Used with `to` instead of `period`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: OK
@@ -2564,6 +2642,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EventTypeTimeSeriesOverview'
+        '400':
+          description: Invalid custom window (only one of from/to, from not before to, or longer than 90 days)
       tags:
         - Metrics
   /api/heartbeat/page:

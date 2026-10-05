@@ -5261,14 +5261,24 @@ export class Client extends ApiClientBase {
 
     /**
      * Get metrics overview for all endpoints
+     * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
+     * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
      * @return Successfully returned metrics overview
      */
-    getMetricsOverview(period: Period): Promise<MetricsOverview> {
+    getMetricsOverview(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<MetricsOverview> {
         let url_ = this.baseUrl + "/api/metrics/overview?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
             url_ += "period=" + encodeURIComponent("" + period) + "&";
+        if (from === null)
+            throw new globalThis.Error("The parameter 'from' cannot be null.");
+        else if (from !== undefined)
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === null)
+            throw new globalThis.Error("The parameter 'to' cannot be null.");
+        else if (to !== undefined)
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -5295,6 +5305,10 @@ export class Client extends ApiClientBase {
             result200 = MetricsOverview.fromJS(resultData200);
             return result200;
             });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -5305,14 +5319,24 @@ export class Client extends ApiClientBase {
 
     /**
      * Get latency percentiles for all endpoints
+     * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
+     * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
      * @return Latency percentiles per endpoint and event type
      */
-    getMetricsLatency(period: Period): Promise<LatencyOverview> {
+    getMetricsLatency(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<LatencyOverview> {
         let url_ = this.baseUrl + "/api/metrics/latency?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
             url_ += "period=" + encodeURIComponent("" + period) + "&";
+        if (from === null)
+            throw new globalThis.Error("The parameter 'from' cannot be null.");
+        else if (from !== undefined)
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === null)
+            throw new globalThis.Error("The parameter 'to' cannot be null.");
+        else if (to !== undefined)
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -5339,6 +5363,10 @@ export class Client extends ApiClientBase {
             result200 = LatencyOverview.fromJS(resultData200);
             return result200;
             });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -5349,14 +5377,24 @@ export class Client extends ApiClientBase {
 
     /**
      * Get failed message insights grouped by error pattern
+     * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
+     * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
      * @return Failed message insights grouped by error pattern
      */
-    getMetricsFailedInsights(period: Period): Promise<FailedInsightsOverview> {
+    getMetricsFailedInsights(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<FailedInsightsOverview> {
         let url_ = this.baseUrl + "/api/metrics/failed-insights?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
             url_ += "period=" + encodeURIComponent("" + period) + "&";
+        if (from === null)
+            throw new globalThis.Error("The parameter 'from' cannot be null.");
+        else if (from !== undefined)
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === null)
+            throw new globalThis.Error("The parameter 'to' cannot be null.");
+        else if (to !== undefined)
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -5383,6 +5421,10 @@ export class Client extends ApiClientBase {
             result200 = FailedInsightsOverview.fromJS(resultData200);
             return result200;
             });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -5393,14 +5435,24 @@ export class Client extends ApiClientBase {
 
     /**
      * Get time-bucketed message counts
+     * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
+     * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
      * @return Time-bucketed message counts
      */
-    getMetricsTimeseries(period: Period): Promise<TimeSeriesOverview> {
+    getMetricsTimeseries(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<TimeSeriesOverview> {
         let url_ = this.baseUrl + "/api/metrics/timeseries?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
             url_ += "period=" + encodeURIComponent("" + period) + "&";
+        if (from === null)
+            throw new globalThis.Error("The parameter 'from' cannot be null.");
+        else if (from !== undefined)
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === null)
+            throw new globalThis.Error("The parameter 'to' cannot be null.");
+        else if (to !== undefined)
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -5427,6 +5479,10 @@ export class Client extends ApiClientBase {
             result200 = TimeSeriesOverview.fromJS(resultData200);
             return result200;
             });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -5437,14 +5493,24 @@ export class Client extends ApiClientBase {
 
     /**
      * Time-series buckets of published messages grouped by event type.
+     * @param from (optional) Custom window start (inclusive). Used with `to` instead of `period`.
+     * @param to (optional) Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.
      * @return OK
      */
-    getMetricsTimeseriesByEventtype(period: Period): Promise<EventTypeTimeSeriesOverview> {
+    getMetricsTimeseriesByEventtype(period: Period, from?: moment.Moment | undefined, to?: moment.Moment | undefined): Promise<EventTypeTimeSeriesOverview> {
         let url_ = this.baseUrl + "/api/metrics/timeseries-by-eventtype?";
         if (period === undefined || period === null)
             throw new globalThis.Error("The parameter 'period' must be defined and cannot be null.");
         else
             url_ += "period=" + encodeURIComponent("" + period) + "&";
+        if (from === null)
+            throw new globalThis.Error("The parameter 'from' cannot be null.");
+        else if (from !== undefined)
+            url_ += "from=" + encodeURIComponent(from ? "" + from.toISOString() : "") + "&";
+        if (to === null)
+            throw new globalThis.Error("The parameter 'to' cannot be null.");
+        else if (to !== undefined)
+            url_ += "to=" + encodeURIComponent(to ? "" + to.toISOString() : "") + "&";
         url_ = url_.replace(/[?&]$/, "");
 
         let options_: RequestInit = {
@@ -5470,6 +5536,10 @@ export class Client extends ApiClientBase {
             let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
             result200 = EventTypeTimeSeriesOverview.fromJS(resultData200);
             return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            return throwException("Invalid custom window (only one of from/to, from not before to, or longer than 90 days)", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {

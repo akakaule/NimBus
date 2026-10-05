@@ -1116,9 +1116,13 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         RoundTripMs = source.RoundTripMs,
     };
 
+    [Obsolete("Use GetEndpointMetrics(from, to). This overload will be removed in v5.")]
     public virtual Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+        => GetEndpointMetrics(from, DateTime.UtcNow);
+
+    public virtual Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from, DateTime to)
     {
-        var messages = _messages.Values.Where(m => m.EnqueuedTimeUtc >= from).ToList();
+        var messages = _messages.Values.Where(m => m.EnqueuedTimeUtc >= from && m.EnqueuedTimeUtc < to).ToList();
         return Task.FromResult(new EndpointMetricsResult
         {
             Published = CountByEndpointAndEventType(messages.Where(m => m.MessageType == MessageType.EventRequest), published: true),
@@ -1127,7 +1131,11 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         });
     }
 
+    [Obsolete("Use GetEndpointLatencyMetrics(from, to). This overload will be removed in v5.")]
     public virtual Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+        => GetEndpointLatencyMetrics(from, DateTime.UtcNow);
+
+    public virtual Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from, DateTime to)
     {
         var outcomeTypes = new HashSet<MessageType>
         {
@@ -1139,7 +1147,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         };
 
         var latencies = _messages.Values
-            .Where(m => m.EnqueuedTimeUtc >= from && outcomeTypes.Contains(m.MessageType))
+            .Where(m => m.EnqueuedTimeUtc >= from && m.EnqueuedTimeUtc < to && outcomeTypes.Contains(m.MessageType))
             .GroupBy(m => (EndpointId: m.EndpointId ?? string.Empty, EventTypeId: m.EventTypeId ?? string.Empty))
             .Select(g => new EndpointLatencyAggregate
             {
@@ -1153,10 +1161,14 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.FromResult(new EndpointLatencyMetricsResult { Latencies = latencies });
     }
 
+    [Obsolete("Use GetFailedMessageInsights(from, to). This overload will be removed in v5.")]
     public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
+        => GetFailedMessageInsights(from, DateTime.UtcNow);
+
+    public virtual Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from, DateTime to)
     {
         var results = _messages.Values
-            .Where(m => m.EnqueuedTimeUtc >= from && m.MessageType == MessageType.ErrorResponse)
+            .Where(m => m.EnqueuedTimeUtc >= from && m.EnqueuedTimeUtc < to && m.MessageType == MessageType.ErrorResponse)
             .Select(m => new FailedMessageInfo
             {
                 EndpointId = m.EndpointId,
@@ -1170,12 +1182,16 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.FromResult(results);
     }
 
+    [Obsolete("Use GetTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
     public virtual Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+        => GetTimeSeriesMetrics(from, DateTime.UtcNow, substringLength, bucketLabel);
+
+    public virtual Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
     {
-        var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+        var buckets = GenerateBucketKeys(from, to, substringLength)
             .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });
 
-        foreach (var message in _messages.Values.Where(m => m.EnqueuedTimeUtc >= from))
+        foreach (var message in _messages.Values.Where(m => m.EnqueuedTimeUtc >= from && m.EnqueuedTimeUtc < to))
         {
             var key = message.EnqueuedTimeUtc.ToUniversalTime().ToString("o")[..substringLength];
             if (!buckets.TryGetValue(key, out var bucket))
@@ -1205,12 +1221,17 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         });
     }
 
+    [Obsolete("Use GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
     public virtual Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+        => GetEventTypeTimeSeriesMetrics(from, DateTime.UtcNow, substringLength, bucketLabel);
+
+    public virtual Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
     {
         // Published (EventRequest) counts only; buckets stay sparse (no zero-fill)
         // and sorted ascending — the contract shared with the SQL/Cosmos backends.
         var series = _messages.Values
             .Where(m => m.EnqueuedTimeUtc >= from
+                && m.EnqueuedTimeUtc < to
                 && m.MessageType == MessageType.EventRequest
                 && !string.IsNullOrEmpty(m.EventTypeId))
             .GroupBy(m => m.EventTypeId!)
@@ -1289,7 +1310,7 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         };
 
         var keys = new List<string>();
-        while (current <= to)
+        while (current < to)
         {
             keys.Add(current.ToString("o")[..substringLength]);
             current += step;

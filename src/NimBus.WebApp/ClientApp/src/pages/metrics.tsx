@@ -8,11 +8,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import moment from "moment";
 import * as api from "api-client";
 import ByEventTypeTab, {
   buildBucketGrid,
   spansMoreThanOneDay,
 } from "components/metrics/by-event-type-tab";
+import CustomRangePopover, {
+  formatRange,
+  type TimeRange,
+} from "components/metrics/custom-range-popover";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
 import { EmptyState } from "components/ui/empty-state";
@@ -27,14 +32,22 @@ import { cn } from "lib/utils";
 const TAB_NAMES = ["overview", "by-event-type"] as const;
 const FILTER_DEFAULTS = { tab: "overview", types: [] as string[] };
 
-const PERIODS: { label: string; value: api.Period }[] = [
-  { label: "1h", value: api.Period._1h },
-  { label: "12h", value: api.Period._12h },
-  { label: "1d", value: api.Period._1d },
-  { label: "3d", value: api.Period._3d },
-  { label: "7d", value: api.Period._7d },
-  { label: "30d", value: api.Period._30d },
+const PERIODS: { label: string; value: api.Period; hours: number }[] = [
+  { label: "1h", value: api.Period._1h, hours: 1 },
+  { label: "12h", value: api.Period._12h, hours: 12 },
+  { label: "1d", value: api.Period._1d, hours: 24 },
+  { label: "3d", value: api.Period._3d, hours: 72 },
+  { label: "7d", value: api.Period._7d, hours: 168 },
+  { label: "30d", value: api.Period._30d, hours: 720 },
 ];
+
+const segmentClass = (active: boolean) =>
+  cn(
+    "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+    active
+      ? "bg-primary text-white"
+      : "text-muted-foreground hover:text-foreground",
+  );
 
 // Latency thresholds — what counts as "slow" (warn) vs an outlier (danger).
 // Pulled out so KPI tones, the health strip, and the latency-row badges all
@@ -104,6 +117,8 @@ export default function Metrics() {
     useState<api.EventTypeTimeSeriesOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<api.Period>(api.Period._1d);
+  // A custom range replaces the period preset until a preset is picked again.
+  const [range, setRange] = useState<TimeRange>();
 
   const { applied, applyFilters } = useUrlFilters(FILTER_DEFAULTS);
   const tabIndex = Math.max(
@@ -111,15 +126,17 @@ export default function Metrics() {
     (TAB_NAMES as readonly string[]).indexOf(applied.tab),
   );
 
-  const fetchAll = useCallback(async (p: api.Period) => {
+  const fetchAll = useCallback(async (p: api.Period, r?: TimeRange) => {
     setLoading(true);
     try {
       const client = new api.Client(api.CookieAuth());
+      const from = r ? moment(r.from) : undefined;
+      const to = r ? moment(r.to) : undefined;
       const [o, l, t, e] = await Promise.all([
-        client.getMetricsOverview(p),
-        client.getMetricsLatency(p).catch(() => null),
-        client.getMetricsTimeseries(p).catch(() => null),
-        client.getMetricsTimeseriesByEventtype(p).catch(() => null),
+        client.getMetricsOverview(p, from, to),
+        client.getMetricsLatency(p, from, to).catch(() => null),
+        client.getMetricsTimeseries(p, from, to).catch(() => null),
+        client.getMetricsTimeseriesByEventtype(p, from, to).catch(() => null),
       ]);
       setOverview(o);
       setLatency(l);
@@ -133,10 +150,11 @@ export default function Metrics() {
   }, []);
 
   useEffect(() => {
-    void fetchAll(period);
-  }, [period, fetchAll]);
+    void fetchAll(period, range);
+  }, [period, range, fetchAll]);
 
-  const periodLabel = PERIODS.find((p) => p.value === period)?.label ?? "";
+  const preset = PERIODS.find((p) => p.value === period);
+  const periodLabel = range ? formatRange(range) : (preset?.label ?? "");
 
   // ---- Derived totals ----------------------------------------------------
   const totals = useMemo(() => {
@@ -244,17 +262,26 @@ export default function Metrics() {
             {PERIODS.map((p) => (
               <button
                 key={p.value}
-                onClick={() => setPeriod(p.value)}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  period === p.value
-                    ? "bg-primary text-white"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
+                type="button"
+                aria-pressed={!range && period === p.value}
+                onClick={() => {
+                  setPeriod(p.value);
+                  setRange(undefined);
+                }}
+                className={segmentClass(!range && period === p.value)}
               >
                 {p.label}
               </button>
             ))}
+            <CustomRangePopover
+              range={range}
+              shown={{
+                from: new Date(Date.now() - (preset?.hours ?? 24) * 3_600_000),
+                to: new Date(),
+              }}
+              onApply={setRange}
+              className={segmentClass(!!range)}
+            />
           </div>
         </>
       }

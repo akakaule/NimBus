@@ -3,6 +3,7 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -24,7 +25,20 @@ internal sealed class SqlServerMetricsStore : IMetricsStore
 
     private string T(string table) => _ctx.Table(table);
 
-    public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from)
+    // Explicit DateTime2: SqlClient otherwise binds DateTime as legacy DATETIME (~3.33 ms
+    // rounding), which can move a bound past a message enqueued right at it.
+    private static DynamicParameters Window(DateTime from, DateTime to)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("From", from, DbType.DateTime2);
+        parameters.Add("To", to, DbType.DateTime2);
+        return parameters;
+    }
+
+    [Obsolete("Use GetEndpointMetrics(from, to). This overload will be removed in v5.")]
+    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => GetEndpointMetrics(from, DateTime.UtcNow);
+
+    public async Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from, DateTime to)
     {
         var sql = $@"
 SELECT
@@ -37,6 +51,7 @@ SELECT
     COUNT_BIG(*) AS EventCount
 FROM {T("Messages")}
 WHERE EnqueuedTimeUtc >= @From
+  AND EnqueuedTimeUtc < @To
 GROUP BY
     CASE
         WHEN MessageType = 'EventRequest' AND NULLIF(FromAddress, '') IS NOT NULL THEN FromAddress
@@ -47,7 +62,7 @@ GROUP BY
         await using var conn = await _ctx.Open();
         var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, string MessageType, long EventCount)>(
             sql,
-            new { From = from },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
         var result = new EndpointMetricsResult();
         foreach (var r in rows)
@@ -64,7 +79,10 @@ GROUP BY
         return result;
     }
 
-    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from)
+    [Obsolete("Use GetEndpointLatencyMetrics(from, to). This overload will be removed in v5.")]
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => GetEndpointLatencyMetrics(from, DateTime.UtcNow);
+
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from, DateTime to)
     {
         // Aggregate COUNT/AVG/MIN/MAX server-side and GROUP BY (endpoint, eventType)
         // so the Resolver hot path never streams every outcome row into memory.
@@ -82,21 +100,22 @@ SELECT EndpointId,
        MAX(ProcessingTimeMs) AS ProcessingMax
 FROM {T("Messages")}
 WHERE EnqueuedTimeUtc >= @From
+  AND EnqueuedTimeUtc < @To
   AND MessageType IN ('ResolutionResponse', 'ErrorResponse', 'SkipResponse', 'DeferralResponse', 'UnsupportedResponse')
   AND (QueueTimeMs IS NOT NULL OR ProcessingTimeMs IS NOT NULL)
 GROUP BY EndpointId, EventTypeId";
 
-        return GetEndpointLatencyMetricsCore(sql, from);
+        return GetEndpointLatencyMetricsCore(sql, from, to);
     }
 
-    private async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetricsCore(string sql, DateTime from)
+    private async Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetricsCore(string sql, DateTime from, DateTime to)
     {
         await using var conn = await _ctx.Open();
         var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId,
             int QueueCount, double? QueueAvg, long? QueueMin, long? QueueMax,
             int ProcessingCount, double? ProcessingAvg, long? ProcessingMin, long? ProcessingMax)>(
             sql,
-            new { From = from },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
 
         var latencies = rows
@@ -125,7 +144,10 @@ GROUP BY EndpointId, EventTypeId";
                 MaxMs = max ?? 0,
             };
 
-    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from)
+    [Obsolete("Use GetFailedMessageInsights(from, to). This overload will be removed in v5.")]
+    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => GetFailedMessageInsights(from, DateTime.UtcNow);
+
+    public async Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from, DateTime to)
     {
         await using var conn = await _ctx.Open();
         var rows = await conn.QueryAsync<FailedMessageInfo>(
@@ -137,12 +159,17 @@ GROUP BY EndpointId, EventTypeId";
                    EventId
                FROM {T("Messages")}
                WHERE MessageType = 'ErrorResponse'
-                 AND EnqueuedTimeUtc >= @From",
-            new { From = from }, commandTimeout: _ctx.CommandTimeout);
+                 AND EnqueuedTimeUtc >= @From
+                 AND EnqueuedTimeUtc < @To",
+            Window(from, to), commandTimeout: _ctx.CommandTimeout);
         return rows.ToList();
     }
 
-    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    [Obsolete("Use GetTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
+    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+        => GetTimeSeriesMetrics(from, DateTime.UtcNow, substringLength, bucketLabel);
+
+    public async Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
     {
         // Floor to the bucket boundary server-side and GROUP BY, so we stop
         // streaming every message row. DATEADD(unit, DATEDIFF(unit, 0, ts), 0)
@@ -162,12 +189,13 @@ GROUP BY EndpointId, EventTypeId";
             $@"SELECT MessageType, {bucketExpr} AS Bucket, COUNT_BIG(*) AS [Count]
                FROM {T("Messages")}
                WHERE EnqueuedTimeUtc >= @From
+                 AND EnqueuedTimeUtc < @To
                  AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')
                GROUP BY MessageType, {bucketExpr}",
-            new { From = from },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
 
-        var buckets = GenerateBucketKeys(from, DateTime.UtcNow, substringLength)
+        var buckets = GenerateBucketKeys(from, to, substringLength)
             .ToDictionary(k => k, k => new TimeSeriesBucket { Timestamp = k });
 
         foreach (var row in rows)
@@ -202,7 +230,11 @@ GROUP BY EndpointId, EventTypeId";
         };
     }
 
-    public async Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+    [Obsolete("Use GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
+    public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel)
+        => GetEventTypeTimeSeriesMetrics(from, DateTime.UtcNow, substringLength, bucketLabel);
+
+    public async Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel)
     {
         // Same version-agnostic flooring as GetTimeSeriesMetrics; the unit is a
         // switch-constrained literal, never user input. Buckets stay sparse (no
@@ -221,10 +253,11 @@ GROUP BY EndpointId, EventTypeId";
             $@"SELECT EventTypeId, {bucketExpr} AS Bucket, COUNT_BIG(*) AS [Count]
                FROM {T("Messages")}
                WHERE EnqueuedTimeUtc >= @From
+                 AND EnqueuedTimeUtc < @To
                  AND MessageType = 'EventRequest'
                  AND EventTypeId IS NOT NULL
                GROUP BY EventTypeId, {bucketExpr}",
-            new { From = from },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
 
         var series = rows
@@ -269,7 +302,7 @@ GROUP BY EndpointId, EventTypeId";
         };
 
         var keys = new List<string>();
-        while (current <= to)
+        while (current < to)
         {
             keys.Add(current.ToString("o")[..substringLength]);
             current += step;

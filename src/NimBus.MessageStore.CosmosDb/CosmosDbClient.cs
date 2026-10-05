@@ -382,14 +382,29 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
         => _acknowledgements.RemoveEndpointAcknowledgement(endpointId, expectedAcknowledgementId);
     // ── IMetricsStore — implementation in CosmosDbMetricsStore ──
 
+    [Obsolete("Use GetEndpointMetrics(from, to). This overload will be removed in v5.")]
     public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => _metrics.GetEndpointMetrics(from);
 
+    public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from, DateTime to) => _metrics.GetEndpointMetrics(from, to);
+
+    [Obsolete("Use GetEndpointLatencyMetrics(from, to). This overload will be removed in v5.")]
     public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from) => _metrics.GetEndpointLatencyMetrics(from);
 
+    public Task<EndpointLatencyMetricsResult> GetEndpointLatencyMetrics(DateTime from, DateTime to) => _metrics.GetEndpointLatencyMetrics(from, to);
+
+    [Obsolete("Use GetFailedMessageInsights(from, to). This overload will be removed in v5.")]
     public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from) => _metrics.GetFailedMessageInsights(from);
 
+    public Task<List<FailedMessageInfo>> GetFailedMessageInsights(DateTime from, DateTime to) => _metrics.GetFailedMessageInsights(from, to);
+
+    [Obsolete("Use GetTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
     public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
 
+    public Task<TimeSeriesResult> GetTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetTimeSeriesMetrics(from, to, substringLength, bucketLabel);
+
+    [Obsolete("Use GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel). This overload will be removed in v5.")]
     public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
+
+    public Task<EventTypeTimeSeriesResult> GetEventTypeTimeSeriesMetrics(DateTime from, DateTime to, int substringLength, string bucketLabel) => _metrics.GetEventTypeTimeSeriesMetrics(from, to, substringLength, bucketLabel);
 
 }

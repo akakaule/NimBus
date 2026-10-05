@@ -89,15 +89,15 @@ public sealed class OperatorQueries
 
     /// <summary>Published, handled and failed counts per endpoint and event type. Requires site Reader.</summary>
     public async Task<MetricsOverview> GetThroughputAsync(Period period)
-        => Unwrap(await _metrics.GetMetricsOverviewAsync(period).ConfigureAwait(false), SiteReaderRequired);
+        => Unwrap(await _metrics.GetMetricsOverviewAsync(period, null, null).ConfigureAwait(false), SiteReaderRequired);
 
     /// <summary>Queue and processing latency per endpoint and event type. Requires site Reader.</summary>
     public async Task<LatencyOverview> GetLatencyAsync(Period period)
-        => Unwrap(await _metrics.GetMetricsLatencyAsync(period).ConfigureAwait(false), SiteReaderRequired);
+        => Unwrap(await _metrics.GetMetricsLatencyAsync(period, null, null).ConfigureAwait(false), SiteReaderRequired);
 
     /// <summary>Failures grouped by error pattern. Requires site Reader.</summary>
     public async Task<FailedInsightsOverview> GetFailureInsightsAsync(Period period)
-        => Unwrap(await _metrics.GetMetricsFailedInsightsAsync(period).ConfigureAwait(false), SiteReaderRequired);
+        => Unwrap(await _metrics.GetMetricsFailedInsightsAsync(period, null, null).ConfigureAwait(false), SiteReaderRequired);
 
     // Cross-endpoint reads keep the REST site-Reader floor; a refusal is about the caller's
     // role, not about a resource, so it is reported as such.

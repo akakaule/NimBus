@@ -11,6 +11,8 @@ on:
 
 jobs:
   build:
+    # The context-and-oss org ruleset requires a status check named exactly "ci".
+    name: ci
 
     runs-on: ubuntu-latest
 

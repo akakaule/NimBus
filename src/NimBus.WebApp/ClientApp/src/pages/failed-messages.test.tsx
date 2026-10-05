@@ -319,6 +319,29 @@ describe("Failed messages page", () => {
     );
   });
 
+  it("charts a custom range and lists the failures in its whole buckets", async () => {
+    await renderPage(
+      "/Failed?rangeStart=2026-09-20T08:10:00.000Z&rangeEnd=2026-09-21T08:10:00.000Z",
+    );
+
+    await waitFor(() => expect(mocks.search).toHaveBeenCalled());
+    const histogramRequest = mocks.histogram.mock
+      .calls[0][0] as api.FailedHistogramRequest;
+    expect(histogramRequest.from?.toISOString()).toBe(
+      "2026-09-20T08:10:00.000Z",
+    );
+    expect(histogramRequest.to?.toISOString()).toBe("2026-09-21T08:10:00.000Z");
+
+    // A day fits 48 half-hour bars, so the list covers 08:00 to 08:30 the next day, like the chart.
+    const request = mocks.search.mock.calls[0][0] as api.FailedSearchRequest;
+    expect(request.filter?.updatedAtFrom?.toISOString()).toBe(
+      "2026-09-20T08:00:00.000Z",
+    );
+    expect(request.filter?.updatedAtTo?.toISOString()).toBe(
+      "2026-09-21T08:29:59.999Z",
+    );
+  });
+
   it("searches IDs and error text from the one search box", async () => {
     await renderPage();
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));

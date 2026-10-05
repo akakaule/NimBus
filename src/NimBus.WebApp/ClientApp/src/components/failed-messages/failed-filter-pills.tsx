@@ -1,15 +1,22 @@
 import * as React from "react";
 import * as api from "api-client";
+import moment from "moment";
 import { Button } from "components/ui/button";
 import { Checkbox } from "components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "components/ui/combobox";
+import { Input } from "components/ui/input";
+import { Radio, RadioGroup } from "components/ui/radio-group";
 import { Select } from "components/ui/select";
 import {
   FAILED_STATUSES,
   PERIOD_OPTIONS,
   STATUS_COLORS,
+  customRange,
+  customRangeError,
   parseSearchQuery,
   periodOption,
+  rangeParams,
+  rangeWindow,
   searchQueryOf,
   toggleStatus,
   windowParams,
@@ -29,6 +36,137 @@ const PERIOD_LABELS: Record<string, string> = {
 /** The time pill's label for a period option ("Last 7 days"). */
 export const periodLabel = (label: string) =>
   PERIOD_LABELS[label] ?? `Last ${label}`;
+
+// The value format of a datetime-local input, read and written in local time.
+const LOCAL_INPUT = "YYYY-MM-DDTHH:mm";
+const CUSTOM = "custom";
+
+/** The time pill's label for the applied range: the preset, or the custom start–end. */
+export function rangeLabel(
+  value: Pick<FailedFilterValues, "period" | "rangeStart" | "rangeEnd">,
+): string {
+  const custom = customRange(value);
+  if (!custom) return periodLabel(periodOption(value.period).label);
+  const fmt = (d: Date) => moment(d).format("DD/MM/YYYY HH:mm");
+  return `${fmt(custom.from)} – ${fmt(custom.to)}`;
+}
+
+/**
+ * The time range picker, after Application Insights': a preset or a custom local start and
+ * end, applied together. A custom range starts from the range on screen.
+ */
+function TimeRangeContent({
+  value,
+  onApply,
+  close,
+}: {
+  value: FailedFilterValues;
+  onApply: (patch: Partial<FailedFilterValues>) => void;
+  close: () => void;
+}) {
+  const applied = customRange(value);
+  const shown = applied ?? rangeWindow(value, new Date());
+  const [choice, setChoice] = React.useState<string>(
+    applied ? CUSTOM : periodOption(value.period).value,
+  );
+  const [start, setStart] = React.useState(() =>
+    moment(shown.from).format(LOCAL_INPUT),
+  );
+  const [end, setEnd] = React.useState(() =>
+    moment(shown.to).format(LOCAL_INPUT),
+  );
+  const from = moment(start, LOCAL_INPUT, true).toDate();
+  const to = moment(end, LOCAL_INPUT, true).toDate();
+  const error = choice === CUSTOM ? customRangeError(from, to) : undefined;
+  const startId = React.useId();
+  const endId = React.useId();
+  const name = React.useId();
+
+  const apply = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (error) return;
+    onApply({
+      ...(choice === CUSTOM
+        ? rangeParams({ from, to })
+        : { period: choice, ...rangeParams(undefined) }),
+      ...windowParams(undefined),
+    });
+    close();
+  };
+
+  return (
+    <form onSubmit={apply} className="flex w-[330px] flex-col gap-3">
+      <div className="text-xs font-medium text-muted-foreground">
+        Time range
+      </div>
+      <RadioGroup
+        name={name}
+        value={choice}
+        onChange={setChoice}
+        className="grid grid-flow-col grid-cols-2 grid-rows-4 gap-x-4 gap-y-2"
+      >
+        {PERIOD_OPTIONS.map((p) => (
+          <Radio key={p.value} value={p.value}>
+            {periodLabel(p.label)}
+          </Radio>
+        ))}
+        <Radio value={CUSTOM}>Custom</Radio>
+      </RadioGroup>
+      {choice === CUSTOM && (
+        <div className="flex flex-col gap-2.5 border-t border-border pt-3">
+          <div>
+            <label
+              htmlFor={startId}
+              className="mb-1 block text-xs font-medium text-muted-foreground"
+            >
+              Start time (local)
+            </label>
+            <Input
+              id={startId}
+              type="datetime-local"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              error={!!error}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor={endId}
+              className="mb-1 block text-xs font-medium text-muted-foreground"
+            >
+              End time (local)
+            </label>
+            <Input
+              id={endId}
+              type="datetime-local"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              error={!!error}
+            />
+          </div>
+          {error && (
+            <p role="alert" className="m-0 text-[12.5px] text-red-600">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+      <div className="flex gap-2 border-t border-border pt-3">
+        <Button
+          type="submit"
+          size="sm"
+          colorScheme="primary"
+          disabled={!!error}
+        >
+          Apply
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={close}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 const pillClass = (active: boolean) =>
   cn(
@@ -284,10 +422,11 @@ export default function FailedFilterPills({
   onReset,
 }: FailedFilterPillsProps) {
   const { endpoints, eventTypes } = useFilterOptions();
-  const option = periodOption(value.period);
+  const custom = !!customRange(value);
   const statusOn = (status: string) =>
     value.status.length === 0 || value.status.includes(status);
   const filtered =
+    custom ||
     value.endpointId.length > 0 ||
     value.eventTypeId.length > 0 ||
     value.status.length > 0 ||
@@ -303,29 +442,12 @@ export default function FailedFilterPills({
     >
       <PillPopover
         label="Time range"
+        active={custom}
         content={(close) => (
-          <div className="flex min-w-[180px] flex-col">
-            {PERIOD_OPTIONS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                aria-pressed={p.value === option.value}
-                onClick={() => {
-                  onApply({ period: p.value, ...windowParams(undefined) });
-                  close();
-                }}
-                className={cn(
-                  "rounded-nb-sm px-2.5 py-1.5 text-left hover:bg-muted",
-                  p.value === option.value && "font-bold text-primary-700",
-                )}
-              >
-                {periodLabel(p.label)}
-              </button>
-            ))}
-          </div>
+          <TimeRangeContent value={value} onApply={onApply} close={close} />
         )}
       >
-        Local time: <b className="font-bold">{periodLabel(option.label)}</b>
+        Local time: <b className="font-bold">{rangeLabel(value)}</b>
         <ChevronDown />
       </PillPopover>
 

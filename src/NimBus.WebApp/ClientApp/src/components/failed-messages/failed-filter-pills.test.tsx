@@ -35,16 +35,102 @@ describe("FailedFilterPills", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Time range" }));
-    fireEvent.click(screen.getByRole("button", { name: "Last 7 days" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Last 7 days" }));
+    expect(onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     expect(onApply).toHaveBeenCalledWith({
       period: api.Period._7d,
+      rangeStart: "",
+      rangeEnd: "",
       bucket: "",
       windowStart: "",
       windowEnd: "",
     });
-    // The popover closes after a pick.
+    // The popover closes after Apply.
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("applies a custom local range and keeps the period as the fallback", () => {
+    const onApply = vi.fn();
+    render(
+      <FailedFilterPills
+        value={EMPTY_FAILED_FILTER}
+        onApply={onApply}
+        onReset={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Time range" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
+    fireEvent.change(screen.getByLabelText("Start time (local)"), {
+      target: { value: "2026-09-20T08:00" },
+    });
+    fireEvent.change(screen.getByLabelText("End time (local)"), {
+      target: { value: "2026-09-21T17:30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onApply).toHaveBeenCalledWith({
+      rangeStart: new Date(2026, 8, 20, 8, 0).toISOString(),
+      rangeEnd: new Date(2026, 8, 21, 17, 30).toISOString(),
+      bucket: "",
+      windowStart: "",
+      windowEnd: "",
+    });
+  });
+
+  it("refuses a custom range that ends before it starts", () => {
+    const onApply = vi.fn();
+    render(
+      <FailedFilterPills
+        value={EMPTY_FAILED_FILTER}
+        onApply={onApply}
+        onReset={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Time range" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
+    fireEvent.change(screen.getByLabelText("End time (local)"), {
+      target: { value: "2020-01-01T00:00" },
+    });
+
+    expect(screen.getByRole("alert").textContent).toMatch(/before the end/);
+    expect(
+      (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("labels an applied custom range and opens on it", () => {
+    const start = new Date(2026, 8, 20, 8, 0);
+    const end = new Date(2026, 8, 21, 17, 30);
+    render(
+      <FailedFilterPills
+        value={{
+          ...EMPTY_FAILED_FILTER,
+          rangeStart: start.toISOString(),
+          rangeEnd: end.toISOString(),
+        }}
+        onApply={vi.fn()}
+        onReset={vi.fn()}
+      />,
+    );
+
+    const pill = screen.getByRole("button", { name: "Time range" });
+    expect(pill.textContent).toContain("20/09/2026 08:00 – 21/09/2026 17:30");
+    // A custom range counts as a filter.
+    expect(screen.getByRole("button", { name: "Reset filters" })).toBeTruthy();
+
+    fireEvent.click(pill);
+    expect(
+      (screen.getByRole("radio", { name: "Custom" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByLabelText("Start time (local)") as HTMLInputElement).value,
+    ).toBe("2026-09-20T08:00");
   });
 
   it("toggles a status off from all three", () => {

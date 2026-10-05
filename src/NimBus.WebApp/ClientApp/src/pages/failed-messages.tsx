@@ -34,12 +34,14 @@ import moment from "moment";
 import {
   EMPTY_FAILED_FILTER,
   SEARCH_FIELDS,
+  customRange,
   deferredCountsBySession,
   errorTextOf,
   failureBacklog,
   formatBucket,
   periodOption,
-  resolveWindow,
+  rangeParams,
+  rangeWindow,
   selectedWindow,
   toFailedSearchFilter,
   toggleStatus,
@@ -111,7 +113,12 @@ type View = "list" | "endpoint" | "error";
 // Only the search fields and the range drive data; view, split and the selected bar are
 // presentation (the selected bar narrows the list, but never the chart).
 const searchKey = (v: FailedFilterValues) =>
-  JSON.stringify([v.period, ...SEARCH_FIELDS.map((f) => v[f])]);
+  JSON.stringify([
+    v.period,
+    v.rangeStart,
+    v.rangeEnd,
+    ...SEARCH_FIELDS.map((f) => v[f]),
+  ]);
 
 export default function FailedMessages() {
   const { applied, applyFilters, resetFilters } =
@@ -167,7 +174,7 @@ export default function FailedMessages() {
   const windowKey = `${applied.bucket}|${applied.windowStart}|${applied.windowEnd}`;
   const windowFor = React.useCallback(
     (values: FailedFilterValues) =>
-      selectedWindow(values) ?? resolveWindow(values.period, new Date()),
+      selectedWindow(values) ?? rangeWindow(values, new Date()),
     [],
   );
 
@@ -178,6 +185,11 @@ export default function FailedMessages() {
     const body = new api.FailedHistogramRequest();
     body.filter = toFailedSearchFilter(applied);
     body.period = periodOption(applied.period).value;
+    const custom = customRange(applied);
+    if (custom) {
+      body.from = moment(custom.from);
+      body.to = moment(custom.to);
+    }
     client
       .postFailedHistogram(body)
       .then((h) => !cancelled && setHistogram(h))
@@ -583,6 +595,7 @@ export default function FailedMessages() {
     (totals?.deadLettered ?? 0) +
     (totals?.unsupported ?? 0);
   const option = periodOption(applied.period);
+  const custom = customRange(applied);
   const listWindow = selectedWindow(applied);
   const peak = (histogram?.buckets ?? []).reduce<
     api.FailedHistogramBucket | undefined
@@ -666,9 +679,10 @@ export default function FailedMessages() {
           </div>
           {outsideRange > 0 && (
             <span className="text-[13px] text-muted-foreground">
-              {outsideRange.toLocaleString()} older unresolved failure
+              {outsideRange.toLocaleString()}
+              {custom ? "" : " older"} unresolved failure
               {outsideRange === 1 ? "" : "s"} outside this range
-              {option.value !== api.Period._30d && (
+              {(custom || option.value !== api.Period._30d) && (
                 <>
                   {" — "}
                   <button
@@ -677,6 +691,7 @@ export default function FailedMessages() {
                     onClick={() =>
                       narrow({
                         period: api.Period._30d,
+                        ...rangeParams(undefined),
                         ...windowParams(undefined),
                       })
                     }

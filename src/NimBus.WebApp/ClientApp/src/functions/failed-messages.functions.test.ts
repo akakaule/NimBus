@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import * as api from "api-client";
 import {
   EMPTY_FAILED_FILTER,
+  customRange,
+  customRangeError,
   deferredCountsBySession,
   errorTextOf,
   parseSearchQuery,
+  rangeParams,
+  rangeWindow,
   resolveWindow,
   searchQueryOf,
   selectedWindow,
@@ -30,6 +34,105 @@ describe("resolveWindow", () => {
     const now = new Date("2026-09-25T10:17:30Z");
     const w = resolveWindow("nonsense", now);
     expect((w.to.getTime() - w.from.getTime()) / 3_600_000).toBe(24);
+  });
+});
+
+describe("customRange", () => {
+  it("reads a valid custom range from the URL values", () => {
+    const r = customRange({
+      rangeStart: "2026-09-20T08:00:00.000Z",
+      rangeEnd: "2026-09-21T08:00:00.000Z",
+    });
+    expect(r?.from.toISOString()).toBe("2026-09-20T08:00:00.000Z");
+    expect(r?.to.toISOString()).toBe("2026-09-21T08:00:00.000Z");
+  });
+
+  it("ignores a missing, reversed, unparsable or over-long range", () => {
+    expect(customRange({ rangeStart: "", rangeEnd: "" })).toBeUndefined();
+    expect(
+      customRange({
+        rangeStart: "2026-09-21T08:00:00.000Z",
+        rangeEnd: "2026-09-20T08:00:00.000Z",
+      }),
+    ).toBeUndefined();
+    expect(
+      customRange({ rangeStart: "x", rangeEnd: "2026-09-20T08:00:00.000Z" }),
+    ).toBeUndefined();
+    expect(
+      customRange({
+        rangeStart: "2026-01-01T00:00:00.000Z",
+        rangeEnd: "2026-09-20T00:00:00.000Z",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("customRangeError", () => {
+  it("explains why a range is refused", () => {
+    const at = (iso: string) => new Date(iso);
+    expect(
+      customRangeError(at("2026-09-20T08:00Z"), at("2026-09-21T08:00Z")),
+    ).toBeUndefined();
+    expect(
+      customRangeError(at("2026-09-21T08:00Z"), at("2026-09-21T08:00Z")),
+    ).toMatch(/before the end/);
+    expect(
+      customRangeError(at("2026-06-01T00:00Z"), at("2026-09-21T00:00Z")),
+    ).toMatch(/at most 90 days/);
+    expect(customRangeError(at(""), at("2026-09-21T00:00Z"))).toMatch(
+      /Enter a start/,
+    );
+  });
+});
+
+describe("rangeWindow", () => {
+  const now = new Date("2026-09-25T10:17:30Z");
+
+  it("uses the preset when no custom range is set", () => {
+    const w = rangeWindow({ ...EMPTY_FAILED_FILTER, period: "7d" }, now);
+    expect(w.bucketMinutes).toBe(360);
+    expect(w.to.toISOString()).toBe("2026-09-25T12:00:00.000Z");
+  });
+
+  it("widens a custom range to the smallest bucket keeping it within 60 bars, like the server", () => {
+    const short = rangeWindow(
+      {
+        ...EMPTY_FAILED_FILTER,
+        rangeStart: "2026-09-25T10:07:00.000Z",
+        rangeEnd: "2026-09-25T13:52:00.000Z",
+      },
+      now,
+    );
+    expect(short.bucketMinutes).toBe(5);
+    expect(short.from.toISOString()).toBe("2026-09-25T10:05:00.000Z");
+    expect(short.to.toISOString()).toBe("2026-09-25T13:55:00.000Z");
+
+    const days = rangeWindow(
+      {
+        ...EMPTY_FAILED_FILTER,
+        rangeStart: "2026-09-22T10:07:00.000Z",
+        rangeEnd: "2026-09-25T10:07:00.000Z",
+      },
+      now,
+    );
+    expect(days.bucketMinutes).toBe(180);
+    expect(days.from.toISOString()).toBe("2026-09-22T09:00:00.000Z");
+    expect(days.to.toISOString()).toBe("2026-09-25T12:00:00.000Z");
+  });
+});
+
+describe("rangeParams", () => {
+  it("writes a range as ISO params, or clears it", () => {
+    expect(
+      rangeParams({
+        from: new Date("2026-09-20T08:00:00Z"),
+        to: new Date("2026-09-21T08:00:00Z"),
+      }),
+    ).toEqual({
+      rangeStart: "2026-09-20T08:00:00.000Z",
+      rangeEnd: "2026-09-21T08:00:00.000Z",
+    });
+    expect(rangeParams(undefined)).toEqual({ rangeStart: "", rangeEnd: "" });
   });
 });
 
@@ -83,6 +186,16 @@ describe("selectedWindow", () => {
     });
     expect(w?.from.toISOString()).toBe("2026-09-25T06:00:00.000Z");
     expect(w?.to.toISOString()).toBe("2026-09-25T12:00:00.000Z");
+  });
+
+  it("sizes a legacy bucket link by the custom range's bucket", () => {
+    const w = selectedWindow({
+      ...EMPTY_FAILED_FILTER,
+      rangeStart: "2026-09-25T10:00:00.000Z",
+      rangeEnd: "2026-09-25T14:00:00.000Z",
+      bucket: "2026-09-25T11:00:00.000Z",
+    });
+    expect(w?.to.toISOString()).toBe("2026-09-25T11:05:00.000Z");
   });
 
   it("is undefined without a valid window", () => {

@@ -77,9 +77,79 @@ export function resolveWindow(
   return { from: new Date(to - option.spanMinutes * 60_000), to: new Date(to) };
 }
 
+/** Longest custom range. Mirrors FailedImplementation.MaxWindow. */
+export const MAX_CUSTOM_RANGE_DAYS = 90;
+
+// Mirror FailedImplementation.MaxBuckets and CustomBucketSizes.
+const MAX_CUSTOM_BUCKETS = 60;
+const CUSTOM_BUCKET_MINUTES = [5, 15, 30, 60, 180, 360, 720, 1440];
+
+/** Why the server would refuse a custom range, or undefined when it is valid. */
+export function customRangeError(from: Date, to: Date): string | undefined {
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()))
+    return "Enter a start and an end time.";
+  if (from >= to) return "The start must be before the end.";
+  if (to.getTime() - from.getTime() > MAX_CUSTOM_RANGE_DAYS * 86_400_000)
+    return `A custom range may span at most ${MAX_CUSTOM_RANGE_DAYS} days.`;
+  return undefined;
+}
+
+/** The custom range in the URL, or undefined when a preset applies. */
+export function customRange(
+  values: Pick<FailedFilterValues, "rangeStart" | "rangeEnd">,
+): { from: Date; to: Date } | undefined {
+  if (!values.rangeStart || !values.rangeEnd) return undefined;
+  const from = new Date(values.rangeStart);
+  const to = new Date(values.rangeEnd);
+  return customRangeError(from, to) ? undefined : { from, to };
+}
+
+/**
+ * The chart's window and bucket size: a custom range widened to whole buckets (the smallest
+ * bucket that keeps it within 60 bars), else the period preset. Mirrors
+ * FailedImplementation.ResolveWindow so the list's window matches the chart's buckets.
+ */
+export function rangeWindow(
+  values: Pick<FailedFilterValues, "period" | "rangeStart" | "rangeEnd">,
+  now: Date,
+): { from: Date; to: Date; bucketMinutes: number } {
+  const custom = customRange(values);
+  if (!custom) {
+    return {
+      ...resolveWindow(values.period, now),
+      bucketMinutes: periodOption(values.period).bucketMinutes,
+    };
+  }
+  const span = custom.to.getTime() - custom.from.getTime();
+  const bucketMinutes =
+    CUSTOM_BUCKET_MINUTES.find(
+      (m) => Math.floor(span / (m * 60_000)) <= MAX_CUSTOM_BUCKETS,
+    ) ?? CUSTOM_BUCKET_MINUTES[CUSTOM_BUCKET_MINUTES.length - 1];
+  const bucketMs = bucketMinutes * 60_000;
+  return {
+    from: new Date(Math.floor(custom.from.getTime() / bucketMs) * bucketMs),
+    to: new Date(Math.ceil(custom.to.getTime() / bucketMs) * bucketMs),
+    bucketMinutes,
+  };
+}
+
+/** The URL values for a custom range (undefined returns to the period preset). */
+export function rangeParams(
+  range: { from: Date; to: Date } | undefined,
+): Pick<FailedFilterValues, "rangeStart" | "rangeEnd"> {
+  return {
+    rangeStart: range ? range.from.toISOString() : "",
+    rangeEnd: range ? range.to.toISOString() : "",
+  };
+}
+
 /** URL-backed filter state of the Failed page. Strings only, so it round-trips through the query string. */
 export type FailedFilterValues = {
   period: string;
+  /** ISO start of a custom chart range; with `rangeEnd` it replaces `period`. */
+  rangeStart: string;
+  /** ISO end of a custom chart range. */
+  rangeEnd: string;
   bucket: string;
   endpointId: string[];
   status: string[];
@@ -102,6 +172,8 @@ export type FailedFilterValues = {
 
 export const EMPTY_FAILED_FILTER: FailedFilterValues = {
   period: DEFAULT_PERIOD,
+  rangeStart: "",
+  rangeEnd: "",
   bucket: "",
   endpointId: [],
   status: [],
@@ -181,10 +253,10 @@ export function selectedWindow(
   if (!values.bucket) return undefined;
   const start = new Date(values.bucket);
   if (Number.isNaN(start.getTime())) return undefined;
-  const option = periodOption(values.period);
+  const { bucketMinutes } = rangeWindow(values, new Date());
   return {
     from: start,
-    to: new Date(start.getTime() + option.bucketMinutes * 60_000),
+    to: new Date(start.getTime() + bucketMinutes * 60_000),
   };
 }
 

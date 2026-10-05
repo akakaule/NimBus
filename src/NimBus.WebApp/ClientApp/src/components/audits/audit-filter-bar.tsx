@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import moment from "moment";
 import { Input } from "components/ui/input";
 import { Button } from "components/ui/button";
 import { Select } from "components/ui/select";
@@ -57,6 +58,14 @@ const auditTypeOptions = Object.entries(AuditSearchFilterAuditType).map(
   ([key, value]) => ({ label: key, value }),
 );
 
+// One-click "Created From" presets. Created To is cleared so the range stays open up to now.
+const QUICK_RANGES = [
+  { label: "Last hour", hours: 1 },
+  { label: "Last 24 hours", hours: 24 },
+  { label: "Last 7 days", hours: 168 },
+  { label: "Last 30 days", hours: 720 },
+];
+
 export default function AuditFilterBar({
   value,
   onSearch,
@@ -93,6 +102,18 @@ export default function AuditFilterBar({
   ) => setDraft((d) => ({ ...d, [key]: next }));
 
   const handleSearch = () => onSearch(draft);
+  const searchSince = (hours: number) => {
+    const next = {
+      ...draft,
+      // The datetime-local format, in local time like the field itself.
+      createdFrom: moment()
+        .subtract(hours, "hours")
+        .format("YYYY-MM-DDTHH:mm"),
+      createdTo: "",
+    };
+    setDraft(next);
+    onSearch(next);
+  };
   const handleReset = () => {
     setDraft(EMPTY_AUDIT_FILTER);
     onReset();
@@ -187,7 +208,7 @@ export default function AuditFilterBar({
           />
         </div>
       </div>
-      <div className="flex gap-2 mt-3">
+      <div className="flex flex-wrap gap-2 mt-3">
         <Button
           onClick={handleSearch}
           disabled={isLoading}
@@ -205,6 +226,21 @@ export default function AuditFilterBar({
         >
           Reset
         </Button>
+        <span className="ml-3 self-center text-xs font-medium text-muted-foreground">
+          Created in:
+        </span>
+        {QUICK_RANGES.map((r) => (
+          <Button
+            key={r.label}
+            onClick={() => searchSince(r.hours)}
+            disabled={isLoading}
+            size="sm"
+            variant="outline"
+            colorScheme="gray"
+          >
+            {r.label}
+          </Button>
+        ))}
       </div>
     </div>
   );

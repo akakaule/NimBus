@@ -71,10 +71,13 @@ choices. If more messages exist, the dialog marks the snapshot as truncated;
 replay the snapshot and repeat the operation for the next batch. Each request has
 a 180-second server budget.
 
-Replay creates a new message ID and preserves the body, session, correlation,
-reply, content and ordinary application metadata. It removes the broker
-dead-letter fields and adds `DeadLetterOriginalMessageId` and
-`DeadLetterOriginalReason` for provenance. For each message, removing the source
+Replay keeps the message ID (Spec 030 §5.7: the tracking store's stale-write guard
+recognises a replayed copy that lands after its own outcome only by that id) and
+preserves the body, session, correlation, reply, content and ordinary application
+metadata. It removes the broker dead-letter fields and `ThrottleRetryCount`, so a
+replayed `CosmosDbThrottled` message starts a fresh throttle budget instead of
+being dead-lettered again on its first 429, and adds `DeadLetterOriginalMessageId`
+and `DeadLetterOriginalReason` for provenance. For each message, removing the source
 from the DLQ and publishing the replacement to the Resolver topic are one Service
 Bus transaction: both commit or neither does. This preserves per-session broker
 ordering, but replaying an older message naturally places the replacement behind

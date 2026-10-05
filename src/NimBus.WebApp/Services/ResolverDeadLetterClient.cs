@@ -316,6 +316,10 @@ public sealed class ResolverDeadLetterClient : IResolverDeadLetterClient, IAsync
         var replay = new ServiceBusMessage(source);
         replay.ApplicationProperties.Remove("DeadLetterReason");
         replay.ApplicationProperties.Remove("DeadLetterErrorDescription");
+        // A replay starts a fresh throttle budget. A message dead-lettered as CosmosDbThrottled
+        // carries the ThrottleRetryCount that exhausted the old one, and would otherwise be
+        // dead-lettered again on its first throttle.
+        replay.ApplicationProperties.Remove("ThrottleRetryCount");
         replay.ApplicationProperties["DeadLetterOriginalMessageId"] = source.MessageId ?? string.Empty;
         replay.ApplicationProperties["DeadLetterOriginalReason"] = source.DeadLetterReason ?? string.Empty;
         return replay;

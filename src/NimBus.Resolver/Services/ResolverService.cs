@@ -225,6 +225,22 @@ public class ResolverService : IMessageHandler
             return;
         }
 
+        // Heartbeats retry in place, like their transient failures do: a rescheduled copy lands
+        // minutes later and would overwrite a newer heartbeat (or report the backoff as a probe's
+        // round trip), and the next heartbeat supersedes this one anyway. Abandon leaves the
+        // message unsettled, so the session redelivers it and DeliveryCount carries the budget.
+        if (IsHeartbeat(messageContext))
+        {
+            _logger?.LogInformation(exception, "Resolver: Heartbeat store write failed ({Reason}); leaving it for the session to redeliver. EventId:{EventId}, SessionId:{SessionId}",
+                reason, messageContext.EventId, messageContext.SessionId);
+            var heartbeatFailure = $"Heartbeat store write failed ({reason}).";
+            await messageContext.Abandon(exception is null
+                ? new TransientException(heartbeatFailure)
+                : new TransientException(heartbeatFailure, exception));
+            RecordStoreRetry(endpointId, reason, RetryAction.Abandoned);
+            return;
+        }
+
         // Honor a provider hint only when it is longer than the calculated backoff.
         // Providers such as SQL Server may not supply one.
         var backoff = StoreBackoff.GetDelay(logicalAttempt - 1);
@@ -354,8 +370,9 @@ public class ResolverService : IMessageHandler
     /// </summary>
     /// <remarks>
     /// Generic transient storage failures remain unsettled and may eventually be
-    /// broker-dead-lettered as MaxDeliveryCountExceeded. Cosmos DB throttling uses
-    /// the shared logical delivery budget and the stable CosmosDbThrottled reason.
+    /// broker-dead-lettered as MaxDeliveryCountExceeded. Cosmos DB throttling is also
+    /// retried in place (never rescheduled: a late copy could overwrite a newer heartbeat),
+    /// within the delivery budget, then dead-lettered with the stable CosmosDbThrottled reason.
     /// </remarks>
     private async Task HandleHeartbeatMessage(IMessageContext messageContext, CancellationToken cancellationToken)
     {

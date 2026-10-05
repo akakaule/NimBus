@@ -18,6 +18,10 @@ What shipped differs from the plan below in these places:
 - **Presets end at request time.** A preset now passes `to = now`, so a message whose
   `EnqueuedTimeUtc` is a few seconds ahead of the WebApp's clock waits for the next refresh. The
   30-second cache already delays it about as much.
+- **SQL bounds bind as `DateTime2`.** Dapper's anonymous parameters bound `@From`/`@To` as
+  legacy `DATETIME` (~3.33 ms rounding), so a bound that rounded up counted a message enqueued
+  right at it. CI caught it. The upper-bound tests now use a bound 2 ms past a whole second,
+  which always rounds up, so they fail deterministically on that bug.
 - **Live conformance.** The SQL Server and Cosmos metrics suites ran against local containers
   (SQL Server 2022 and the vNext emulator). Cosmos ran twice against the same database to check
   that tests don't leak into each other.

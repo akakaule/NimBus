@@ -3,6 +3,7 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.MessageStore.States;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -23,6 +24,16 @@ internal sealed class SqlServerMetricsStore : IMetricsStore
     }
 
     private string T(string table) => _ctx.Table(table);
+
+    // Explicit DateTime2: SqlClient otherwise binds DateTime as legacy DATETIME (~3.33 ms
+    // rounding), which can move a bound past a message enqueued right at it.
+    private static DynamicParameters Window(DateTime from, DateTime to)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("From", from, DbType.DateTime2);
+        parameters.Add("To", to, DbType.DateTime2);
+        return parameters;
+    }
 
     [Obsolete("Use GetEndpointMetrics(from, to). This overload will be removed in v5.")]
     public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => GetEndpointMetrics(from, DateTime.UtcNow);
@@ -51,7 +62,7 @@ GROUP BY
         await using var conn = await _ctx.Open();
         var rows = await conn.QueryAsync<(string EndpointId, string EventTypeId, string MessageType, long EventCount)>(
             sql,
-            new { From = from, To = to },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
         var result = new EndpointMetricsResult();
         foreach (var r in rows)
@@ -104,7 +115,7 @@ GROUP BY EndpointId, EventTypeId";
             int QueueCount, double? QueueAvg, long? QueueMin, long? QueueMax,
             int ProcessingCount, double? ProcessingAvg, long? ProcessingMin, long? ProcessingMax)>(
             sql,
-            new { From = from, To = to },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
 
         var latencies = rows
@@ -150,7 +161,7 @@ GROUP BY EndpointId, EventTypeId";
                WHERE MessageType = 'ErrorResponse'
                  AND EnqueuedTimeUtc >= @From
                  AND EnqueuedTimeUtc < @To",
-            new { From = from, To = to }, commandTimeout: _ctx.CommandTimeout);
+            Window(from, to), commandTimeout: _ctx.CommandTimeout);
         return rows.ToList();
     }
 
@@ -181,7 +192,7 @@ GROUP BY EndpointId, EventTypeId";
                  AND EnqueuedTimeUtc < @To
                  AND MessageType IN ('EventRequest', 'ResolutionResponse', 'ErrorResponse')
                GROUP BY MessageType, {bucketExpr}",
-            new { From = from, To = to },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
 
         var buckets = GenerateBucketKeys(from, to, substringLength)
@@ -246,7 +257,7 @@ GROUP BY EndpointId, EventTypeId";
                  AND MessageType = 'EventRequest'
                  AND EventTypeId IS NOT NULL
                GROUP BY EventTypeId, {bucketExpr}",
-            new { From = from, To = to },
+            Window(from, to),
             commandTimeout: _ctx.CommandTimeout);
 
         var series = rows

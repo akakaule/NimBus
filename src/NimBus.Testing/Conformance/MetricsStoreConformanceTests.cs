@@ -150,8 +150,8 @@ public abstract class MetricsStoreConformanceTests
     public async Task GetEndpointMetrics_excludes_messages_enqueued_at_or_after_to()
     {
         var store = CreateStore();
-        var from = DateTime.UtcNow.AddHours(-3);
-        var to = from.AddHours(1);
+        var to = UpperBound();
+        var from = to.AddHours(-1);
         var receiver = Id("receiver");
         var publisher = Id("publisher");
 
@@ -168,8 +168,8 @@ public abstract class MetricsStoreConformanceTests
     public async Task GetEndpointLatencyMetrics_excludes_messages_enqueued_at_or_after_to()
     {
         var store = CreateStore();
-        var from = DateTime.UtcNow.AddHours(-3);
-        var to = from.AddHours(1);
+        var to = UpperBound();
+        var from = to.AddHours(-1);
         var receiver = Id("receiver");
 
         await store.StoreMessage(SampleMessage(Id("evt-lat-in"), Id("msg-lat-in"), MessageType.ResolutionResponse, to.AddMinutes(-1), endpointId: receiver, queueTimeMs: 10, processingTimeMs: 100));
@@ -187,8 +187,8 @@ public abstract class MetricsStoreConformanceTests
     public async Task GetFailedMessageInsights_excludes_messages_enqueued_at_or_after_to()
     {
         var store = CreateStore();
-        var from = DateTime.UtcNow.AddHours(-3);
-        var to = from.AddHours(1);
+        var to = UpperBound();
+        var from = to.AddHours(-1);
         var receiver = Id("receiver");
 
         await store.StoreMessage(SampleMessage(Id("evt-fi-in"), Id("msg-fi-in"), MessageType.ErrorResponse, to.AddMinutes(-1), endpointId: receiver, errorText: "Inside"));
@@ -229,8 +229,8 @@ public abstract class MetricsStoreConformanceTests
     public async Task GetEventTypeTimeSeriesMetrics_excludes_messages_enqueued_at_or_after_to()
     {
         var store = CreateStore();
-        var from = DateTime.UtcNow.AddHours(-3);
-        var to = from.AddHours(1);
+        var to = UpperBound();
+        var from = to.AddHours(-1);
         var receiver = Id("receiver");
         var publisher = Id("publisher");
         var eventTypeId = Id("OrderPlaced");
@@ -242,6 +242,15 @@ public abstract class MetricsStoreConformanceTests
         var result = await store.GetEventTypeTimeSeriesMetrics(from, to, substringLength: 13, bucketLabel: "hour");
 
         Assert.AreEqual(1, result.Series.Single(s => s.EventTypeId == eventTypeId).Total);
+    }
+
+    // An upper bound 2 ms past a whole second. A store that sends it as SQL Server's legacy
+    // DATETIME rounds it up to +3 ms, which would count a message enqueued exactly at the bound.
+    private static DateTime UpperBound()
+    {
+        var past = DateTime.UtcNow.AddHours(-2);
+        return new DateTime(past.Year, past.Month, past.Day, past.Hour, past.Minute, past.Second, DateTimeKind.Utc)
+            .AddMilliseconds(2);
     }
 
     private static MessageEntity SampleMessage(

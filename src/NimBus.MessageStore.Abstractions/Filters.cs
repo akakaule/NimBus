@@ -63,6 +63,10 @@ public class AuditSearchItem
 
 public class EventFilter
 {
+    /// <summary>
+    /// Exact endpoint id, never a prefix match (unlike the other ID-like filters).
+    /// See <see cref="Abstractions.IMessageTrackingStore.GetEventsByFilter"/>.
+    /// </summary>
     public string? EndPointId { get; set; }
 
     public DateTime? UpdatedAtFrom { get; set; }

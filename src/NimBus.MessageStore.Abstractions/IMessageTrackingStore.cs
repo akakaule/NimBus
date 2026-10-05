@@ -162,9 +162,14 @@ public interface IMessageTrackingStore
     // Filtered queries
 
     /// <summary>
-    /// Filtered event search. ID-like string filters (endpoint id, event id,
-    /// session id) match by case-insensitive PREFIX on every provider; free-text
-    /// filters (To/From/Payload) keep provider-specific substring semantics.
+    /// Filtered event search. The endpoint id matches EXACTLY, never by prefix:
+    /// callers scope authorization and bulk writes by it, so "Billing" must not
+    /// return "BillingV2" rows. Its case sensitivity is provider-specific (SQL
+    /// Server follows the column collation, Cosmos DB resolves the endpoint's
+    /// container, the in-memory store ignores case). The other ID-like string
+    /// filters (event id, session id, last message id) match by case-insensitive
+    /// PREFIX on every provider; free-text filters (To/From/Payload) keep
+    /// provider-specific substring semantics.
     /// Results omit <c>MessageContent.EventContent.EventJson</c> — detail views
     /// fetch the payload on demand via <see cref="GetLatestEventRequestMessage"/>;
     /// <c>ErrorContent</c> is kept (the error-grouped view reads it).

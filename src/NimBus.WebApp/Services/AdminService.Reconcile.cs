@@ -216,10 +216,11 @@ public partial class AdminService
 
             foreach (var row in page.Events)
             {
-                // EndPointId is a prefix match on SQL Server, where every endpoint shares one
-                // table — without this, previewing "Orders" would also classify "OrdersArchive"
-                // rows against the wrong endpoint and report them as bogus NoTerminal verdicts.
-                // Those rows are not this endpoint's, so they are not counted as scanned either.
+                // EndPointId is an exact match in the first-party stores, but a provider that
+                // still treats it as a prefix would make previewing "Orders" also classify
+                // "OrdersArchive" rows against the wrong endpoint and report them as bogus
+                // NoTerminal verdicts. Those rows are not this endpoint's, so they are not counted
+                // as scanned either.
                 if (!string.Equals(row.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;

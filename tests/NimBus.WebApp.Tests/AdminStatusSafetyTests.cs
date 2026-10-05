@@ -103,6 +103,37 @@ public sealed class AdminStatusSafetyTests
     }
 
     [TestMethod]
+    public async Task Skip_leaves_prefix_sibling_endpoint_events_untouched()
+    {
+        const string siblingEndpointId = EndpointId + "b";
+        const string siblingEventId = "event-b";
+        var store = new InMemoryMessageStore();
+        await SeedFailedEvent(store);
+        await store.UploadFailedMessage(
+            siblingEventId,
+            SessionId,
+            siblingEndpointId,
+            new UnresolvedEvent
+            {
+                EventId = siblingEventId,
+                SessionId = SessionId,
+                EndpointId = siblingEndpointId,
+                UpdatedAt = DateTime.UtcNow.AddMinutes(-1),
+            });
+        var sut = CreateAdminService(store);
+
+        var result = await sut.SkipMessagesAsync(
+            EndpointId,
+            new List<string> { nameof(StoreResolutionStatus.Failed) },
+            before: null);
+
+        Assert.AreEqual(1, result.Succeeded);
+        Assert.AreEqual(StoreResolutionStatus.Skipped, (await store.GetEvent(EndpointId, EventId)).ResolutionStatus);
+        Assert.AreEqual(StoreResolutionStatus.Failed, (await store.GetEvent(siblingEndpointId, siblingEventId)).ResolutionStatus);
+        Assert.IsNull(await store.GetEvent(EndpointId, siblingEventId), "The sibling's event must not be rewritten under the skipped endpoint.");
+    }
+
+    [TestMethod]
     public async Task Controller_rejects_null_delete_statuses_before_calling_service()
     {
         var service = new ThrowingAdminService();

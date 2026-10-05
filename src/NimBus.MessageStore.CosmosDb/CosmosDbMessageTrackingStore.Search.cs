@@ -278,9 +278,11 @@ internal sealed partial class CosmosDbMessageTrackingStore
         // provider translates StartsWith with OrdinalIgnoreCase (and only that
         // comparison) to index-served STARTSWITH(x, y, true); Contains would be
         // a full-scan CONTAINS. Free-text To/From/Payload keep Contains.
+        // The endpoint id is the exception: an exact match (STRINGEQUALS(x, y, true)), so the
+        // failed search across "Billing" and "BillingV2" filtered to "Billing" skips "BillingV2".
         if (filter.EndPointId != null)
             query = query
-                .Where(x => x.Event.EndpointId.StartsWith(filter.EndPointId, StringComparison.OrdinalIgnoreCase));
+                .Where(x => x.Event.EndpointId.Equals(filter.EndPointId, StringComparison.OrdinalIgnoreCase));
 
         if (filter.EventId != null)
             query = query

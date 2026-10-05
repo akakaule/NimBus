@@ -102,6 +102,9 @@ cost grows linearly with data volume.
   middle will notice.
 - SQL *loosens*: these fields were exact-match before; now prefixes match.
 - Free-text fields (To/From/Payload) are deliberately unchanged.
+- Exception (2026-10): `EventFilter.EndPointId` is an exact match again on every
+  provider. The event search and the bulk skip/delete paths scope authorization and
+  writes by it, so `Billing` must not reach `BillingV2` rows.
 
 Pin the new semantics with conformance tests: exact hit, uppercase hit,
 mid-fragment **miss**.

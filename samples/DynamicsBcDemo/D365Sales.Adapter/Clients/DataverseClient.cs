@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Http.Json;
+using System.Text.Json;
 using DynamicsBcDemo.Contracts.Http;
 
 namespace D365Sales.Adapter.Clients;
@@ -7,8 +8,10 @@ namespace D365Sales.Adapter.Clients;
 /// <summary>
 /// The Dataverse Web API calls the adapter makes: PATCH by id, upserts by alternate key, and the
 /// WinOpportunity action. Column names are Dataverse logical names; lookups use <c>@odata.bind</c>.
-/// Pointing it at a real environment means adding an access token (client credentials for an
-/// application user) and the org URL.
+/// Pointing it at a real environment means adding an access token (for example
+/// <c>AddAzureBearerToken("https://{org}.crm.dynamics.com/.default")</c> from Akaule.NimBus.Extensions.Http
+/// with an application user's credential) and the org URL. Failures surface as the typed
+/// <see cref="DataverseException"/> subclasses the retry rules and circuit breaker key on.
 /// </summary>
 public interface IDataverseClient
 {
@@ -71,13 +74,63 @@ public sealed class DataverseClient(HttpClient http) : IDataverseClient
             },
         };
 
-        using var response = await http.PostAsJsonAsync($"{Root}/WinOpportunity", body, cancellationToken);
-        await response.EnsureSuccessOrThrowAsync($"Win opportunity {opportunityId}", ApiName, cancellationToken);
+        var operation = $"Win opportunity {opportunityId}";
+        using var response = await SendAsync(() => http.PostAsJsonAsync($"{Root}/WinOpportunity", body, cancellationToken), operation);
+        await ThrowOnFailureAsync(response, operation, cancellationToken);
     }
 
     private async Task PatchAsync(string path, IDictionary<string, object?> columns, string operation, CancellationToken cancellationToken)
     {
-        using var response = await http.PatchAsJsonAsync(path, columns, cancellationToken);
-        await response.EnsureSuccessOrThrowAsync(operation, ApiName, cancellationToken);
+        using var response = await SendAsync(() => http.PatchAsJsonAsync(path, columns, cancellationToken), operation);
+        await ThrowOnFailureAsync(response, operation, cancellationToken);
+    }
+
+    /// <summary>Sends the request; a connection failure or timeout means Dataverse is unavailable.</summary>
+    private static async Task<HttpResponseMessage> SendAsync(Func<Task<HttpResponseMessage>> send, string operation)
+    {
+        try
+        {
+            return await send();
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new DataverseUnavailableException($"{operation} failed: {ApiName} could not be reached ({ex.Message}).", ex);
+        }
+        catch (TaskCanceledException ex) when (!ex.CancellationToken.IsCancellationRequested)
+        {
+            throw new DataverseUnavailableException($"{operation} failed: {ApiName} did not answer in time.", ex);
+        }
+    }
+
+    /// <summary>Maps a non-success response to the exception type NimBus should see.</summary>
+    internal static async Task ThrowOnFailureAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode) return;
+
+        var message = await response.DescribeFailureAsync(operation, ApiName, cancellationToken);
+        var status = (int)response.StatusCode;
+        throw status switch
+        {
+            429 => new DataverseThrottledException(message, response.Headers.RetryAfter?.Delta),
+            408 or 502 or 503 or 504 => new DataverseUnavailableException(message),
+            >= 400 and < 500 => new DataverseRequestRejectedException(message, status, await ReadErrorCodeAsync(response, cancellationToken)),
+            _ => new DataverseUnavailableException(message),
+        };
+    }
+
+    // Dataverse errors are OData: { "error": { "code": "0x80040217", "message": "..." } }.
+    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            return document.RootElement.TryGetProperty("error", out var error) && error.TryGetProperty("code", out var code)
+                ? code.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

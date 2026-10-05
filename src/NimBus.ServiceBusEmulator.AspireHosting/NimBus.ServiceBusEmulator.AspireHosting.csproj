@@ -16,4 +16,12 @@
     <PackageReference Include="Aspire.Hosting" Version="13.5.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- NimBus.AspireHosting runs the other NimBus tools with the same NimBusTools helper; both
+         packages are released together at one version. -->
+    <InternalsVisibleTo Include="NimBus.AspireHosting" />
+    <InternalsVisibleTo Include="NimBus.AspireHosting.Tests" />
+    <InternalsVisibleTo Include="NimBus.ServiceBusEmulator.Tests" />
+  </ItemGroup>
+
 </Project>

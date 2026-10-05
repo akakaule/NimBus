@@ -1663,6 +1663,30 @@ public abstract class MessageTrackingStoreConformanceTests
         Assert.AreEqual(0, byMidFragment.Events.Count(), "A mid-string fragment must NOT match (no substring semantics).");
     }
 
+    [TestMethod]
+    public async Task GetEventsByFilter_matches_endpointId_exactly_not_by_prefix()
+    {
+        // Callers scope authorization (endpoint search) and bulk writes (skip) by
+        // EndPointId, so a Reader of "A" must not see "AB" rows and a skip on "A"
+        // must not rewrite them.
+        var store = CreateStore();
+        var endpointId = Id("ep-exact");
+        var sibling = endpointId + "b";
+        var eventId = Id("ev-exact");
+        const string sessionId = "session-exact";
+        await store.UploadFailedMessage(eventId, sessionId, endpointId, SampleEvent(endpointId, eventId, sessionId));
+        await store.UploadFailedMessage(eventId, sessionId, sibling, SampleEvent(sibling, eventId, sessionId));
+
+        var resp = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId }, null!, 50);
+
+        var events = resp.Events.ToList();
+        Assert.AreEqual(1, events.Count, "A prefix-sibling endpoint's row must not match.");
+        Assert.AreEqual(endpointId, events[0].EndpointId);
+
+        var bySessionPrefix = await store.GetEventsByFilter(new EventFilter { EndPointId = endpointId, SessionId = "session-ex" }, null!, 50);
+        Assert.AreEqual(1, bySessionPrefix.Events.Count(), "Session id stays a prefix match.");
+    }
+
     private static UnresolvedEvent FailureEvent(
         string endpointId,
         string eventId,
@@ -1793,6 +1817,20 @@ public abstract class MessageTrackingStoreConformanceTests
 
         var errorKept = byError.Events.Single();
         Assert.AreEqual("HttpRequestException: 503 Service Unavailable", errorKept.MessageContent?.ErrorContent?.ErrorText, "ErrorContent survives the search projection.");
+    }
+
+    [TestMethod]
+    public async Task GetFailedEventsAcrossEndpoints_matches_the_filter_endpointId_exactly()
+    {
+        var store = CreateStore();
+        var a = Id("fe-a");
+        var ab = a + "b";
+        await store.UploadFailedMessage(Id("fe1"), "s1", a, FailureEvent(a, Id("fe1"), "s1"));
+        await store.UploadFailedMessage(Id("fe2"), "s1", ab, FailureEvent(ab, Id("fe2"), "s1"));
+
+        var resp = await store.GetFailedEventsAcrossEndpoints(new EventFilter { EndPointId = a }, new[] { a, ab }, null, 50);
+
+        CollectionAssert.AreEquivalent(new[] { Id("fe1") }, resp.Events.Select(e => e.EventId).ToList(), "The filter's endpoint id is an exact match, as in GetEventsByFilter.");
     }
 
     [TestMethod]

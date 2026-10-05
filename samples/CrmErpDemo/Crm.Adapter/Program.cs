@@ -12,7 +12,12 @@ using NimBus.SDK.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddServiceDefaults();
+// This demo adapter stays deliberately minimal: its CRM client retries inside the standard HTTP
+// resilience handler, failures surface as plain HttpRequestException, and it has a circuit breaker
+// but no NimBus retry rules. The e2e suite is tuned to that timing. For the shape a production
+// adapter should follow (typed failures, AddExceptionRule<T>, Retry-After, no hidden HTTP retries),
+// see samples/DynamicsBcDemo/BusinessCentral.Adapter and docs/building-adapters.md#resilience.
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 builder.AddAzureServiceBusClient("servicebus");
 
 var crmApiBaseUrl = builder.Configuration["services:crm-api:https:0"]

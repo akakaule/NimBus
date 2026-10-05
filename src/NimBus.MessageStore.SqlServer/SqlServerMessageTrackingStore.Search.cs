@@ -149,12 +149,15 @@ GROUP BY DATEDIFF_BIG(millisecond, @WindowFrom, UpdatedAtUtc) / @BucketMs, Endpo
 
     // Shared by every event search so the filters cannot drift apart. Prefix matching on
     // ID-like fields — see SearchMessages for the cross-provider semantics and collation note.
+    // EndpointId is the exception: callers scope authorization and bulk writes by it, so it is
+    // an exact match ("Billing" must not return "BillingV2" rows). It keeps the column collation,
+    // like the store's other endpoint-scoped lookups, so the EndpointId-leading indexes serve it.
     private static (List<string> Where, DynamicParameters Parameters) BuildEventFilter(EventFilter filter)
     {
         var where = new List<string> { "Deleted = 0" };
         var p = new DynamicParameters();
 
-        if (!string.IsNullOrEmpty(filter.EndPointId)) { where.Add(@"EndpointId LIKE @EndpointId ESCAPE '\'"); p.Add("EndpointId", LikePrefix(filter.EndPointId)); }
+        if (!string.IsNullOrEmpty(filter.EndPointId)) { where.Add("EndpointId = @EndpointId"); p.Add("EndpointId", filter.EndPointId); }
         if (!string.IsNullOrEmpty(filter.EventId)) { where.Add(@"EventId LIKE @EventId ESCAPE '\'"); p.Add("EventId", LikePrefix(filter.EventId)); }
         if (!string.IsNullOrEmpty(filter.SessionId)) { where.Add(@"SessionId LIKE @SessionId ESCAPE '\'"); p.Add("SessionId", LikePrefix(filter.SessionId)); }
         if (!string.IsNullOrEmpty(filter.LastMessageId)) { where.Add(@"LastMessageId LIKE @LastMessageId ESCAPE '\'"); p.Add("LastMessageId", LikePrefix(filter.LastMessageId)); }

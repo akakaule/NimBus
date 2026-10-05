@@ -353,11 +353,11 @@ describe("SubscriptionManager", () => {
     expect(screen.getByRole("button", { name: "external-topic" })).toBeTruthy();
   });
 
-  it("offers Resolver dead-letter inspection only on the terminal session subscription", async () => {
-    mocks.getAdminServicebusTopics.mockResolvedValue([topic("Resolver")]);
+  it.each(["Resolver", "resolver", "RESOLVER"])("offers dead-letter inspection for terminal Resolver topic %s", async (topicName) => {
+    mocks.getAdminServicebusTopics.mockResolvedValue([topic(topicName)]);
     mocks.getAdminServicebusSubscriptions.mockResolvedValue([
       subscription("Resolver", {
-        topicName: "Resolver",
+        topicName,
         requiresSession: true,
         forwardTo: null,
         deadLetterMessageCount: 2,
@@ -365,9 +365,12 @@ describe("SubscriptionManager", () => {
     ]);
 
     render(<SubscriptionManager />);
-    fireEvent.click(await screen.findByRole("button", { name: "Resolver" }));
+    fireEvent.click(await screen.findByRole("button", { name: topicName }));
 
     expect(await screen.findByRole("button", { name: "Inspect dead letters" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Inspect dead letters" }));
+    expect(await screen.findByText(/All dead letters/)).toBeDefined();
+    expect(mocks.getAdminServicebusResolverDeadletters).toHaveBeenCalledWith("Resolver");
   });
 
   it("does not offer replay for transfer-only dead letters", async () => {

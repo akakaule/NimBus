@@ -3,11 +3,17 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsAspireSharedProject>true</IsAspireSharedProject>
+    <IsPackable>true</IsPackable>
+    <Description>Aspire service defaults for NimBus hosts and adapters: OpenTelemetry with NimBus instrumentation, health checks and service discovery, with an opt-in standard HTTP resilience handler.</Description>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Transitive from the OpenTelemetry/Azure stack at 2.55.0. Http.Resilience
-         applies AddStandardResilienceHandler globally through ServiceDefaults, and
+         applies AddStandardResilienceHandler through ServiceDefaults when opted in, and
          Microsoft documents 2.63 and earlier as incompatible with it. Nothing here
          registers a gRPC client today, so this is a floor against the day something
          does, and it silences a warning that was firing eight times a build. -->

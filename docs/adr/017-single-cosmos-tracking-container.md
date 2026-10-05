@@ -3,7 +3,7 @@
 ## Status
 Proposed (2026-09). Supersedes [ADR-008](008-per-endpoint-cosmos-containers.md) when accepted.
 Target release: v5.0.0. The repo owner settled the open questions on 2026-09-28 (Spec 036 §13).
-The design, migration and evaluation are in
+The spec was revised on 2026-10-05 after a review. The design, migration and evaluation are in
 [Spec 036](../spec/036-cosmos-single-tracking-container/spec.md).
 
 ## Context
@@ -55,27 +55,36 @@ Options considered:
 - **Partition key.** The container uses the hierarchical key `/endpointId` then `/id`. Every row
   carries a top-level `endpointId`, which the store writes from the `endpointId` argument. Row ids
   (`{eventId}_{sessionId}`) are unchanged.
-- **Endpoint-scoped access.** The store reaches the container only through an endpoint-scoped
-  accessor. The accessor builds the full key for point operations and adds `c.endpointId =
-  @endpointId` to every query. The predicate is equality, never a prefix match. The failed search
-  and its histogram read several endpoints in one query through a set form of the accessor,
-  `ARRAY_CONTAINS(@endpointIds, c.endpointId)`, ordered by a stamped `updatedAtTicks`. That
-  replaces the per-endpoint merge.
-- **Purge.** Purging an endpoint deletes its rows through a paged query and paced deletes. Delete by
-  partition key is in preview and accepts only full keys on hierarchical containers.
+- **Endpoint-scoped access.** The store reaches the container only through endpoint scopes. A scope
+  builds the full key for point operations. It also builds and runs every query, with
+  `c.endpointId = @endpointId` as the first conjunct. The predicate is equality, never a prefix
+  match, and it alone scopes and routes the query. The failed search and its histogram read several
+  endpoints in one query through a set form of the scope, `ARRAY_CONTAINS(@endpointIds,
+  c.endpointId)`, ordered by a stamped `updatedAtTicks`. That replaces the per-endpoint merge. The
+  copy tools go through the same scopes.
+- **Purge.** Purging an endpoint deletes its rows through a paged query and paced deletes, as a
+  WebApp background operation, because it can outlast an HTTP request. Delete by partition key is in
+  preview and accepts only full keys on hierarchical containers.
 - **Provisioning.** `nb topology apply` and `nb setup` stop provisioning Cosmos containers.
   Endpoint ids no longer need to avoid container names.
 - **Priority.** The account turns on priority-based execution. The WebApp, purges and the migration
   run at low priority, so the Resolver's writes go first when the shared budget runs short.
 - **Migration.** Existing Cosmos deployments migrate once, offline, in v5.0.0, with
-  `nb container migrate`. The command copies every row during the outage, verifies them and never
-  touches the legacy containers, which stay in place for rollback until an operator deletes them.
+  `nb container migrate`. The command copies every row during the outage, converges on rerun,
+  verifies per status and never touches the legacy containers, which stay in place for rollback
+  until an operator deletes them. A layout guard keeps v5 apps from serving tracking data until a
+  migration marker covers every legacy container, with no legacy writes past the recorded
+  high-water mark. `nb deploy apps` and `nb setup` check it before deploying, and a rollback resets
+  the marker.
 - **Storage containers page.** Admin → Storage containers stays so operators can delete migrated
   legacy containers. A later 5.x minor retires it, together with the WebApp's Cosmos DB Operator
   role assignment.
-- **Out of scope.** The `messages` and `audits` containers, the other platform containers, the SQL
-  Server and in-memory providers and the storage contracts are unchanged. So is the WebApp API in
-  v5.0.0.
+- **Out of scope.** The `messages` and `audits` containers, the other platform containers and the
+  storage contracts' members and signatures are unchanged. A prerequisite fix makes
+  `GetEventsByFilter`'s endpoint filter exact on the SQL Server and in-memory providers, which
+  match it by prefix today. The WebApp API changes only for the two purge operations, which return
+  `202` (or `409` while a purge runs), and for a `503` on tracking operations while the migration is
+  pending.
 
 ## Consequences
 
@@ -101,14 +110,17 @@ Options considered:
 - **Isolation in code.** Endpoint isolation depends on the scoped accessor. A unit test over every
   recorded query and cross-endpoint conformance tests guard it.
 - **Lost options.** It gives up per-endpoint data-plane role assignments and resource tokens (unused
-  today), per-endpoint throughput and TTL, and per-endpoint point-in-time restore.
-- **Slower purge.** Purge costs RUs in proportion to the endpoint's rows and can stop part-way.
-  Deleting a container was free and all-or-nothing.
-- **Hot-endpoint ceiling.** One endpoint's throughput tops out at one physical partition's
-  10,000 RU/s until its data splits. Before, the ceiling was its container's provisioned RU/s.
+  today), per-endpoint throughput and TTL, and per-endpoint restore.
+- **Slower purge.** Purge costs RUs in proportion to the endpoint's rows, runs in the background
+  and can stop part-way. Deleting a container was free and all-or-nothing.
+- **Hot-endpoint ceiling.** One endpoint's rows share a physical partition, and Cosmos divides
+  RU/s evenly across partitions. So one endpoint tops out at the autoscale max divided by the
+  physical partitions, capped at 10,000 RU/s: 4,000 RU/s at the default. Before, the ceiling was
+  its container's provisioned RU/s.
 - **Emulator dependence.** CI depends on the emulator's hierarchical-key support, which is recent.
   Spec 036 Phase 0 verifies it before any code lands.
 - **Migration outage.** Existing deployments take a planned outage while the migration copies
-  every row.
+  every row. The Resolver is paused through its trigger setting, and v5 is deployed before the
+  copy.
 - **Divergence from DIS.** Cosmos store changes from DIS, which keeps per-endpoint containers, no
   longer port mechanically.

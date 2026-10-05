@@ -8,7 +8,7 @@ NimBus is MIT-licensed. By submitting a contribution you agree to license it und
 
 1. **Talk first for anything non-trivial.** Open a [backlog issue](.github/ISSUE_TEMPLATE/backlog-item.yml) (or comment on an existing one) before writing code. Anything touching core gets a design review — see [Design review & ADRs](#design-review--adrs).
 2. Fork, branch with a `feat/` · `fix/` · `chore/` · `docs/` prefix.
-3. Build and test in **Release** locally — CI treats warnings as errors there.
+3. Build and test in **Release** locally — compiler warnings become errors there.
 4. Open a PR to `master`, fill in the checklist, link the issue.
 5. A maintainer reviews. Keep PRs focused and small where you can.
 
@@ -37,7 +37,7 @@ npm --prefix src/NimBus.WebApp/ClientApp run build
 dotnet run --project src/NimBus.AppHost -- --UseEmulator true
 ```
 
-CI (`.github/workflows/dotnet.yml`) runs `restore` → `build --configuration Release` → `test` on every PR to `master`, including the SQL Server message-store conformance suite in a service container. **Reproduce failures locally by building Release**, since that's where analyzer warnings become errors:
+CI (`.github/workflows/dotnet.yml`) runs `restore` → `build --configuration Release` → `test` on every PR to `master`, including the SQL Server message-store conformance suite in a service container. **Reproduce failures locally by building Release**, since that's where compiler warnings become errors:
 
 ```bash
 dotnet build src/NimBus.sln --configuration Release
@@ -66,7 +66,7 @@ Tag with `git tag -a vX.Y.Z -m "NimBus vX.Y.Z"` and pair every tag with a GitHub
 
 ## Code conventions
 
-These are enforced by analyzers (AsyncFixer, Meziantou, SecurityCodeScan, SonarAnalyzer, StyleCop) via `Directory.Packages.props`, with `EnforceCodeStyleInBuild` on and `TreatWarningsAsErrors` in Release.
+The analyzer packages (AsyncFixer, Meziantou, SecurityCodeScan, SonarAnalyzer, StyleCop) are referenced through `Directory.Packages.props`. `EnforceCodeStyleInBuild` is enabled by default, although some projects opt out; analyzer warnings remain non-fatal in Release.
 
 - **C#**: latest language features — file-scoped namespaces, nullable reference types, implicit usings.
 - **Namespaces**: `NimBus[.Project][.Subfolder]`.

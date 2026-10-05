@@ -12,8 +12,7 @@ namespace DynamicsBcDemo.Tests;
 
 /// <summary>
 /// How the Business Central adapter classifies failures, and which of them NimBus retries. Retry
-/// rules match on the text NimBus builds from the exception (type name, message, stack trace), so
-/// they are keyed on exception type names — never on a bare status code.
+/// rules match on exception types (AddExceptionRule&lt;T&gt;) — never on a bare status code in the text.
 /// </summary>
 [TestClass]
 public sealed class BusinessCentralAdapterTests
@@ -81,10 +80,10 @@ public sealed class BusinessCentralAdapterTests
         var policies = new DefaultRetryPolicyProvider();
         BcResilience.ConfigureRetries(policies, options);
 
-        var throttled = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcThrottledException("PUT … → 429 Too Many Requests.", null)));
-        var unavailable = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcUnavailableException("PUT … → 503 Service Unavailable.")));
+        var throttled = policies.GetRetryPolicy("D365OpportunityUpdated", Wrapped(new BcThrottledException("PUT … → 429 Too Many Requests.", null)));
+        var unavailable = policies.GetRetryPolicy("D365OpportunityUpdated", Wrapped(new BcUnavailableException("PUT … → 503 Service Unavailable.")));
         // A rejection whose body happens to mention 429 and 503 must still not be retried.
-        var rejected = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcRequestRejectedException("PUT … → 422. Body: limits 429/503 apply", 422, "Application_SalespersonNotFound")));
+        var rejected = policies.GetRetryPolicy("D365OpportunityUpdated", Wrapped(new BcRequestRejectedException("PUT … → 422. Body: limits 429/503 apply", 422, "Application_SalespersonNotFound")));
 
         Assert.IsNotNull(throttled);
         Assert.AreEqual(TimeSpan.FromSeconds(options.ThrottledBaseDelaySeconds), throttled.BaseDelay);
@@ -103,7 +102,7 @@ public sealed class BusinessCentralAdapterTests
         var policies = new DefaultRetryPolicyProvider();
         BcResilience.ConfigureRetries(policies, new BcResilienceOptions());
 
-        var first = policies.GetRetryPolicy("D365OpportunityUpdated", MatchedText(new BcUnavailableException("503")))!.GetDelay(0);
+        var first = policies.GetRetryPolicy("D365OpportunityUpdated", Wrapped(new BcUnavailableException("503")))!.GetDelay(0);
 
         Assert.IsTrue(first > TimeSpan.FromSeconds(20), $"First retry after {first}.");
     }
@@ -129,8 +128,8 @@ public sealed class BusinessCentralAdapterTests
         Assert.AreEqual(CircuitState.Open, breaker.State);
     }
 
-    /// <summary>The text NimBus matches retry rules against: "{inner} {wrapper}", stack traces included.</summary>
-    private static string MatchedText(Exception inner) => $"{inner} NimBus.Core.Messages.Exceptions.EventContextHandlerException: handler failed";
+    /// <summary>What the retry lookup sees: the handler's exception, wrapped by the pipeline.</summary>
+    private static Exception Wrapped(Exception inner) => new EventContextHandlerException(inner);
 
     private static BusinessCentralClient ClientReturning(HttpStatusCode status, string body, int? retryAfterSeconds = null) =>
         new(new HttpClient(new StubHandler(_ =>

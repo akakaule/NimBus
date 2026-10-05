@@ -46,10 +46,17 @@ export const SidePanel = ({
       }
       if (e.key !== "Tab" || !panel) return;
       const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
       const first = items[0];
       const last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      if (
+        e.shiftKey &&
+        (document.activeElement === first || document.activeElement === panel)
+      ) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {

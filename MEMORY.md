@@ -1,5 +1,8 @@
 # Memory
 
+- Failed-page control correction: compare every applied filter value before treating a submit as an unchanged search; presentation and brushed-window patches must still reach the URL. Pending asynchronous panel navigation belongs to its originating open event and must be discarded on close or other navigation. A modal that initially focuses itself must wrap Shift+Tab from the dialog and prevent Tab from escaping while it has no controls.
+- Release-build correction: when a frontend change replaces hashed SPA assets during a solution build, the WebApp test project may still copy paths captured before the rebuild and fail with MSB3030. Verify the SPA build succeeded, then rerun the unchanged solution build against the current assets before treating this as a source defect.
+
 - Agent-guidance correction: use terminating frontend test commands (`test:ci` or `--run`), pair Release builds with Release tests, and remember that `SkipSpaBuild=true` also disables NSwag generation. Keep durable workflow rules in AGENTS.md and verify tool/configuration claims against repository sources.
 
 - Guard PR merges with the exact full head SHA returned by GitHub or git rev-parse; never pad or reconstruct an abbreviated SHA.
@@ -176,3 +179,5 @@
 - SQL conditional-write correction: timestamp versions read from DATETIME2 must be rebound explicitly as DbType.DateTime2. Dapper's inferred DateTime can round a returned timestamp and intermittently reject an unchanged row; verify against a live SQL Server, not only the in-memory provider.
 - Deferred broker inspection correction: the local emulator exposes transfer dead-letter runtime counts but does not support peeking that subqueue. Accept an explicit zero count as point-in-time absence; failed or nonzero counts never imply absence. Qualify Azure.Response in tests that also define a Response helper.
 - Event Details layout correction: TabPanel is a flex row. Wrap vertically stacked recovery and message sections in one full-width block; a React fragment turns them into cramped side-by-side flex children. Verify in the real browser shell.
+
+- Resolver dead-letter UI correction: Service Bus topic names retain broker casing. Compare Resolver names case-insensitively and cover lowercase/uppercase API names; run Vitest from ClientApp (npm exec from the repository root misses Vite aliases).

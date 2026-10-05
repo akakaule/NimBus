@@ -260,9 +260,10 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     // Shared by every event search so the filters cannot drift apart. ID-like fields use
     // case-insensitive PREFIX matching, converging with the Cosmos (STARTSWITH) and SQL Server
     // (LIKE 'value%') providers; free-text fields use case-insensitive substring matching.
+    // The endpoint id is the exception: an exact match, so "Billing" never returns "BillingV2".
     private static IEnumerable<UnresolvedEvent> ApplyEventFilter(IEnumerable<UnresolvedEvent> q, EventFilter filter)
     {
-        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => HasPrefix(e.EndpointId, filter.EndPointId));
+        if (!string.IsNullOrEmpty(filter.EndPointId)) q = q.Where(e => string.Equals(e.EndpointId, filter.EndPointId, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrEmpty(filter.EventId)) q = q.Where(e => HasPrefix(e.EventId, filter.EventId));
         if (!string.IsNullOrEmpty(filter.SessionId)) q = q.Where(e => HasPrefix(e.SessionId, filter.SessionId));
         if (!string.IsNullOrEmpty(filter.LastMessageId)) q = q.Where(e => HasPrefix(e.LastMessageId, filter.LastMessageId));

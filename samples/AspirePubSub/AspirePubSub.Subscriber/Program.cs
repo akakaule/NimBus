@@ -5,7 +5,7 @@ using NimBus.SDK.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddServiceDefaults();
+builder.AddServiceDefaults(options => options.UseStandardResilienceHandler = true);
 
 builder.AddAzureServiceBusClient("servicebus");
 

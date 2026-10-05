@@ -655,15 +655,30 @@ public class StrictMessageHandler : MessageHandler
         }
 
         var eventTypeId = messageContext.EventTypeId;
-        var exceptionText = $"{exception?.InnerException} {exception}";
         var retryCount = messageContext.RetryCount ?? 0;
 
-        var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exceptionText, messageContext.To);
+        var policy = _retryPolicyProvider.GetRetryPolicy(eventTypeId, exception, messageContext.To);
         if (policy != null && retryCount < policy.MaxRetries)
         {
-            var delay = policy.GetDelay(retryCount);
+            var delay = ApplyRetryAfterHint(policy, policy.GetDelay(retryCount), exception);
             await SendRetryResponse(messageContext, delay);
         }
+    }
+
+    // A server-provided Retry-After (IRetryAfterHint anywhere in the exception chain) can only
+    // lengthen the policy's delay, and never beyond the policy's MaxDelay.
+    private static TimeSpan ApplyRetryAfterHint(RetryPolicy policy, TimeSpan policyDelay, Exception exception)
+    {
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            if (current is IRetryAfterHint { RetryAfter: { } hint } && hint > TimeSpan.Zero)
+            {
+                var delay = hint > policyDelay ? hint : policyDelay;
+                return policy.MaxDelay is { } maxDelay && delay > maxDelay ? maxDelay : delay;
+            }
+        }
+
+        return policyDelay;
     }
 
     // HandoffFailedRequest carries errorText/errorType in

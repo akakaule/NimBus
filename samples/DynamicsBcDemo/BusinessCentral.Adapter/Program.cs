@@ -28,11 +28,12 @@ var bcApiBaseUrl = builder.Configuration["services:bc-api:https:0"]
 
 var resilience = builder.Configuration.GetSection("BusinessCentral:Resilience").Get<BcResilienceOptions>() ?? new BcResilienceOptions();
 
-// The BC client gets its own HttpClient, outside IHttpClientFactory, so it has NO resilience
-// handler: ServiceDefaults adds a standard one to every factory client, which would retry 429/503
-// invisibly inside a single NimBus attempt and time out with exceptions no retry rule recognizes
-// (the per-client opt-out, RemoveAllResilienceHandlers, is still experimental). Retries for BC
-// calls belong to NimBus, where each one is audited. HttpClient tracing still flows to the dashboard.
+// The BC client must have NO resilience handler: one would retry 429/503 invisibly inside a single
+// NimBus attempt and time out with exceptions no retry rule recognizes. AddServiceDefaults() leaves
+// the standard handler off unless UseStandardResilienceHandler is set, so a factory client would
+// also do; this client is built outside IHttpClientFactory so it stays handler-free even if a host
+// opts in for its other clients. Retries for BC calls belong to NimBus, where each one is audited.
+// HttpClient tracing still flows to the dashboard.
 builder.Services.AddSingleton<IBusinessCentralClient>(_ => new BusinessCentralClient(
     new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2) })
     {

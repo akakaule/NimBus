@@ -5,6 +5,11 @@ semantics, provider conformance tests protect pluggable storage behavior, and
 end-to-end tests exercise the in-memory publish/receive workflow without
 requiring Azure Service Bus.
 
+This page covers NimBus's own test suite. For testing an adapter you build on
+NimBus (handlers, failure mapping, retry rules, the circuit breaker and the
+catalog), see
+[building-adapters.md#adapter-testing](building-adapters.md#adapter-testing).
+
 ## Test Suite Map
 
 ```mermaid

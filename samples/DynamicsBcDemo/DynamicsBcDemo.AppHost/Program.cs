@@ -35,7 +35,7 @@ var sql = builder.AddSqlServer("sql");
 var d365Db = sql.AddDatabase("d365");
 var bcDb = sql.AddDatabase("bc");
 // The integration platform's own database: the NimBus message store (audit trail, Resolver state)
-// and the Business Central adapter's inbox. Never BC's database — BC is SaaS.
+// and both adapters' inboxes. Never BC's or Dataverse's database — both are SaaS.
 var nimbusDb = sql.AddDatabase("nimbus");
 
 // Topics and subscriptions for D365SalesEndpoint and BusinessCentralEndpoint.
@@ -93,7 +93,10 @@ var d365Api = builder.AddProject<Projects.D365Sales_Api>("d365-api")
 builder.AddProject<Projects.D365Sales_Adapter>("d365-adapter")
     .WithReference(servicebus)
     .WithReference(d365Api)
+    // The adapter's inbox (deduplication store) lives in the integration platform's database.
+    .WithReference(nimbusDb)
     .WaitFor(d365Api)
+    .WaitFor(nimbusDb)
     .WaitForCompletion(provisioner);
 
 // ---- Business Central (simulated) ------------------------------------------------------------

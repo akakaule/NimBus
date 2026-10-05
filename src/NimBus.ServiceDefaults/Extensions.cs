@@ -11,11 +11,33 @@ using OpenTelemetry.Trace;
 
 namespace Microsoft.Extensions.Hosting;
 
+/// <summary>
+/// Aspire service defaults for NimBus hosts and adapters: OpenTelemetry with NimBus instrumentation,
+/// health checks and service discovery.
+/// </summary>
 public static class ServiceDefaultsExtensions
 {
-    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
+    /// <summary>
+    /// Adds OpenTelemetry (with NimBus instrumentation), the default health checks and service
+    /// discovery, and makes every <c>IHttpClientFactory</c> client resolve service-discovery names.
+    /// </summary>
+    /// <remarks>
+    /// The standard HTTP resilience handler is not added unless
+    /// <see cref="NimBusServiceDefaultsOptions.UseStandardResilienceHandler"/> is set. An adapter's
+    /// external-system client should usually leave it off, so that NimBus retry rules are the only
+    /// retry layer and each delivery attempt stays within the message lock.
+    /// </remarks>
+    /// <param name="builder">The host builder.</param>
+    /// <param name="configure">Optional configuration of the defaults.</param>
+    /// <returns>The builder, for chaining.</returns>
+    public static IHostApplicationBuilder AddServiceDefaults(
+        this IHostApplicationBuilder builder,
+        Action<NimBusServiceDefaultsOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new NimBusServiceDefaultsOptions();
+        configure?.Invoke(options);
 
         builder.ConfigureOpenTelemetry();
 
@@ -25,13 +47,24 @@ public static class ServiceDefaultsExtensions
 
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
-            http.AddStandardResilienceHandler();
+            if (options.UseStandardResilienceHandler)
+            {
+                http.AddStandardResilienceHandler();
+            }
+
             http.AddServiceDiscovery();
         });
 
         return builder;
     }
 
+    /// <summary>
+    /// Adds OpenTelemetry logging, metrics and tracing with NimBus instrumentation, exporting over OTLP
+    /// when <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set and to Azure Monitor when
+    /// <c>APPLICATIONINSIGHTS_CONNECTION_STRING</c> is set.
+    /// </summary>
+    /// <param name="builder">The host builder.</param>
+    /// <returns>The builder, for chaining.</returns>
     public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -82,6 +115,11 @@ public static class ServiceDefaultsExtensions
         }
     }
 
+    /// <summary>
+    /// Adds a <c>self</c> health check tagged <c>live</c>.
+    /// </summary>
+    /// <param name="builder">The host builder.</param>
+    /// <returns>The builder, for chaining.</returns>
     public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -92,6 +130,12 @@ public static class ServiceDefaultsExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Maps <c>/health</c> (every check), <c>/alive</c> (checks tagged <c>live</c>) and <c>/ready</c>
+    /// (checks tagged <c>ready</c>).
+    /// </summary>
+    /// <param name="app">The web application.</param>
+    /// <returns>The application, for chaining.</returns>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
         app.MapHealthChecks("/health");

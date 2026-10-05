@@ -396,7 +396,7 @@ const Sidebar = () => {
   return (
     <aside
       className={cn(
-        "bg-[#1A1814] text-[#C9C1AB] flex flex-col gap-0.5 sticky top-0 h-screen",
+        "bg-ink text-[#C9C1AB] flex flex-col gap-0.5 sticky top-0 h-screen",
         "px-3.5 pt-5 pb-5 border-r border-[#2A2620]",
         "w-[232px] shrink-0",
       )}
@@ -437,8 +437,8 @@ const Sidebar = () => {
                     "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium no-underline",
                     "transition-colors duration-100",
                     active
-                      ? "bg-primary/[0.16] text-primary"
-                      : "text-[#C9C1AB] hover:bg-white/[0.04] hover:text-[#F4F2EA]",
+                      ? "bg-primary/16 text-primary"
+                      : "text-[#C9C1AB] hover:bg-white/4 hover:text-[#F4F2EA]",
                   );
                 }}
               >
@@ -456,7 +456,7 @@ const Sidebar = () => {
                   <span
                     className={cn(
                       "ml-auto font-mono text-[10px] uppercase tracking-wider px-1.5 py-px rounded-full font-bold",
-                      "bg-primary/[0.22] text-primary",
+                      "bg-primary/22 text-primary",
                     )}
                   >
                     {item.badge}

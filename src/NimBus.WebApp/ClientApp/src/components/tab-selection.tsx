@@ -26,7 +26,7 @@ const TabSelection: React.FunctionComponent<ITabSelectionsProps> = (props) => {
       isFitted={true}
       variant="enclosed"
       defaultIndex={isNaN(index) ? 0 : index}
-      className="p-4 border border-input rounded"
+      className="p-4 border border-input rounded-sm"
     >
       <TabList className="mb-4">
         {props.tabs.map((tab, idx) => (

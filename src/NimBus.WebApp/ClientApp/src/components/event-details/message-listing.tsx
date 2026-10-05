@@ -1043,7 +1043,7 @@ export default function MessageListing(props: IMessageListingProps) {
           {props.eventDetails?.messageContent?.errorContent && (
             !isDeadletteredMessage(props.eventDetails?.resolutionStatus) ? (
               <>
-                <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950/40 dark:border-red-900/60 dark:text-red-200 p-4 rounded text-sm">
+                <div className="bg-red-100 border border-red-400 text-red-800 dark:bg-red-950/40 dark:border-red-900/60 dark:text-red-200 p-4 rounded-sm text-sm">
                   {props.eventDetails?.messageContent?.errorContent?.errorText}
                 </div>
                 <table className="text-sm">
@@ -1163,7 +1163,7 @@ export default function MessageListing(props: IMessageListingProps) {
             <label className="block text-sm font-medium text-foreground mb-2">
               Original event:
             </label>
-            <pre className="bg-muted p-4 rounded text-sm overflow-x-auto max-h-96">
+            <pre className="bg-muted p-4 rounded-sm text-sm overflow-x-auto max-h-96">
               {formattedPayload}
             </pre>
           </div>
@@ -1230,7 +1230,7 @@ export default function MessageListing(props: IMessageListingProps) {
         <ModalBody>
           <p className="text-sm text-muted-foreground">
             Mark this event as successfully handed off. A{" "}
-            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded-sm">
               HandoffCompletedRequest
             </code>{" "}
             is published to the subscriber, moving it out of pending so it
@@ -1294,7 +1294,7 @@ export default function MessageListing(props: IMessageListingProps) {
         <ModalBody>
           <p className="text-sm text-muted-foreground">
             Mark the event as terminally failed. A{" "}
-            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+            <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded-sm">
               HandoffFailedRequest
             </code>{" "}
             is published; the event surfaces under the{" "}

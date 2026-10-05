@@ -241,7 +241,7 @@ export default function MessagesList() {
           <label htmlFor="messages-page-size">Rows per page:</label>
           <select
             id="messages-page-size"
-            className="bg-card text-foreground border border-border rounded px-2 py-1"
+            className="bg-card text-foreground border border-border rounded-sm px-2 py-1"
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value))}
             disabled={loading}

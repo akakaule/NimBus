@@ -90,7 +90,7 @@ export const SidePanel = ({
         aria-label={label}
         tabIndex={-1}
         className={cn(
-          "absolute inset-y-0 right-0 flex w-full max-w-[960px] flex-col border-l border-border-strong bg-card text-card-foreground shadow-nb-lg outline-none animate-slide-in-from-right",
+          "absolute inset-y-0 right-0 flex w-full max-w-[960px] flex-col border-l border-border-strong bg-card text-card-foreground shadow-nb-lg outline-hidden animate-slide-in-from-right",
           className,
         )}
       >

@@ -136,7 +136,7 @@ const Topbar = () => {
           />
         </svg>
         <span>Jump to endpoint, event, or session…</span>
-        <kbd className="ml-auto font-mono text-[10.5px] bg-muted border border-border px-1.5 py-px rounded text-muted-foreground">
+        <kbd className="ml-auto font-mono text-[10.5px] bg-muted border border-border px-1.5 py-px rounded-sm text-muted-foreground">
           {shortcutLabel}
         </kbd>
       </button>

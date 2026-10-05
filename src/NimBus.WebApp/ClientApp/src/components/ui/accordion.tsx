@@ -107,7 +107,7 @@ const AccordionTrigger = ({
       type="button"
       className={cn(
         "flex w-full items-center justify-between py-4 px-4 text-left font-medium transition-colors",
-        "hover:bg-accent focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset",
+        "hover:bg-accent focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-inset",
         isExpanded && "bg-accent",
         className,
       )}

@@ -86,7 +86,7 @@ export const PropertyRow: React.FC<PropertyRowProps> = ({
     <dt className="text-muted-foreground font-semibold">{label}</dt>
     <dd
       className={cn(
-        "m-0 text-foreground break-words",
+        "m-0 text-foreground wrap-break-word",
         mono && "font-mono text-[12px] tabular-nums",
       )}
     >

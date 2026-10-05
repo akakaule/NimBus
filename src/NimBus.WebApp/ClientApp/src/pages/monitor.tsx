@@ -105,7 +105,7 @@ export default function Monitor() {
       className={cn(
         "min-h-screen flex flex-col gap-[0.7em] p-[0.9em]",
         "bg-background text-foreground font-sans",
-        "[font-feature-settings:'tnum']",
+        "font-features-['tnum']",
         showCursor ? "" : "cursor-none",
       )}
       style={{ fontSize: WALL_FONT_SIZE }}
@@ -196,7 +196,7 @@ const Hero = ({
   const envClass =
     upperEnv === "PROD" || upperEnv === "PRD"
       ? cn("bg-status-danger/[0.14] border-status-danger/50", DANGER_TEXT)
-      : cn("bg-status-warning/[0.12] border-status-warning/50", WARNING_TEXT);
+      : cn("bg-status-warning/12 border-status-warning/50", WARNING_TEXT);
 
   return (
     <header className="flex flex-wrap items-center gap-x-[1.6em] gap-y-[0.8em] px-[1.4em] py-[0.9em] rounded-nb-md bg-card border border-border">
@@ -314,7 +314,7 @@ const KpiStrip = ({
       className={cn(
         "grid rounded-nb-md bg-card border border-border",
         "grid-cols-2 xl:grid-cols-[auto_1fr_1fr_1fr_1.9fr]",
-        "[&>*]:px-[1.4em] [&>*]:py-[1.1em] [&>*]:min-w-0",
+        "*:px-[1.4em] *:py-[1.1em] *:min-w-0",
         "xl:[&>*+*]:border-l xl:[&>*+*]:border-border",
       )}
     >
@@ -446,7 +446,7 @@ const FleetRing = ({ endpoints }: { endpoints: MonitorEndpoint[] }) => {
         <span className={cn("text-[2.4em] font-extrabold leading-none", SUCCESS_TEXT)}>
           {go}
         </span>
-        <span className="font-mono text-[0.75em] tracking-[0.1em] text-muted-foreground mt-[0.3em]">
+        <span className="font-mono text-[0.75em] tracking-widest text-muted-foreground mt-[0.3em]">
           / {n} GO
         </span>
       </div>
@@ -596,7 +596,7 @@ const FailingBand = ({
   if (total === 0) return null;
   if (endpoints.length === 0) {
     return (
-      <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-success/30 bg-status-success/[0.05]">
+      <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-success/30 bg-status-success/5">
         <BandHeader
           title="Failing · none"
           meta="all clear"
@@ -616,7 +616,7 @@ const FailingBand = ({
   }
   const unacked = endpoints.filter((e) => !e.ack).length;
   return (
-    <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-danger/40 bg-status-danger/[0.06]">
+    <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-danger/40 bg-status-danger/6">
       <BandHeader
         title="Failing · sorted by impact"
         meta={`${unacked} unacknowledged · click ACK to silence`}
@@ -651,7 +651,7 @@ const WatchingBand = ({
   if (endpoints.length === 0) return null;
   const hot = endpoints.filter((e) => backlogLevel(e) !== "normal").length;
   return (
-    <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-warning/40 bg-status-warning/[0.05]">
+    <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-warning/40 bg-status-warning/5">
       <BandHeader
         title="Backlog · sorted by depth"
         meta={
@@ -679,7 +679,7 @@ const WatchingBand = ({
 const HealthyStrip = ({ endpoints }: { endpoints: MonitorEndpoint[] }) => {
   if (endpoints.length === 0) return null;
   return (
-    <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-success/30 bg-status-success/[0.04]">
+    <section className="rounded-nb-md px-[1.1em] py-[1em] flex flex-col gap-[0.8em] border border-status-success/30 bg-status-success/4">
       <BandHeader
         title={`Healthy · ${endpoints.length}`}
         meta="A → Z"
@@ -769,7 +769,7 @@ const FailingCard = ({
         "rounded-nb-md border-[1.5px] px-[1em] pt-[0.9em] pb-[0.8em] flex flex-col gap-[0.6em] min-w-0",
         acked
           ? "bg-card border-dashed border-border-strong"
-          : "bg-status-danger/[0.10] border-status-danger",
+          : "bg-status-danger/10 border-status-danger",
         pulse && "nb-monitor-pulse-card",
       )}
     >
@@ -847,7 +847,7 @@ const BacklogCard = ({
     <article
       className={cn(
         "rounded-nb-md px-[1em] pt-[0.9em] pb-[0.8em] flex flex-col gap-[0.6em] min-w-0",
-        "bg-status-warning/[0.08]",
+        "bg-status-warning/8",
         level === "high"
           ? "border-[3px] border-status-warning"
           : level === "elevated"
@@ -1054,7 +1054,7 @@ const AckButton = ({
             "transition-colors cursor-pointer",
             !acked && "hover:text-foreground hover:border-foreground/40",
           ),
-      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2",
+      "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2",
     )}
     title={
       disabled

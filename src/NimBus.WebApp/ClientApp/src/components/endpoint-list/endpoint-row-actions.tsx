@@ -298,7 +298,7 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
             className="mt-3.5 block text-xs font-semibold"
           >
             Type{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[12px]">
+            <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[12px]">
               {endpointId}
             </code>{" "}
             to confirm
@@ -308,7 +308,7 @@ export default function EndpointRowActions(props: IEndpointRowActionsProps) {
             autoComplete="off"
             value={purgeConfirmText}
             onChange={(e) => setPurgeConfirmText(e.currentTarget.value)}
-            className="mt-1.5 w-full rounded-nb-md border-[1.5px] border-border-strong bg-background px-3 py-2.5 font-mono text-sm focus:border-status-danger focus:outline-none focus:ring-[3px] focus:ring-status-danger-50"
+            className="mt-1.5 w-full rounded-nb-md border-[1.5px] border-border-strong bg-background px-3 py-2.5 font-mono text-sm focus:border-status-danger focus:outline-hidden focus:ring-[3px] focus:ring-status-danger-50"
           />
         </ModalBody>
         <ModalFooter>

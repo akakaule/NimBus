@@ -1,6 +1,315 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* NimBus primary (coral/orange — action and focus ONLY, never status) */
+  --color-primary-50: #fbe7d7;
+  --color-primary-100: #f6d4b7;
+  --color-primary-200: #f3c597;
+  --color-primary-300: #efb477;
+  --color-primary-400: #ec9b58;
+  --color-primary-500: #e8743c;
+  --color-primary-600: #d45f25;
+  --color-primary-700: #a94b1d;
+  --color-primary-800: #7e3815;
+  --color-primary-900: #52240d;
+  --color-primary: #e8743c;
+  --color-primary-tint: #fceedd;
+
+  /* Cream / warm-neutral surfaces (light theme) */
+  --color-canvas: #f4f2ea;
+
+  --color-surface-2: #ece7da;
+  --color-surface: #faf8f2;
+
+  --color-ink-2: #4a463d;
+  --color-ink-3: #8a8473;
+  --color-ink: #1a1814;
+
+  /* Status hues (paired tints) — dedicated to status, never primary action */
+  --color-status-success-50: #dcefe4;
+  --color-status-success: #2e8f5e;
+  --color-status-success-ink: #1f6b45;
+
+  --color-status-warning-50: #f6e7c7;
+  --color-status-warning: #c98a1b;
+  --color-status-warning-ink: #8a5e0f;
+
+  --color-status-danger-50: #f4d9d3;
+  --color-status-danger: #c2412e;
+  --color-status-danger-ink: #8e2c1f;
+
+  --color-status-info-50: #d8e3f2;
+  --color-status-info: #3a6fb0;
+  --color-status-info-ink: #234e80;
+
+  /* Legacy NimBus message-status mappings (preserved for existing callsites) */
+  --color-status-failed: #c2412e;
+  --color-status-pending: #c98a1b;
+  --color-status-completed: #2e8f5e;
+  --color-status-deferred: #c98a1b;
+  --color-status-deadlettered: #8e2c1f;
+  --color-status-skipped: #8a8473;
+  --color-status-unsupported: #c9c1ab;
+
+  /* Purple — namespace pills and schema type tags */
+  --color-nimbus-purple: #6b3fa3;
+  --color-nimbus-purple-50: #ece2f4;
+
+  /* shadcn-style aliases driven by CSS vars (light/dark via :root / .dark) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-delegate-blue-50: #d8e3f2;
+  --color-delegate-blue-100: #bfd0e5;
+  --color-delegate-blue-200: #a6bdd7;
+  --color-delegate-blue-300: #8daaca;
+  --color-delegate-blue-400: #7497bc;
+  --color-delegate-blue-500: #3a6fb0;
+  --color-delegate-blue-600: #2e5990;
+  --color-delegate-blue-700: #234470;
+  --color-delegate-blue-800: #172e50;
+  --color-delegate-blue-900: #0c1930;
+  --color-delegate-blue: #3a6fb0;
+
+  --font-sans:
+    Manrope, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica Neue, sans-serif;
+  --font-mono:
+    JetBrains Mono, ui-monospace, SF Mono, Menlo, Monaco, Consolas,
+    Liberation Mono, Courier New, monospace;
+
+  --shadow-nb-sm:
+    0 1px 2px rgba(26, 24, 20, 0.04), 0 1px 1px rgba(26, 24, 20, 0.03);
+  --shadow-nb-md:
+    0 4px 10px rgba(26, 24, 20, 0.06), 0 2px 4px rgba(26, 24, 20, 0.04);
+  --shadow-nb-lg:
+    0 18px 40px rgba(26, 24, 20, 0.08), 0 4px 12px rgba(26, 24, 20, 0.04);
+
+  --radius-nb-sm: 4px;
+  --radius-nb-md: 8px;
+  --radius-nb-lg: 12px;
+
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-fade-out: fade-out 0.2s ease-out;
+  --animate-zoom-in: zoom-in 0.2s ease-out;
+  --animate-zoom-out: zoom-out 0.2s ease-out;
+  --animate-slide-in-from-right: slide-in-from-right 0.3s ease-out;
+  --animate-slide-in-from-left: slide-in-from-left 0.3s ease-out;
+  --animate-slide-in-from-top: slide-in-from-top 0.3s ease-out;
+  --animate-slide-in-from-bottom: slide-in-from-bottom 0.3s ease-out;
+  --animate-spin: spin 1s linear infinite;
+  --animate-in: fade-in 0.2s ease-out, zoom-in 0.2s ease-out;
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes fade-out {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes zoom-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes zoom-out {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+  }
+  @keyframes slide-in-from-right {
+    0% {
+      transform: translateX(100%);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+  @keyframes slide-in-from-left {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+  @keyframes slide-in-from-top {
+    0% {
+      transform: translateY(-100%);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  @keyframes slide-in-from-bottom {
+    0% {
+      transform: translateY(100%);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+/*
+  Tailwind CSS v3 defaults that v4 changed. These keep the UI looking the
+  same as it did on v3; remove one only after giving every element that
+  relies on it an explicit utility.
+  - Border color: v4 defaults to `currentcolor`.
+  - Placeholder color: v4 uses the text color at 50% opacity.
+  - Button cursor: v4 uses the browser default instead of `pointer`.
+  - Ring color (in @theme below): v4 defaults to `currentcolor`.
+*/
+@theme {
+  --default-ring-color: #3b82f680;
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@utility badge-failed {
+  /* Status badges — pill + dot pattern.
+     Color = meaning. Reserve primary coral for action / focus only. */
+  @apply bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200;
+}
+
+@utility badge-deadlettered {
+  @apply bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200;
+}
+
+@utility badge-pending {
+  @apply bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200;
+}
+
+@utility badge-deferred {
+  @apply bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200;
+}
+
+@utility badge-completed {
+  @apply bg-status-success-50 text-status-success-ink dark:bg-green-950/40 dark:text-green-200;
+}
+
+@utility badge-skipped {
+  @apply bg-muted text-muted-foreground;
+}
+
+@utility badge-unsupported {
+  @apply bg-muted text-muted-foreground;
+}
+
+@utility nb-flow-anim {
+  /* Topology edge flow animation — dashed stroke that scrolls toward the
+     arrowhead, signalling direction of message flow on the SVG canvas.
+     Matches the prototype's `.flow-anim` keyframes verbatim. */
+  stroke-dasharray: 5 7;
+  animation: nb-flow 4s linear infinite;
+}
+
+@utility nb-flow-anim-ribbon {
+  /* Flow-view ribbon variant — thicker pattern so the marching dashes stay
+     legible on the wide Sankey-style routes. Shares the `nb-flow` keyframe
+     so the cadence matches the graph-view edges. */
+  stroke-dasharray: 14 18;
+  animation: nb-flow 4s linear infinite;
+}
+
+@utility nb-monitor-pulser {
+  /* Monitor wall — pulsing dot used in the environment pill and the
+     stale-data banner. Tuned slow enough that it reads as a
+     heartbeat from across a room rather than a flicker. */
+  animation: nb-monitor-pulse 1.6s ease-in-out infinite;
+}
+
+@utility nb-monitor-pulseg {
+  /* Healthy-chip "live" dot — a pulsing ring that grows out and fades. The
+     dot itself stays a solid green; only the box-shadow ring animates. */
+  box-shadow: 0 0 0 0 rgba(46, 143, 94, 0.6);
+  animation: nb-monitor-pulseg 2.4s ease-in-out infinite;
+}
+
+@utility nb-monitor-pulse-card {
+  /* Fresh-failure card pulse — a solid ring flashes around the card for the
+     first 60 s after a new failure appears, asking the room to look up.
+     Flat on purpose: no blur or glow. Triggered from React by toggling the
+     class on/off based on `firstFailureAt`. */
+  animation: nb-monitor-pulse-card 1.2s steps(2, jump-none) infinite;
+}
+
+@utility nb-monitor-ticker {
+  /* Slow-scrolling marquee for the ticker. The track is duplicated in JSX
+     so the loop is seamless — translateX(-50%) lands at the start of the
+     duplicate, then snaps back to 0 on iteration. Pause on hover so an
+     operator can actually read a line. */
+  animation: nb-monitor-marquee 80s linear infinite;
+  will-change: transform;
+  &:hover {
+    animation-play-state: paused;
+  }
+}
 
 @layer base {
   :root {
@@ -80,84 +389,11 @@
 
   ::-webkit-scrollbar-thumb {
     background: var(--input);
-    @apply rounded;
+    @apply rounded-sm;
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background: var(--muted-foreground);
-  }
-}
-
-@layer components {
-  /* Status badges — pill + dot pattern.
-     Color = meaning. Reserve primary coral for action / focus only. */
-  .badge-failed,
-  .badge-deadlettered {
-    @apply bg-status-danger-50 text-status-danger-ink dark:bg-red-950/40 dark:text-red-200;
-  }
-
-  .badge-pending,
-  .badge-deferred {
-    @apply bg-status-warning-50 text-status-warning-ink dark:bg-yellow-950/40 dark:text-yellow-200;
-  }
-
-  .badge-completed {
-    @apply bg-status-success-50 text-status-success-ink dark:bg-green-950/40 dark:text-green-200;
-  }
-
-  .badge-skipped,
-  .badge-unsupported {
-    @apply bg-muted text-muted-foreground;
-  }
-
-  /* Topology edge flow animation — dashed stroke that scrolls toward the
-     arrowhead, signalling direction of message flow on the SVG canvas.
-     Matches the prototype's `.flow-anim` keyframes verbatim. */
-  .nb-flow-anim {
-    stroke-dasharray: 5 7;
-    animation: nb-flow 4s linear infinite;
-  }
-
-  /* Flow-view ribbon variant — thicker pattern so the marching dashes stay
-     legible on the wide Sankey-style routes. Shares the `nb-flow` keyframe
-     so the cadence matches the graph-view edges. */
-  .nb-flow-anim-ribbon {
-    stroke-dasharray: 14 18;
-    animation: nb-flow 4s linear infinite;
-  }
-
-  /* Monitor wall — pulsing dot used in the environment pill and the
-     stale-data banner. Tuned slow enough that it reads as a
-     heartbeat from across a room rather than a flicker. */
-  .nb-monitor-pulser {
-    animation: nb-monitor-pulse 1.6s ease-in-out infinite;
-  }
-
-  /* Healthy-chip "live" dot — a pulsing ring that grows out and fades. The
-     dot itself stays a solid green; only the box-shadow ring animates. */
-  .nb-monitor-pulseg {
-    box-shadow: 0 0 0 0 rgba(46, 143, 94, 0.6);
-    animation: nb-monitor-pulseg 2.4s ease-in-out infinite;
-  }
-
-  /* Fresh-failure card pulse — a solid ring flashes around the card for the
-     first 60 s after a new failure appears, asking the room to look up.
-     Flat on purpose: no blur or glow. Triggered from React by toggling the
-     class on/off based on `firstFailureAt`. */
-  .nb-monitor-pulse-card {
-    animation: nb-monitor-pulse-card 1.2s steps(2, jump-none) infinite;
-  }
-
-  /* Slow-scrolling marquee for the ticker. The track is duplicated in JSX
-     so the loop is seamless — translateX(-50%) lands at the start of the
-     duplicate, then snaps back to 0 on iteration. Pause on hover so an
-     operator can actually read a line. */
-  .nb-monitor-ticker {
-    animation: nb-monitor-marquee 80s linear infinite;
-    will-change: transform;
-  }
-  .nb-monitor-ticker:hover {
-    animation-play-state: paused;
   }
 }
 

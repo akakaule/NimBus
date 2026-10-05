@@ -29,7 +29,7 @@ export default function HistoryListings(props: IHistoryListingProps) {
               <p>
                 <b>{h.eventContent != undefined ? "Payload" : ""}</b>
               </p>
-              <pre className="bg-muted p-2 rounded text-sm overflow-x-auto">
+              <pre className="bg-muted p-2 rounded-sm text-sm overflow-x-auto">
                 {h.eventContent != undefined
                   ? JSON.stringify(JSON.parse(h.eventContent), null, 2)
                   : ""}

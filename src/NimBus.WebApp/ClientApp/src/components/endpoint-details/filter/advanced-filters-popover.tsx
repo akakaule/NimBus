@@ -58,7 +58,7 @@ interface AdvancedFiltersPopoverProps {
 }
 
 const inputClass =
-  "w-full rounded-md border border-border-strong bg-background px-2.5 py-2 font-mono text-xs text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-200";
+  "w-full rounded-md border border-border-strong bg-background px-2.5 py-2 font-mono text-xs text-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary-200";
 
 // The "Advanced filters" trigger + its floating popover (Updated/Added ranges +
 // Payload). Renders only the control; the active-filter chips are rendered

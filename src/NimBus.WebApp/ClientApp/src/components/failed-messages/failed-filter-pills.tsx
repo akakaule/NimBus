@@ -738,7 +738,7 @@ export function FailedSearchBox({ value, onApply }: FailedSearchBoxProps) {
           if (e.key === "Enter") submit(draft);
         }}
         placeholder="Search error text, e.g. 503 or timeout, or event:… message:… session:… (a bare GUID finds an event)"
-        className="h-full min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+        className="h-full min-w-0 flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground"
       />
       {applied && (
         <button

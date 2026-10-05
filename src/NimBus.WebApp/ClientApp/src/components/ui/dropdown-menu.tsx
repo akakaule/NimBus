@@ -170,7 +170,7 @@ export function DropdownMenu({
                 right: coords.right,
               }}
               className={cn(
-                "z-[60] min-w-[240px] rounded-nb-md border border-border-strong bg-card p-1 text-sm shadow-nb-lg",
+                "z-60 min-w-[240px] rounded-nb-md border border-border-strong bg-card p-1 text-sm shadow-nb-lg",
                 "animate-fade-in",
                 menuClassName,
               )}
@@ -222,7 +222,7 @@ export function DropdownItem({
       }}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-nb-sm px-2.5 py-2 text-left font-medium",
-        "focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+        "focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed",
         destructive
           ? "text-status-danger-ink hover:bg-status-danger-50 focus:bg-status-danger-50 dark:text-red-300 dark:hover:bg-red-950/40 dark:focus:bg-red-950/40 [&_svg]:text-status-danger"
           : "text-foreground hover:bg-muted focus:bg-muted [&_svg]:text-muted-foreground",

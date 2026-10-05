@@ -57,7 +57,7 @@ export function RoleCard({
           {entries.map((entry) => (
             <li
               key={entry}
-              className="flex items-center justify-between gap-2 text-[13px] font-mono bg-muted/40 rounded px-2 py-1"
+              className="flex items-center justify-between gap-2 text-[13px] font-mono bg-muted/40 rounded-sm px-2 py-1"
             >
               <span className="truncate" title={entry}>
                 {entry}

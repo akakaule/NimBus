@@ -200,7 +200,7 @@ export default function FailedHistogram({
   return (
     // Recharts makes its surface focusable; clicking a bar would otherwise ring the whole
     // chart. Keyboard focus keeps its outline.
-    <div className="[&_*:focus:not(:focus-visible)]:outline-none">
+    <div className="[&_*:focus:not(:focus-visible)]:outline-hidden">
       {split === "endpoint" && (
         <div
           className="mb-2 flex flex-wrap items-center gap-4"
@@ -212,7 +212,7 @@ export default function FailedHistogram({
               className="inline-flex items-center gap-1.5 font-mono text-[11.5px] text-muted-foreground"
             >
               <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
+                className="inline-block h-2.5 w-2.5 rounded-xs"
                 style={{ background: s.color }}
               />
               {s.label}
@@ -261,7 +261,7 @@ export default function FailedHistogram({
                     >
                       <span className="inline-flex items-center gap-1.5">
                         <span
-                          className="inline-block h-2 w-2 rounded-sm"
+                          className="inline-block h-2 w-2 rounded-xs"
                           style={{ background: s.color }}
                         />
                         {s.label}

@@ -35,9 +35,7 @@ describe("FailedFilterPills", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Time range" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Last 7 days" }));
-    expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Last 7 days" }));
 
     expect(onApply).toHaveBeenCalledWith({
       period: api.Period._7d,
@@ -47,11 +45,11 @@ describe("FailedFilterPills", () => {
       windowStart: "",
       windowEnd: "",
     });
-    // The popover closes after Apply.
+    // A preset applies in one click and closes the popover.
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("applies a custom local range and keeps the period as the fallback", () => {
+  it("applies a custom local range on Apply and keeps the period as the fallback", () => {
     const onApply = vi.fn();
     render(
       <FailedFilterPills
@@ -62,7 +60,10 @@ describe("FailedFilterPills", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Time range" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
+    // Apply only exists for a custom range.
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Custom…" }));
+    expect(onApply).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Start time (local)"), {
       target: { value: "2026-09-20T08:00" },
     });
@@ -91,7 +92,7 @@ describe("FailedFilterPills", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Time range" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("button", { name: "Custom…" }));
     fireEvent.change(screen.getByLabelText("End time (local)"), {
       target: { value: "2020-01-01T00:00" },
     });
@@ -125,9 +126,10 @@ describe("FailedFilterPills", () => {
 
     fireEvent.click(pill);
     expect(
-      (screen.getByRole("radio", { name: "Custom" }) as HTMLInputElement)
-        .checked,
-    ).toBe(true);
+      screen
+        .getByRole("button", { name: "Custom…" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(
       (screen.getByLabelText("Start time (local)") as HTMLInputElement).value,
     ).toBe("2026-09-20T08:00");

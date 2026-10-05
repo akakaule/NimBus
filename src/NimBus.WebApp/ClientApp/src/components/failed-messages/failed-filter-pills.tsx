@@ -5,7 +5,6 @@ import { Button } from "components/ui/button";
 import { Checkbox } from "components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "components/ui/combobox";
 import { Input } from "components/ui/input";
-import { Radio, RadioGroup } from "components/ui/radio-group";
 import { Select } from "components/ui/select";
 import {
   FAILED_STATUSES,
@@ -52,8 +51,8 @@ export function rangeLabel(
 }
 
 /**
- * The time range picker, after Application Insights': a preset or a custom local start and
- * end, applied together. A custom range starts from the range on screen.
+ * The time range picker, after Application Insights': a preset applies on click; Custom opens
+ * local start and end fields, applied together and starting from the range on screen.
  */
 function TimeRangeContent({
   value,
@@ -66,9 +65,8 @@ function TimeRangeContent({
 }) {
   const applied = customRange(value);
   const shown = applied ?? rangeWindow(value, new Date());
-  const [choice, setChoice] = React.useState<string>(
-    applied ? CUSTOM : periodOption(value.period).value,
-  );
+  const current = applied ? CUSTOM : periodOption(value.period).value;
+  const [editing, setEditing] = React.useState(!!applied);
   const [start, setStart] = React.useState(() =>
     moment(shown.from).format(LOCAL_INPUT),
   );
@@ -77,43 +75,59 @@ function TimeRangeContent({
   );
   const from = moment(start, LOCAL_INPUT, true).toDate();
   const to = moment(end, LOCAL_INPUT, true).toDate();
-  const error = choice === CUSTOM ? customRangeError(from, to) : undefined;
+  const error = customRangeError(from, to);
   const startId = React.useId();
   const endId = React.useId();
-  const name = React.useId();
 
+  const pick = (period: string) => {
+    onApply({ period, ...rangeParams(undefined), ...windowParams(undefined) });
+    close();
+  };
   const apply = (e: React.FormEvent) => {
     e.preventDefault();
     if (error) return;
-    onApply({
-      ...(choice === CUSTOM
-        ? rangeParams({ from, to })
-        : { period: choice, ...rangeParams(undefined) }),
-      ...windowParams(undefined),
-    });
+    onApply({ ...rangeParams({ from, to }), ...windowParams(undefined) });
     close();
   };
+  const option = (selected: boolean) =>
+    cn(
+      "rounded-nb-sm px-2.5 py-1.5 text-left hover:bg-muted",
+      selected && "font-bold text-primary-700",
+    );
 
   return (
-    <form onSubmit={apply} className="flex w-[330px] flex-col gap-3">
-      <div className="text-xs font-medium text-muted-foreground">
+    <div className="flex w-[330px] flex-col gap-2">
+      <div className="px-2.5 text-xs font-medium text-muted-foreground">
         Time range
       </div>
-      <RadioGroup
-        name={name}
-        value={choice}
-        onChange={setChoice}
-        className="grid grid-flow-col grid-cols-2 grid-rows-4 gap-x-4 gap-y-2"
-      >
+      <div className="grid grid-flow-col grid-cols-2 grid-rows-4 gap-x-2">
         {PERIOD_OPTIONS.map((p) => (
-          <Radio key={p.value} value={p.value}>
+          <button
+            key={p.value}
+            type="button"
+            aria-pressed={current === p.value}
+            onClick={() => pick(p.value)}
+            className={option(current === p.value)}
+          >
             {periodLabel(p.label)}
-          </Radio>
+          </button>
         ))}
-        <Radio value={CUSTOM}>Custom</Radio>
-      </RadioGroup>
-      {choice === CUSTOM && (
-        <div className="flex flex-col gap-2.5 border-t border-border pt-3">
+        <button
+          type="button"
+          aria-pressed={current === CUSTOM}
+          aria-expanded={editing}
+          onClick={() => setEditing((on) => !on)}
+          className={option(current === CUSTOM || editing)}
+        >
+          Custom…
+        </button>
+      </div>
+      {editing && (
+        <form
+          onSubmit={apply}
+          aria-label="Custom range"
+          className="flex flex-col gap-2.5 border-t border-border px-1 pt-3"
+        >
           <div>
             <label
               htmlFor={startId}
@@ -149,22 +163,22 @@ function TimeRangeContent({
               {error}
             </p>
           )}
-        </div>
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              size="sm"
+              colorScheme="primary"
+              disabled={!!error}
+            >
+              Apply
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={close}>
+              Cancel
+            </Button>
+          </div>
+        </form>
       )}
-      <div className="flex gap-2 border-t border-border pt-3">
-        <Button
-          type="submit"
-          size="sm"
-          colorScheme="primary"
-          disabled={!!error}
-        >
-          Apply
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={close}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }
 

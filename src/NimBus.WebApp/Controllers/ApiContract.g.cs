@@ -2341,45 +2341,65 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
 
 
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
+
         /// <returns>Successfully returned metrics overview</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period, System.DateTime? from, System.DateTime? to);
 
         /// <summary>
         /// Get latency percentiles for all endpoints
         /// </summary>
 
 
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
+
         /// <returns>Latency percentiles per endpoint and event type</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<LatencyOverview>> GetMetricsLatencyAsync(Period period);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<LatencyOverview>> GetMetricsLatencyAsync(Period period, System.DateTime? from, System.DateTime? to);
 
         /// <summary>
         /// Get failed message insights grouped by error pattern
         /// </summary>
 
 
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
+
         /// <returns>Failed message insights grouped by error pattern</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, System.DateTime? from, System.DateTime? to);
 
         /// <summary>
         /// Get time-bucketed message counts
         /// </summary>
 
 
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
+
         /// <returns>Time-bucketed message counts</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period, System.DateTime? from, System.DateTime? to);
 
         /// <summary>
         /// Time-series buckets of published messages grouped by event type.
         /// </summary>
 
 
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
+
         /// <returns>OK</returns>
 
-        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtypeAsync(Period period);
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtypeAsync(Period period, System.DateTime? from, System.DateTime? to);
 
     }
 
@@ -2396,56 +2416,66 @@ namespace NimBus.WebApp.ManagementApi
         /// <summary>
         /// Get metrics overview for all endpoints
         /// </summary>
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
         /// <returns>Successfully returned metrics overview</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/overview")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MetricsOverview>> GetMetricsOverview([Microsoft.AspNetCore.Mvc.FromQuery] Period period)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<MetricsOverview>> GetMetricsOverview([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
         {
 
-            return _implementation.GetMetricsOverviewAsync(period);
+            return _implementation.GetMetricsOverviewAsync(period, from, to);
         }
 
         /// <summary>
         /// Get latency percentiles for all endpoints
         /// </summary>
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
         /// <returns>Latency percentiles per endpoint and event type</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/latency")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<LatencyOverview>> GetMetricsLatency([Microsoft.AspNetCore.Mvc.FromQuery] Period period)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<LatencyOverview>> GetMetricsLatency([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
         {
 
-            return _implementation.GetMetricsLatencyAsync(period);
+            return _implementation.GetMetricsLatencyAsync(period, from, to);
         }
 
         /// <summary>
         /// Get failed message insights grouped by error pattern
         /// </summary>
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
         /// <returns>Failed message insights grouped by error pattern</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/failed-insights")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsights([Microsoft.AspNetCore.Mvc.FromQuery] Period period)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<FailedInsightsOverview>> GetMetricsFailedInsights([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
         {
 
-            return _implementation.GetMetricsFailedInsightsAsync(period);
+            return _implementation.GetMetricsFailedInsightsAsync(period, from, to);
         }
 
         /// <summary>
         /// Get time-bucketed message counts
         /// </summary>
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
         /// <returns>Time-bucketed message counts</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/timeseries")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<TimeSeriesOverview>> GetMetricsTimeseries([Microsoft.AspNetCore.Mvc.FromQuery] Period period)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<TimeSeriesOverview>> GetMetricsTimeseries([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
         {
 
-            return _implementation.GetMetricsTimeseriesAsync(period);
+            return _implementation.GetMetricsTimeseriesAsync(period, from, to);
         }
 
         /// <summary>
         /// Time-series buckets of published messages grouped by event type.
         /// </summary>
+        /// <param name="from">Custom window start (inclusive). Used with `to` instead of `period`.</param>
+        /// <param name="to">Custom window end (exclusive). Used with `from` instead of `period`; the window may span at most 90 days.</param>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/metrics/timeseries-by-eventtype")]
-        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtype([Microsoft.AspNetCore.Mvc.FromQuery] Period period)
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtype([Microsoft.AspNetCore.Mvc.FromQuery] Period period, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? from, [Microsoft.AspNetCore.Mvc.FromQuery] System.DateTime? to)
         {
 
-            return _implementation.GetMetricsTimeseriesByEventtypeAsync(period);
+            return _implementation.GetMetricsTimeseriesByEventtypeAsync(period, from, to);
         }
 
     }

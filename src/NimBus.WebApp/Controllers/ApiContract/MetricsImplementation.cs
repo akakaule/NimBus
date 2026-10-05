@@ -22,6 +22,12 @@ public class MetricsImplementation : IMetricsApiController
     // most one run per period per window regardless of how many dashboards poll.
     private static readonly TimeSpan MetricsTtl = TimeSpan.FromSeconds(30);
 
+    /// <summary>Longest custom metrics window; mirrors <see cref="FailedImplementation.MaxWindow"/>.</summary>
+    internal static readonly TimeSpan MaxWindow = FailedImplementation.MaxWindow;
+
+    private static BadRequestObjectResult InvalidWindow() => new(
+        $"A custom window needs both from and to, from < to, and may span at most {MaxWindow.TotalDays} days.");
+
     public MetricsImplementation(
         IMetricsStore metricsStore,
         IStoreResultCache storeResultCache,
@@ -36,19 +42,17 @@ public class MetricsImplementation : IMetricsApiController
     // (spec 026 phase D).
     private Task<bool> IsSiteReaderAsync() => _authorizationService.HasRoleAsync(AccessRole.Reader);
 
-    public async Task<ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period)
+    public async Task<ActionResult<MetricsOverview>> GetMetricsOverviewAsync(Period period, DateTime? from = null, DateTime? to = null)
     {
         if (!await IsSiteReaderAsync())
             return new ForbidResult();
+        if (ResolveWindow(period, from, to, DateTime.UtcNow) is not { } window)
+            return InvalidWindow();
 
         var result = await _storeResultCache.GetOrCreateAsync(
-            $"metrics:overview:{period}",
+            $"metrics:overview:{window.CacheKey}",
             MetricsTtl,
-            () =>
-            {
-                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-                return _metricsStore.GetEndpointMetrics(from);
-            });
+            () => _metricsStore.GetEndpointMetrics(window.From, window.To));
 
         return new MetricsOverview
         {
@@ -73,10 +77,12 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    public async Task<ActionResult<LatencyOverview>> GetMetricsLatencyAsync(Period period)
+    public async Task<ActionResult<LatencyOverview>> GetMetricsLatencyAsync(Period period, DateTime? from = null, DateTime? to = null)
     {
         if (!await IsSiteReaderAsync())
             return new ForbidResult();
+        if (ResolveWindow(period, from, to, DateTime.UtcNow) is not { } window)
+            return InvalidWindow();
 
         // Aggregated server-side in Cosmos against the per-message timings the
         // Resolver persists on every outcome document — no App Insights
@@ -86,13 +92,9 @@ public class MetricsImplementation : IMetricsApiController
         // dashboard. Tail latency monitoring lives with the OpenTelemetry
         // histograms (nimbus.message.queue_wait, nimbus.pipeline.duration).
         var result = await _storeResultCache.GetOrCreateAsync(
-            $"metrics:latency:{period}",
+            $"metrics:latency:{window.CacheKey}",
             MetricsTtl,
-            () =>
-            {
-                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-                return _metricsStore.GetEndpointLatencyMetrics(from);
-            });
+            () => _metricsStore.GetEndpointLatencyMetrics(window.From, window.To));
 
         return new LatencyOverview
         {
@@ -118,23 +120,24 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    public async Task<ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period)
+    public async Task<ActionResult<FailedInsightsOverview>> GetMetricsFailedInsightsAsync(Period period, DateTime? from = null, DateTime? to = null)
     {
         if (!await IsSiteReaderAsync())
             return new ForbidResult();
+        if (ResolveWindow(period, from, to, DateTime.UtcNow) is not { } window)
+            return InvalidWindow();
 
         // Keep authorization outside the shared cache. Cache the finished aggregate
         // so repeated dashboards avoid both store reads and error normalization.
         return await _storeResultCache.GetOrCreateAsync(
-            $"metrics:failed-insights:{period}",
+            $"metrics:failed-insights:{window.CacheKey}",
             MetricsTtl,
-            () => BuildFailedInsightsAsync(period));
+            () => BuildFailedInsightsAsync(window));
     }
 
-    private async Task<FailedInsightsOverview> BuildFailedInsightsAsync(Period period)
+    private async Task<FailedInsightsOverview> BuildFailedInsightsAsync(MetricsWindow window)
     {
-        var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-        var messages = await _metricsStore.GetFailedMessageInsights(from);
+        var messages = await _metricsStore.GetFailedMessageInsights(window.From, window.To);
 
         var groups = messages
             .GroupBy(m => ExtractErrorCategory(m.ErrorText))
@@ -175,20 +178,17 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period)
+    public async Task<ActionResult<TimeSeriesOverview>> GetMetricsTimeseriesAsync(Period period, DateTime? from = null, DateTime? to = null)
     {
         if (!await IsSiteReaderAsync())
             return new ForbidResult();
+        if (ResolveWindow(period, from, to, DateTime.UtcNow) is not { } window)
+            return InvalidWindow();
 
         var result = await _storeResultCache.GetOrCreateAsync(
-            $"metrics:timeseries:{period}",
+            $"metrics:timeseries:{window.CacheKey}",
             MetricsTtl,
-            () =>
-            {
-                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-                var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
-                return _metricsStore.GetTimeSeriesMetrics(from, substringLength, bucketLabel);
-            });
+            () => _metricsStore.GetTimeSeriesMetrics(window.From, window.To, window.SubstringLength, window.BucketLabel));
 
         return new TimeSeriesOverview
         {
@@ -203,20 +203,17 @@ public class MetricsImplementation : IMetricsApiController
         };
     }
 
-    public async Task<ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtypeAsync(Period period)
+    public async Task<ActionResult<EventTypeTimeSeriesOverview>> GetMetricsTimeseriesByEventtypeAsync(Period period, DateTime? from = null, DateTime? to = null)
     {
         if (!await IsSiteReaderAsync())
             return new ForbidResult();
+        if (ResolveWindow(period, from, to, DateTime.UtcNow) is not { } window)
+            return InvalidWindow();
 
         var result = await _storeResultCache.GetOrCreateAsync(
-            $"metrics:timeseries-by-eventtype:{period}",
+            $"metrics:timeseries-by-eventtype:{window.CacheKey}",
             MetricsTtl,
-            () =>
-            {
-                var from = DateTime.UtcNow - PeriodToTimeSpan(period);
-                var (substringLength, bucketLabel) = PeriodToBucketConfig(period);
-                return _metricsStore.GetEventTypeTimeSeriesMetrics(from, substringLength, bucketLabel);
-            });
+            () => _metricsStore.GetEventTypeTimeSeriesMetrics(window.From, window.To, window.SubstringLength, window.BucketLabel));
 
         return new EventTypeTimeSeriesOverview
         {
@@ -233,6 +230,42 @@ public class MetricsImplementation : IMetricsApiController
             }).ToList(),
         };
     }
+
+    /// <summary>
+    /// The metrics window: a custom from/to when either is given, else the period preset ending at
+    /// <paramref name="nowUtc"/>. A custom window keeps its exact bounds and buckets by minute up to
+    /// 2 hours, by hour up to 14 days and by day beyond. Null for an invalid custom window: only one
+    /// bound, from not before to, or longer than <see cref="MaxWindow"/>.
+    /// </summary>
+    internal static MetricsWindow? ResolveWindow(Period period, DateTime? from, DateTime? to, DateTime nowUtc)
+    {
+        if (from.HasValue || to.HasValue)
+        {
+            if (!from.HasValue || !to.HasValue) return null;
+
+            var start = AsUtc(from.Value);
+            var end = AsUtc(to.Value);
+            if (end <= start || end - start > MaxWindow) return null;
+
+            var span = end - start;
+            var (substringLength, bucketLabel) =
+                span <= TimeSpan.FromHours(2) ? (16, "minute")
+                : span <= TimeSpan.FromDays(14) ? (13, "hour")
+                : (10, "day");
+            return new MetricsWindow(start, end, substringLength, bucketLabel, $"{start.Ticks}-{end.Ticks}");
+        }
+
+        var (presetLength, presetLabel) = PeriodToBucketConfig(period);
+        return new MetricsWindow(nowUtc - PeriodToTimeSpan(period), nowUtc, presetLength, presetLabel, period.ToString());
+    }
+
+    // Query-string DateTimes bind as Local or Unspecified depending on the input; read them as UTC.
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+    };
 
     private static (int substringLength, string label) PeriodToBucketConfig(Period period) => period switch
     {
@@ -262,3 +295,6 @@ public class MetricsImplementation : IMetricsApiController
         _ => TimeSpan.FromDays(1)
     };
 }
+
+/// <summary>A resolved metrics window: exact UTC bounds, bucket key length and label, and the cache key suffix.</summary>
+internal readonly record struct MetricsWindow(DateTime From, DateTime To, int SubstringLength, string BucketLabel, string CacheKey);

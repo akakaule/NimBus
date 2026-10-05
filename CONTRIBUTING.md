@@ -66,7 +66,7 @@ Tag with `git tag -a vX.Y.Z -m "NimBus vX.Y.Z"` and pair every tag with a GitHub
 
 ## Code conventions
 
-These are enforced by analyzers (AsyncFixer, Meziantou, SecurityCodeScan, SonarAnalyzer, StyleCop) via `Directory.Packages.props`, with `EnforceCodeStyleInBuild` on and `TreatWarningsAsErrors` in Release.
+The analyzer packages (AsyncFixer, Meziantou, SecurityCodeScan, SonarAnalyzer, StyleCop) are referenced through `Directory.Packages.props`. `EnforceCodeStyleInBuild` is enabled by default, although some projects opt out; analyzer warnings remain non-fatal in Release.
 
 - **C#**: latest language features — file-scoped namespaces, nullable reference types, implicit usings.
 - **Namespaces**: `NimBus[.Project][.Subfolder]`.

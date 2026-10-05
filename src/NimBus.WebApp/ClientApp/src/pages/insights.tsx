@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
+import moment from "moment";
 import * as api from "api-client";
+import CustomRangePopover from "components/metrics/custom-range-popover";
 import Page from "components/page";
 import { Card, CardHeader, CardTitle, CardContent } from "components/ui/card";
 import { Spinner } from "components/ui/spinner";
@@ -13,20 +15,30 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import type { TimeRange } from "functions/time-range.functions";
 
-const PERIODS: { label: string; value: api.Period }[] = [
-  { label: "1h", value: api.Period._1h },
-  { label: "12h", value: api.Period._12h },
-  { label: "1d", value: api.Period._1d },
-  { label: "3d", value: api.Period._3d },
-  { label: "7d", value: api.Period._7d },
-  { label: "30d", value: api.Period._30d },
+const PERIODS: { label: string; value: api.Period; hours: number }[] = [
+  { label: "1h", value: api.Period._1h, hours: 1 },
+  { label: "12h", value: api.Period._12h, hours: 12 },
+  { label: "1d", value: api.Period._1d, hours: 24 },
+  { label: "3d", value: api.Period._3d, hours: 72 },
+  { label: "7d", value: api.Period._7d, hours: 168 },
+  { label: "30d", value: api.Period._30d, hours: 720 },
 ];
+
+const segmentClass = (active: boolean) =>
+  `px-4 py-2 text-sm font-semibold rounded-md border transition-colors ${
+    active
+      ? "bg-primary text-white border-primary"
+      : "bg-card text-foreground border-border hover:bg-accent"
+  }`;
 
 export default function Insights() {
   const [data, setData] = useState<api.FailedInsightsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<api.Period>(api.Period._1d);
+  // A custom range replaces the period preset until a preset is picked again.
+  const [range, setRange] = useState<TimeRange>();
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const toggleExpand = (idx: number) => {
@@ -37,11 +49,15 @@ export default function Insights() {
     });
   };
 
-  const fetchData = useCallback(async (p: api.Period) => {
+  const fetchData = useCallback(async (p: api.Period, r?: TimeRange) => {
     setLoading(true);
     try {
       const client = new api.Client(api.CookieAuth());
-      const result = await client.getMetricsFailedInsights(p);
+      const result = await client.getMetricsFailedInsights(
+        p,
+        r ? moment(r.from) : undefined,
+        r ? moment(r.to) : undefined,
+      );
       setData(result);
     } catch (err) {
       console.error("Failed to fetch insights", err);
@@ -51,8 +67,10 @@ export default function Insights() {
   }, []);
 
   useEffect(() => {
-    fetchData(period);
-  }, [period, fetchData]);
+    fetchData(period, range);
+  }, [period, range, fetchData]);
+
+  const presetHours = PERIODS.find((p) => p.value === period)?.hours ?? 24;
 
   const groups = data?.groups ?? [];
 
@@ -72,16 +90,26 @@ export default function Insights() {
           {PERIODS.map((p) => (
             <button
               key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={`px-4 py-2 text-sm font-semibold rounded-md border transition-colors ${
-                period === p.value
-                  ? "bg-primary text-white border-primary"
-                  : "bg-card text-foreground border-border hover:bg-accent"
-              }`}
+              type="button"
+              aria-pressed={!range && period === p.value}
+              onClick={() => {
+                setPeriod(p.value);
+                setRange(undefined);
+              }}
+              className={segmentClass(!range && period === p.value)}
             >
               {p.label}
             </button>
           ))}
+          <CustomRangePopover
+            range={range}
+            shown={{
+              from: new Date(Date.now() - presetHours * 3_600_000),
+              to: new Date(),
+            }}
+            onApply={setRange}
+            className={segmentClass(!!range)}
+          />
           {data && !loading && (
             <span className="flex items-center ml-4 text-sm text-muted-foreground">
               Total failed: {data.totalFailed ?? 0}

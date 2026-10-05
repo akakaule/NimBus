@@ -1,4 +1,3 @@
-import { v4 as uuid } from "uuid";
 import type * as api from "api-client";
 
 // Tiny in-house faker for the Compose Event modal. Mirrors the demo apps'
@@ -218,7 +217,7 @@ function randomPhone(): string {
 function valueForType(typeName: string | undefined): unknown {
   switch (typeName) {
     case "Guid":
-      return uuid();
+      return crypto.randomUUID();
     case "String":
       return pick(WORDS);
     case "Int16":

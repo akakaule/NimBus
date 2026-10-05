@@ -1,28 +1,7 @@
 import * as React from "react";
 import moment from "moment";
-import { Button } from "components/ui/button";
-import { Input } from "components/ui/input";
-
-/** Longest custom range. Mirrors MetricsImplementation.MaxWindow on the server. */
-export const MAX_CUSTOM_RANGE_DAYS = 90;
-
-export interface TimeRange {
-  from: Date;
-  to: Date;
-}
-
-// The value format of a datetime-local input, read and written in local time.
-const LOCAL_INPUT = "YYYY-MM-DDTHH:mm";
-
-/** Why the server would refuse a custom range, or undefined when it is valid. */
-export function customRangeError(from: Date, to: Date): string | undefined {
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()))
-    return "Enter a start and an end time.";
-  if (from >= to) return "The start must be before the end.";
-  if (to.getTime() - from.getTime() > MAX_CUSTOM_RANGE_DAYS * 86_400_000)
-    return `A custom range may span at most ${MAX_CUSTOM_RANGE_DAYS} days.`;
-  return undefined;
-}
+import CustomRangeForm from "components/common/custom-range-form";
+import type { TimeRange } from "functions/time-range.functions";
 
 /** A custom range as compact local text, e.g. "20/09 08:00–21/09 17:30". */
 export function formatRange(range: TimeRange): string {
@@ -93,92 +72,17 @@ export default function CustomRangePopover({
           aria-label="Custom range"
           className="absolute right-0 top-full z-40 mt-1.5 rounded-nb-md border border-border-strong bg-card p-3 text-sm shadow-nb-lg animate-fade-in"
         >
-          <RangeForm
+          <CustomRangeForm
             initial={range ?? shown}
             onApply={(next) => {
               onApply(next);
               close();
             }}
             onCancel={close}
+            className="w-[280px]"
           />
         </div>
       )}
     </span>
-  );
-}
-
-function RangeForm({
-  initial,
-  onApply,
-  onCancel,
-}: {
-  initial: TimeRange;
-  onApply: (range: TimeRange) => void;
-  onCancel: () => void;
-}) {
-  const [start, setStart] = React.useState(() =>
-    moment(initial.from).format(LOCAL_INPUT),
-  );
-  const [end, setEnd] = React.useState(() =>
-    moment(initial.to).format(LOCAL_INPUT),
-  );
-  const from = moment(start, LOCAL_INPUT, true).toDate();
-  const to = moment(end, LOCAL_INPUT, true).toDate();
-  const error = customRangeError(from, to);
-  const startId = React.useId();
-  const endId = React.useId();
-
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!error) onApply({ from, to });
-      }}
-      className="flex w-[280px] flex-col gap-2.5"
-    >
-      <div>
-        <label
-          htmlFor={startId}
-          className="mb-1 block text-xs font-medium text-muted-foreground"
-        >
-          Start time (local)
-        </label>
-        <Input
-          id={startId}
-          type="datetime-local"
-          value={start}
-          onChange={(e) => setStart(e.target.value)}
-          error={!!error}
-        />
-      </div>
-      <div>
-        <label
-          htmlFor={endId}
-          className="mb-1 block text-xs font-medium text-muted-foreground"
-        >
-          End time (local)
-        </label>
-        <Input
-          id={endId}
-          type="datetime-local"
-          value={end}
-          onChange={(e) => setEnd(e.target.value)}
-          error={!!error}
-        />
-      </div>
-      {error && (
-        <p role="alert" className="m-0 text-[12.5px] text-red-600">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" colorScheme="primary" disabled={!!error}>
-          Apply
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
   );
 }

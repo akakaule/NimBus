@@ -1,5 +1,6 @@
 import moment from "moment";
 import * as api from "api-client";
+import { customRangeError } from "functions/time-range.functions";
 
 /** The resolution statuses the Failed page covers. */
 export const FAILED_STATUSES = [
@@ -77,22 +78,9 @@ export function resolveWindow(
   return { from: new Date(to - option.spanMinutes * 60_000), to: new Date(to) };
 }
 
-/** Longest custom range. Mirrors FailedImplementation.MaxWindow. */
-export const MAX_CUSTOM_RANGE_DAYS = 90;
-
 // Mirror FailedImplementation.MaxBuckets and CustomBucketSizes.
 const MAX_CUSTOM_BUCKETS = 60;
 const CUSTOM_BUCKET_MINUTES = [5, 15, 30, 60, 180, 360, 720, 1440];
-
-/** Why the server would refuse a custom range, or undefined when it is valid. */
-export function customRangeError(from: Date, to: Date): string | undefined {
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()))
-    return "Enter a start and an end time.";
-  if (from >= to) return "The start must be before the end.";
-  if (to.getTime() - from.getTime() > MAX_CUSTOM_RANGE_DAYS * 86_400_000)
-    return `A custom range may span at most ${MAX_CUSTOM_RANGE_DAYS} days.`;
-  return undefined;
-}
 
 /** The custom range in the URL, or undefined when a preset applies. */
 export function customRange(

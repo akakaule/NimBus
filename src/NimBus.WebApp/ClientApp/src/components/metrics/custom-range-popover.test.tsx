@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import CustomRangePopover, {
-  customRangeError,
-  formatRange,
-} from "./custom-range-popover";
+import CustomRangePopover, { formatRange } from "./custom-range-popover";
 
 afterEach(cleanup);
 
@@ -11,24 +8,6 @@ const shown = {
   from: new Date(2026, 8, 24, 10, 0),
   to: new Date(2026, 8, 25, 10, 0),
 };
-
-describe("customRangeError", () => {
-  it("explains why a range is refused", () => {
-    const at = (iso: string) => new Date(iso);
-    expect(
-      customRangeError(at("2026-09-20T08:00Z"), at("2026-09-21T08:00Z")),
-    ).toBeUndefined();
-    expect(
-      customRangeError(at("2026-09-21T08:00Z"), at("2026-09-21T08:00Z")),
-    ).toMatch(/before the end/);
-    expect(
-      customRangeError(at("2026-06-01T00:00Z"), at("2026-09-21T00:00Z")),
-    ).toMatch(/at most 90 days/);
-    expect(customRangeError(at(""), at("2026-09-21T00:00Z"))).toMatch(
-      /Enter a start/,
-    );
-  });
-});
 
 describe("CustomRangePopover", () => {
   it("starts from the range on screen and applies the local start and end", () => {

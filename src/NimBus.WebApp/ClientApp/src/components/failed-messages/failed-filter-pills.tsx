@@ -4,14 +4,13 @@ import moment from "moment";
 import { Button } from "components/ui/button";
 import { Checkbox } from "components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "components/ui/combobox";
-import { Input } from "components/ui/input";
+import CustomRangeForm from "components/common/custom-range-form";
 import { Select } from "components/ui/select";
 import {
   FAILED_STATUSES,
   PERIOD_OPTIONS,
   STATUS_COLORS,
   customRange,
-  customRangeError,
   parseSearchQuery,
   periodOption,
   rangeParams,
@@ -36,8 +35,6 @@ const PERIOD_LABELS: Record<string, string> = {
 export const periodLabel = (label: string) =>
   PERIOD_LABELS[label] ?? `Last ${label}`;
 
-// The value format of a datetime-local input, read and written in local time.
-const LOCAL_INPUT = "YYYY-MM-DDTHH:mm";
 const CUSTOM = "custom";
 
 /** The time pill's label for the applied range: the preset, or the custom start–end. */
@@ -67,26 +64,8 @@ function TimeRangeContent({
   const shown = applied ?? rangeWindow(value, new Date());
   const current = applied ? CUSTOM : periodOption(value.period).value;
   const [editing, setEditing] = React.useState(!!applied);
-  const [start, setStart] = React.useState(() =>
-    moment(shown.from).format(LOCAL_INPUT),
-  );
-  const [end, setEnd] = React.useState(() =>
-    moment(shown.to).format(LOCAL_INPUT),
-  );
-  const from = moment(start, LOCAL_INPUT, true).toDate();
-  const to = moment(end, LOCAL_INPUT, true).toDate();
-  const error = customRangeError(from, to);
-  const startId = React.useId();
-  const endId = React.useId();
-
   const pick = (period: string) => {
     onApply({ period, ...rangeParams(undefined), ...windowParams(undefined) });
-    close();
-  };
-  const apply = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (error) return;
-    onApply({ ...rangeParams({ from, to }), ...windowParams(undefined) });
     close();
   };
   const option = (selected: boolean) =>
@@ -123,60 +102,16 @@ function TimeRangeContent({
         </button>
       </div>
       {editing && (
-        <form
-          onSubmit={apply}
-          aria-label="Custom range"
-          className="flex flex-col gap-2.5 border-t border-border px-1 pt-3"
-        >
-          <div>
-            <label
-              htmlFor={startId}
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Start time (local)
-            </label>
-            <Input
-              id={startId}
-              type="datetime-local"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              error={!!error}
-            />
-          </div>
-          <div>
-            <label
-              htmlFor={endId}
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              End time (local)
-            </label>
-            <Input
-              id={endId}
-              type="datetime-local"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              error={!!error}
-            />
-          </div>
-          {error && (
-            <p role="alert" className="m-0 text-[12.5px] text-red-600">
-              {error}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              size="sm"
-              colorScheme="primary"
-              disabled={!!error}
-            >
-              Apply
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={close}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+        <CustomRangeForm
+          label="Custom range"
+          initial={shown}
+          onApply={(range) => {
+            onApply({ ...rangeParams(range), ...windowParams(undefined) });
+            close();
+          }}
+          onCancel={close}
+          className="border-t border-border px-1 pt-3"
+        />
       )}
     </div>
   );

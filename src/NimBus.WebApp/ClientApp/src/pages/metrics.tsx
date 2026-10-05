@@ -16,7 +16,6 @@ import ByEventTypeTab, {
 } from "components/metrics/by-event-type-tab";
 import CustomRangePopover, {
   formatRange,
-  type TimeRange,
 } from "components/metrics/custom-range-popover";
 import Page from "components/page";
 import { Spinner } from "components/ui/spinner";
@@ -24,6 +23,7 @@ import { EmptyState } from "components/ui/empty-state";
 import { StatRow, StatTile, type StatTileTone } from "components/ui/stat-tile";
 import { Tab, TabList, TabPanel, TabPanels, Tabs } from "components/ui/tabs";
 import { useUrlFilters } from "hooks/use-url-filters";
+import type { TimeRange } from "functions/time-range.functions";
 import { cn } from "lib/utils";
 
 // Tab + event-type filter state lives in the URL (`?tab=by-event-type&types=X`)

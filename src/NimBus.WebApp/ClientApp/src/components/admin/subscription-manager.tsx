@@ -378,7 +378,7 @@ export default function SubscriptionManager() {
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <p className="text-[13px] text-muted-foreground m-0 flex-1 basis-[48rem]">
+        <p className="text-[13px] text-muted-foreground m-0 flex-1 basis-3xl">
           Live message counts straight from Service Bus. Use this to find where a
           backlog actually sits and clear just that subscription. An
           auto-forwarding subscription (such as each endpoint&apos;s{" "}
@@ -794,7 +794,7 @@ function TopicTable({
                     type="button"
                     onClick={() => toggleSort(column)}
                     className={cn(
-                      "inline-flex items-center gap-1 hover:text-primary focus:outline-none",
+                      "inline-flex items-center gap-1 hover:text-primary focus:outline-hidden",
                       active && "text-foreground",
                     )}
                   >
@@ -969,7 +969,7 @@ function SubscriptionTable({
                               })
                             }
                             title={`Detach rule "${rule}" so no new messages enter through it. Reversible with Restore rules.`}
-                            className="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-2 hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
+                            className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 hover:bg-status-danger-50 hover:text-status-danger-ink disabled:opacity-50"
                           >
                             {rule} ✕
                           </button>
@@ -977,7 +977,7 @@ function SubscriptionTable({
                           <span
                             key={rule}
                             title="Not part of the platform topology, so NimBus can't restore it — remove it from Admin → Topology if it really is deprecated."
-                            className="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-2 text-muted-foreground"
+                            className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 text-muted-foreground"
                           >
                             {rule}
                           </span>

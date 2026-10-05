@@ -100,7 +100,7 @@ export default function ReportPopover({
           }}
           placeholder="e.g. INC0428771 or OPS-42"
           autoComplete="off"
-          className="w-full flex-1 border-0 bg-transparent py-2 font-mono text-[12.5px] text-foreground outline-none"
+          className="w-full flex-1 border-0 bg-transparent py-2 font-mono text-[12.5px] text-foreground outline-hidden"
         />
       </div>
       {invalid && (

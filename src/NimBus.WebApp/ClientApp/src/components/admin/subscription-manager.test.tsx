@@ -113,7 +113,7 @@ describe("SubscriptionManager", () => {
     );
 
     expect(guidance.classList.contains("flex-1")).toBe(true);
-    expect(guidance.classList.contains("basis-[48rem]")).toBe(true);
+    expect(guidance.classList.contains("basis-3xl")).toBe(true);
     expect(guidance.classList.contains("max-w-3xl")).toBe(false);
   });
 

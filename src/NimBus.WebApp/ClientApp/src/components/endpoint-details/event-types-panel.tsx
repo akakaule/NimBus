@@ -204,8 +204,8 @@ const PubSubPanel: React.FC<PubSubPanelProps> = ({
             className={cn(
               "inline-flex items-center justify-center text-[11px] font-bold px-2 py-px rounded-full font-mono",
               isProduces
-                ? "bg-status-success-50 text-[#1F6B45]"
-                : "bg-status-info-50 text-[#234E80]",
+                ? "bg-status-success-50 text-status-success-ink"
+                : "bg-status-info-50 text-status-info-ink",
             )}
           >
             {count}
@@ -225,7 +225,7 @@ const PubSubPanel: React.FC<PubSubPanelProps> = ({
               ? "Filter event types this endpoint publishes…"
               : "Filter event types this endpoint subscribes to…"
           }
-          className="w-full font-sans text-xs text-ink bg-canvas border border-border rounded-md py-1.5 pl-7 pr-3 placeholder:text-ink-3 focus:outline-none focus:border-primary"
+          className="w-full font-sans text-xs text-ink bg-canvas border border-border rounded-md py-1.5 pl-7 pr-3 placeholder:text-ink-3 focus:outline-hidden focus:border-primary"
         />
       </div>
 

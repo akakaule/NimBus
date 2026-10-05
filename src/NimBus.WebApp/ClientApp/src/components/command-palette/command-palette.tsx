@@ -201,7 +201,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             onKeyDown={handleKeyDown}
             placeholder="Jump to endpoint, event, or session…"
             className={cn(
-              "flex-1 bg-transparent outline-none border-0 text-foreground",
+              "flex-1 bg-transparent outline-hidden border-0 text-foreground",
               "placeholder:text-muted-foreground text-[14px]",
             )}
             aria-label="Search"
@@ -219,7 +219,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           <kbd
             className={cn(
               "font-mono text-[10.5px] bg-muted border border-border",
-              "px-1.5 py-px rounded text-muted-foreground",
+              "px-1.5 py-px rounded-sm text-muted-foreground",
             )}
           >
             esc

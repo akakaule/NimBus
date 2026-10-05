@@ -397,7 +397,7 @@ function SelectedEntry({
               <path d="M12 3l10 18H2z" />
               <path d="M12 10v5M12 18v.5" />
             </svg>
-            <div className="min-w-0 break-words">
+            <div className="min-w-0 wrap-break-word">
               {errorType && <b className="block">{errorType}</b>}
               {errorText}
             </div>
@@ -416,7 +416,7 @@ function SelectedEntry({
             <div className="text-[12px] font-bold text-muted-foreground">
               Call stack
             </div>
-            <pre className="m-0 max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-nb-sm bg-[#1A1814] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[#EDE8DC]">
+            <pre className="m-0 max-h-[260px] overflow-auto whitespace-pre-wrap wrap-break-word rounded-nb-sm bg-ink px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[#EDE8DC]">
               {stackTrace}
             </pre>
           </div>

@@ -74,7 +74,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
       )}
       <pre
         className={cn(
-          "m-0 px-5 py-4 bg-[#1A1814] text-[#E5DFCE]",
+          "m-0 px-5 py-4 bg-ink text-[#E5DFCE]",
           "font-mono text-[12.5px] leading-[1.65]",
           "overflow-auto max-h-[420px]",
         )}

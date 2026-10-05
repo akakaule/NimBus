@@ -50,7 +50,7 @@ const EventTypeNamespaceGroup: React.FC<IEventTypeNamespaceGroupProps> = ({
           <AccordionTrigger
             itemId={group.namespace}
             className={cn(
-              "bg-muted rounded-nb-md data-[expanded]:rounded-b-none",
+              "bg-muted rounded-nb-md data-expanded:rounded-b-none",
               "px-4 py-3 hover:bg-muted",
             )}
           >

@@ -61,7 +61,7 @@ export const TopologyMiniMap: React.FC<TopologyMiniMapProps> = ({
         <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-muted-foreground mb-1">
           Event Type
         </div>
-        <div className="font-bold text-[14px] text-foreground break-words">
+        <div className="font-bold text-[14px] text-foreground wrap-break-word">
           {centerLabel}
         </div>
         {centerMeta && (
@@ -160,13 +160,13 @@ const Edge: React.FC<EdgeProps> = ({ tone }) => {
     <div className="self-center flex-1 min-w-[32px] relative">
       <div
         className={cn(
-          "h-0.5 w-full bg-gradient-to-r rounded-full",
+          "h-0.5 w-full bg-linear-to-r rounded-full",
           gradient,
         )}
       />
       <span
         className={cn(
-          "absolute -top-[7px] -right-[2px] text-[10px]",
+          "absolute top-[-7px] right-[-2px] text-[10px]",
           tone === "from-success" ? "text-primary" : "text-status-info",
         )}
         aria-hidden="true"

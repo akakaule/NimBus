@@ -61,7 +61,7 @@ export default function PendingListing(props: IPendingListing) {
                 <p>
                   <b>Payload</b>
                 </p>
-                <pre className="bg-muted p-2 rounded text-sm overflow-x-auto">
+                <pre className="bg-muted p-2 rounded-sm text-sm overflow-x-auto">
                   {JSON.stringify(JSON.parse(e.message.eventContent!), null, 2)}
                 </pre>
                 <br />

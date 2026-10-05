@@ -487,7 +487,7 @@ const LegendSwatch: React.FC<{ color: string; children: React.ReactNode }> = ({
   <span className="inline-flex items-center gap-1.5">
     <span
       aria-hidden="true"
-      className="inline-block w-2.5 h-2.5 rounded-sm"
+      className="inline-block w-2.5 h-2.5 rounded-xs"
       style={{ background: color }}
     />
     {children}
@@ -644,7 +644,7 @@ const ActivityTooltipRow: React.FC<{
   <div className="flex items-center gap-1.5">
     <span
       aria-hidden="true"
-      className="inline-block w-2 h-2 rounded-sm"
+      className="inline-block w-2 h-2 rounded-xs"
       style={{ background: color }}
     />
     <span>{label}</span>
@@ -693,7 +693,7 @@ const BarList: React.FC<{
           <span className="font-semibold flex items-center gap-1.5 truncate">
             <span
               aria-hidden="true"
-              className="w-2 h-2 rounded-sm shrink-0"
+              className="w-2 h-2 rounded-xs shrink-0"
               style={{ background: color }}
             />
             <span className="truncate">{r.endpointId || "(unnamed)"}</span>

@@ -30,7 +30,7 @@ const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
             }
           }}
           className={cn(
-            "h-4 w-4 rounded border-input text-primary",
+            "h-4 w-4 rounded-sm border-input text-primary",
             "focus:ring-2 focus:ring-primary-200 focus:ring-offset-0",
             "disabled:cursor-not-allowed disabled:opacity-50",
             "cursor-pointer",

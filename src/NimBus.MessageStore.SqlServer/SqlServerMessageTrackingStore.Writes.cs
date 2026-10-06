@@ -53,6 +53,40 @@ SELECT @@ROWCOUNT;";
         return await connection.QuerySingleAsync<int>(sql, parameters, commandTimeout: _context.CommandTimeout) == 1;
     }
 
+    public Task<bool> TryArchiveUnresolvedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        TrySetDeleted(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId, expectedUpdatedAt, archive: true);
+
+    public Task<bool> TryRestoreArchivedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        TrySetDeleted(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId, expectedUpdatedAt, archive: false);
+
+    private async Task<bool> TrySetDeleted(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt, bool archive)
+    {
+        var sql = $@"
+UPDATE {T("UnresolvedEvents")}
+SET Deleted = @Deleted
+WHERE EndpointId = @EndpointId AND EventId = @EventId
+  AND ((SessionId IS NULL AND @SessionId IS NULL) OR SessionId = @SessionId)
+  AND Status = @ExpectedStatus AND Deleted = @CurrentDeleted AND UpdatedAtUtc = @ExpectedUpdatedAt
+  AND ((LastMessageId IS NULL AND @ExpectedLastMessageId IS NULL)
+       OR LastMessageId COLLATE Latin1_General_BIN2 = @ExpectedLastMessageId COLLATE Latin1_General_BIN2);
+SELECT @@ROWCOUNT;";
+        await using var connection = await OpenAsync();
+        var parameters = new DynamicParameters(new
+        {
+            EventId = eventId, SessionId = sessionId, EndpointId = endpointId,
+            ExpectedStatus = expectedStatus.ToString(),
+            ExpectedLastMessageId = expectedLastMessageId,
+            Deleted = archive,
+            CurrentDeleted = !archive,
+        });
+        // See TrySkipDeferredMessage: the row version is DATETIME2.
+        parameters.Add("ExpectedUpdatedAt", expectedUpdatedAt, System.Data.DbType.DateTime2);
+        return await connection.QuerySingleAsync<int>(sql, parameters, commandTimeout: _context.CommandTimeout) == 1;
+    }
+
     public async Task<bool> TryCompletePendingMessage(
         string eventId,
         string sessionId,

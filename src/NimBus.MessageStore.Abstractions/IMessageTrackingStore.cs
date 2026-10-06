@@ -94,6 +94,28 @@ public interface IMessageTrackingStore
         string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
         throw new NotSupportedException("This provider does not support conditional deferred recovery.");
 
+    /// <summary>
+    /// Atomically archives an unresolved row, like <see cref="ArchiveFailedEvent"/>, only if it is
+    /// visible, has <paramref name="expectedStatus"/>, and its last message ID and update
+    /// timestamp still match the inspected version. Operator commands claim a row this way before
+    /// they publish, so two callers acting on the same version cannot both send a command.
+    /// Returns false on a missing, changed or already archived row.
+    /// External providers must implement an atomic operation before supporting guarded commands.
+    /// </summary>
+    Task<bool> TryArchiveUnresolvedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        throw new NotSupportedException("This provider does not support guarded operator commands.");
+
+    /// <summary>
+    /// Atomically reverses <see cref="TryArchiveUnresolvedEvent"/> when the command it guarded was
+    /// not sent: makes the row visible again only if it is still archived with the same status,
+    /// last message ID and update timestamp, and no newer write has revived it. Returns false
+    /// otherwise.
+    /// </summary>
+    Task<bool> TryRestoreArchivedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        throw new NotSupportedException("This provider does not support guarded operator commands.");
+
     // Single-event lookups.
     //
     // Every single-row lookup (events and messages) returns null when the row does not exist,

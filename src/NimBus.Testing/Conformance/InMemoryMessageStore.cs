@@ -25,6 +25,8 @@ namespace NimBus.Testing.Conformance;
 public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
 {
     private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _events = new();
+    // Rows archived by TryArchiveUnresolvedEvent, kept so TryRestoreArchivedEvent can put them back.
+    private readonly ConcurrentDictionary<(string Endpoint, string EventId, string Session), UnresolvedEvent> _archived = new();
     private readonly ConcurrentDictionary<(string EventId, string MessageId), MessageEntity> _messages = new();
     private readonly ConcurrentDictionary<string, List<MessageAuditEntity>> _audits = new();
     private readonly ConcurrentDictionary<string, EndpointSubscription> _subscriptions = new();
@@ -114,6 +116,43 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         replacement.UpdatedAt = DateTime.UtcNow;
         return Task.FromResult(_events.TryUpdate(key, replacement, current));
     }
+
+    public Task<bool> TryArchiveUnresolvedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt)
+    {
+        var key = Key(endpointId, eventId, sessionId);
+        if (!_events.TryGetValue(key, out var current)
+            || !MatchesVersion(current, expectedStatus, expectedLastMessageId, expectedUpdatedAt)
+            || !_events.TryRemove(KeyValuePair.Create(key, current)))
+        {
+            return Task.FromResult(false);
+        }
+
+        _archived[key] = current;
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TryRestoreArchivedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt)
+    {
+        var key = Key(endpointId, eventId, sessionId);
+        // A live row means a newer write revived it; restoring the archived copy would clobber it.
+        if (!_archived.TryGetValue(key, out var archived)
+            || !MatchesVersion(archived, expectedStatus, expectedLastMessageId, expectedUpdatedAt)
+            || !_events.TryAdd(key, archived))
+        {
+            return Task.FromResult(false);
+        }
+
+        _archived.TryRemove(KeyValuePair.Create(key, archived));
+        return Task.FromResult(true);
+    }
+
+    private static bool MatchesVersion(UnresolvedEvent row, ResolutionStatus expectedStatus,
+        string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        row.ResolutionStatus == expectedStatus
+        && row.UpdatedAt == expectedUpdatedAt
+        && string.Equals(row.LastMessageId, expectedLastMessageId, StringComparison.Ordinal);
 
     public Task<bool> TryCompletePendingMessage(
         string eventId,

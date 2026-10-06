@@ -67,6 +67,48 @@ internal sealed partial class CosmosDbMessageTrackingStore
         }
     }
 
+    public Task<bool> TryArchiveUnresolvedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        TrySetArchived(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId, expectedUpdatedAt, archive: true);
+
+    public Task<bool> TryRestoreArchivedEvent(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        TrySetArchived(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId, expectedUpdatedAt, archive: false);
+
+    /// <summary>
+    /// Flips the archive flag of one row under its ETag, after checking the inspected version.
+    /// Archiving sets the same 30-day TTL as <see cref="ArchiveFailedEvent"/>; restoring puts back
+    /// the TTL that live unresolved rows are written with.
+    /// </summary>
+    private async Task<bool> TrySetArchived(string eventId, string sessionId, string endpointId,
+        ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt, bool archive)
+    {
+        var container = await _getEndpointContainer(endpointId);
+        var id = $"{eventId}_{sessionId}";
+        try
+        {
+            var current = await container.ReadItemAsync<EventDbo>(id, new PartitionKey(id));
+            var row = current.Resource;
+            if ((row.Deleted == true) == archive
+                ||!string.Equals(row.Status, expectedStatus.ToString(), StringComparison.Ordinal)
+                || row.Event?.UpdatedAt != expectedUpdatedAt
+                || !string.Equals(row.Event?.LastMessageId, expectedLastMessageId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            row.Deleted = archive;
+            row.TimeToLive = archive ? 60 * 60 * 24 * 30 : _unresolvedTtlSeconds;
+            await container.ReplaceItemAsync(row, id, new PartitionKey(id),
+                new ItemRequestOptions { IfMatchEtag = current.ETag, EnableContentResponseOnWrite = false });
+            return true;
+        }
+        catch (CosmosException exception) when (exception.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> TryCompletePendingMessage(
         string eventId,
         string sessionId,

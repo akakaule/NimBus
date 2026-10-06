@@ -656,6 +656,85 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task TryArchiveUnresolvedEvent_archives_only_the_inspected_version()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-guarded-archive");
+        var eventId = Id("ga-1");
+        Assert.IsTrue(await store.UploadFailedMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
+        var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
+
+        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, "err-0", stored.UpdatedAt));
+        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt.AddSeconds(-1)));
+        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.DeadLettered, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "other-session", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsNotNull(await store.GetFailedEvent(endpointId, eventId, "s1"));
+
+        Assert.IsTrue(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsNull(await store.GetFailedEvent(endpointId, eventId, "s1"));
+        Assert.IsNull(await store.GetEvent(endpointId, eventId));
+        Assert.IsFalse(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+    }
+
+    [TestMethod]
+    public async Task TryArchiveUnresolvedEvent_lets_exactly_one_concurrent_caller_win()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-guarded-race");
+        var eventId = Id("gr-1");
+        Assert.IsTrue(await store.UploadFailedMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
+        var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+            store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt))));
+
+        Assert.AreEqual(1, results.Count(won => won));
+    }
+
+    [TestMethod]
+    public async Task TryRestoreArchivedEvent_reverses_a_claim_on_the_same_version()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-guarded-restore");
+        var eventId = Id("gs-1");
+        Assert.IsTrue(await store.UploadFailedMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
+        var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
+
+        Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt),
+            "A live row has nothing to restore.");
+        Assert.IsTrue(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, "err-0", stored.UpdatedAt));
+
+        Assert.IsTrue(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        var restored = await store.GetFailedEvent(endpointId, eventId, "s1");
+        Assert.IsNotNull(restored);
+        Assert.AreEqual(stored.LastMessageId, restored.LastMessageId);
+        Assert.AreEqual(stored.UpdatedAt.Ticks, restored.UpdatedAt.Ticks);
+        Assert.AreEqual(1, (await store.DownloadEndpointStateCount(endpointId)).FailedCount);
+        Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+    }
+
+    [TestMethod]
+    public async Task TryRestoreArchivedEvent_never_overwrites_a_revived_row()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-guarded-revived");
+        var eventId = Id("gv-1");
+        Assert.IsTrue(await store.UploadFailedMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ErrorResponse, "err-1")));
+        var stored = await store.GetFailedEvent(endpointId, eventId, "s1");
+        Assert.IsTrue(await store.TryArchiveUnresolvedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        Assert.IsTrue(await store.UploadPendingMessage(eventId, "s1", endpointId,
+            GuardedEvent(endpointId, eventId, "s1", MessageType.ResubmissionRequest, "rs-1")));
+
+        Assert.IsFalse(await store.TryRestoreArchivedEvent(eventId, "s1", endpointId, ResolutionStatus.Failed, stored.LastMessageId, stored.UpdatedAt));
+        Assert.AreEqual(ResolutionStatus.Pending, (await store.GetEvent(endpointId, eventId)).ResolutionStatus);
+    }
+
+    [TestMethod]
     public async Task First_write_of_every_status_reports_applied()
     {
         // Guards the SQL @@ROWCOUNT path: an insert must report true just like a replace.

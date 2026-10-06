@@ -133,6 +133,12 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task<bool> TrySkipDeferredMessage(string eventId, string sessionId, string endpointId, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
         InstrumentAsync(nameof(TrySkipDeferredMessage), () => _inner.TrySkipDeferredMessage(eventId, sessionId, endpointId, expectedLastMessageId, expectedUpdatedAt));
 
+    public Task<bool> TryArchiveUnresolvedEvent(string eventId, string sessionId, string endpointId, ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        InstrumentAsync(nameof(TryArchiveUnresolvedEvent), () => _inner.TryArchiveUnresolvedEvent(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId, expectedUpdatedAt));
+
+    public Task<bool> TryRestoreArchivedEvent(string eventId, string sessionId, string endpointId, ResolutionStatus expectedStatus, string? expectedLastMessageId, DateTime expectedUpdatedAt) =>
+        InstrumentAsync(nameof(TryRestoreArchivedEvent), () => _inner.TryRestoreArchivedEvent(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId, expectedUpdatedAt));
+
     // ── Single-event lookups ────────────────────────────────────────────
 
     public Task<UnresolvedEvent?> GetPendingEvent(string endpointId, string eventId, string sessionId) =>

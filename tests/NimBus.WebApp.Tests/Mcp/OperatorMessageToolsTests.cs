@@ -56,9 +56,26 @@ public class OperatorMessageToolsTests
 
         var endpoints = json.GetProperty("endpoints").EnumerateArray().ToDictionary(e => e.GetProperty("endpointId").GetString()!);
         Assert.AreEqual("Known outage", endpoints["CrmEndpoint"].GetProperty("acknowledgement").GetProperty("reason").GetString());
-        Assert.IsFalse(
-            endpoints["ErpEndpoint"].TryGetProperty("counts", out var counts) && counts.ValueKind != JsonValueKind.Null,
-            "An unavailable endpoint must not report counts.");
+        Assert.AreEqual(JsonValueKind.Null, endpoints["ErpEndpoint"].GetProperty("counts").ValueKind, "An unavailable endpoint must not report counts.");
+    }
+
+    [TestMethod]
+    public async Task Overview_writes_null_members_because_the_output_schema_requires_them()
+    {
+        _endpoints.On(nameof(IEndpointApiController.GetEndpointStatusCountAllAsync), _ => Ok<IEnumerable<EndpointStatusCount>>(
+        [
+            new EndpointStatusCount { EndpointId = "CrmEndpoint" },
+        ]));
+        _monitor.On(nameof(IMonitorApiController.GetMonitorAcknowledgementsAsync), _ => Ok<IEnumerable<MonitorAcknowledgement>>([]));
+
+        var json = await CallAsync("nimbus_get_overview");
+
+        var crm = json.GetProperty("endpoints").EnumerateArray().Single();
+        foreach (var member in new[] { "oldestFailureAt", "subscriptionStatus", "acknowledgement" })
+        {
+            Assert.IsTrue(crm.TryGetProperty(member, out var value), $"'{member}' must be written, not omitted.");
+            Assert.AreEqual(JsonValueKind.Null, value.ValueKind, member);
+        }
     }
 
     [TestMethod]

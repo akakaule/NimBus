@@ -2,12 +2,15 @@
 
 The management WebApp can serve a **Model Context Protocol (MCP)** endpoint at `/mcp`. It lets an
 AI agent (Claude Code, Claude Desktop or any MCP client) look at endpoint health, find and inspect
-messages, search across endpoints, read metrics and read stored failure classifications, under the
-same authorization, redaction and audit as the Web UI.
+messages, search across endpoints, read metrics and failure classifications, and, for a signed-in
+operator, resubmit, skip, mark reported and classify failed messages. It applies the same
+authorization, redaction and audit as the Web UI.
 
 - **Transport:** Streamable HTTP, stateless, protocol revisions up to 2026-07-28
   (`ModelContextProtocol.AspNetCore`).
-- **Access:** read-only in this release. There are no recovery or administrative tools.
+- **Access:** read tools for every caller with the observe permission. Tools that change a message
+  are for interactive, delegated callers only (see [Changing messages](#changing-messages)). There
+  are no administrative tools.
 - **Design:** [Spec 035](spec/035-mcp-operator-access/spec.md).
 
 The endpoint is off unless it is enabled. It replaces the earlier stdio server `NimBus.Mcp`
@@ -22,17 +25,60 @@ The endpoint is off unless it is enabled. It replaces the earlier stdio server `
 | `nimbus_get_overview` | Counts by status, oldest failure and Monitor acknowledgements across readable endpoints | Endpoint Reader |
 | `nimbus_get_endpoint` | The same for one endpoint | Endpoint Reader |
 | `nimbus_find_messages` | Tracked messages on one endpoint, filtered by status, event type, session, event id and time | Endpoint Reader |
-| `nimbus_get_message` | Status, latest attempt, latest error and Web UI link; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
+| `nimbus_get_message` | Status, latest attempt, latest error, Web UI link, `messageVersion` and the `eligibleActions` you may take; the payload only with `includePayload=true` | Endpoint Reader; payloads also need PiiReader (and, with Entra, the `nimbus.payload.read` scope) |
 | `nimbus_get_message_history` | Processing attempts and log entries of one message | Endpoint Reader |
 | `nimbus_get_session` | Pending and deferred events of one session | Endpoint Reader |
 | `nimbus_search_messages` | Processing messages across all endpoints | Site Reader |
 | `nimbus_get_metrics` | Throughput, latency or failure groups for 1h to 30d | Site Reader |
 | `nimbus_get_classification` | The stored AI classification of a failed attempt, advisory only | Endpoint Reader; classification enabled |
+| `nimbus_prepare_action` | A read-only preview of resubmitting or skipping one message, and an `actionToken` to run it | The action's scope and endpoint Contributor |
+| `nimbus_resubmit_message` | Runs a prepared resubmit: replays the latest stored payload to the endpoint | `nimbus.resubmit` and endpoint Contributor |
+| `nimbus_skip_message` | Runs a prepared skip: the message is never processed, and later messages in its session may be released | `nimbus.skip` and endpoint Contributor |
+| `nimbus_set_message_reported` | Sets or clears the "reported" marker, optionally with an external ticket id | `nimbus.annotate` and endpoint Contributor |
+| `nimbus_classify_failure` | Requests an AI classification of a failure, or returns the stored one. Advisory only | `nimbus.classify` and endpoint Contributor; classification enabled |
 
 Results never contain stack traces. Error and log text is cut to 2,000 characters and is untrusted
 data from the failing handler. Timestamps are UTC. Errors start with a code in brackets, for example
 `[EndpointNotFound]` or `[PermissionDenied]`. A resource the caller cannot read is reported exactly
 like one that does not exist.
+
+## Changing messages
+
+Resubmit and skip take two steps, so the user can see what will happen before it does:
+
+1. `nimbus_get_message` returns the message's `messageVersion`, a fingerprint of its status, session,
+   latest attempt and update time, and the `eligibleActions` you may take on it.
+2. `nimbus_prepare_action` with the action and that version checks your permission and the
+   message's state without changing anything. It returns the impact, including how many later
+   messages are waiting in the session, and an `actionToken`.
+3. `nimbus_resubmit_message` or `nimbus_skip_message` with the token, a reason and a new GUID as
+   `idempotencyKey` runs the action.
+
+The token is valid for two minutes, only for the caller, client application and environment it
+was issued to, and only for that action on that version of the message. It is a state check, not
+proof that a human approved the action: clients should show the preview and ask the user before a
+skip. When the tool runs, NimBus:
+
+- re-reads the caller's role from the stored access-control lists, so a grant revoked moments ago
+  is honored;
+- claims the message at the version in the token, so a second command on the same version, whether
+  from the Web UI, another agent or a replayed token, sends nothing and gets `[StaleMessage]`;
+- writes the audit row (channel, reason, idempotency key, client application) and refuses the action
+  with `[AuditUnavailable]` if it cannot;
+- then publishes the command.
+
+The result says the command was sent, not that it succeeded. Read the message again to see the
+outcome. A message that failed again has a new version and needs a new token.
+
+Over MCP, resubmit and skip accept Failed, DeadLettered and Unsupported messages. Deferred messages
+and pending handoffs are recovered in the Web UI. `nimbus_set_message_reported` and
+`nimbus_classify_failure` need no token; they take a reason or an idempotency key directly.
+
+Tools that change a message require a delegated scope from a signed-in user. A workload token,
+which carries app roles and no `scp` claim, is refused with `[PermissionDenied]`. Errors specific
+to these tools are `[StaleMessage]`, `[ActionNotAllowed]` (the message's state does not allow the
+action), `[RateLimited]`, `[AuditUnavailable]` and `[OutcomeUnknown]` (publishing failed after the
+message was claimed; it was restored, so read it again before you retry).
 
 ## Local development (Aspire)
 
@@ -43,7 +89,8 @@ WebApp serves `/mcp` whenever its local-dev bypass is on (Development and
 CrmErpDemo AppHost does not set it; to use `/mcp` there, set `NimBus:Mcp:EnableForLocalDevelopment`
 to `true` yourself, for example in that `appsettings.Development.json`. No sign-in
 is involved; every call runs as the "Local Developer" user, with the same role and PII checks as the
-Web UI. With the bypass off, `/mcp` is not served.
+Web UI. Scopes do not apply in this mode, so the tools that change messages need only the
+Contributor role. With the bypass off, `/mcp` is not served.
 
 Point the client at the WebApp's HTTPS URL from the Aspire dashboard (by default
 `https://localhost:18443`) plus `/mcp`. For example, an `.mcp.json` entry:
@@ -71,10 +118,14 @@ In the tenant that signs in your operators:
 1. Create an app registration, for example `NimBus MCP (dev)`, single tenant. Note its
    **Application (client) ID**.
 2. **Expose an API:** keep the default Application ID URI (`api://<client-id>`) or set your own.
-   Add two delegated scopes:
-   - `nimbus.observe`: use the read-only tools.
+   Add these delegated scopes:
+   - `nimbus.observe`: use the read tools.
    - `nimbus.payload.read`: see raw event payloads. It only adds to the PiiReader role, and never
      replaces it.
+   - `nimbus.resubmit`, `nimbus.skip`, `nimbus.annotate` and `nimbus.classify`: use
+     `nimbus_resubmit_message`, `nimbus_skip_message`, `nimbus_set_message_reported` and
+     `nimbus_classify_failure`. Each only adds to the Contributor role on the endpoint. Consider
+     making them admin-consent scopes so only clients you approve can request them.
 3. **Add the endpoint URL as a second Application ID URI:** `https://<webapp>/mcp`, exactly as
    clients connect to it. MCP clients send that URL as the OAuth `resource` parameter, and Entra
    refuses a sign-in whose `resource` does not belong to the same app as the requested scopes
@@ -86,7 +137,7 @@ In the tenant that signs in your operators:
 4. **Manifest:** set `api.requestedAccessTokenVersion` to `2`, so access tokens carry the client
    id as their audience whichever identifier the client asked for.
 5. **App roles** (optional, for unattended workloads): add `Nimbus.Observe` for applications. No
-   app role grants payload access.
+   app role grants payload access or changes messages.
 6. **Token configuration** (optional): add the `groups` claim if your NimBus role grants use Entra
    groups. Grants keyed by object id or email work without it.
 7. **Register the MCP clients you allow.** Entra does not support dynamic client registration, so
@@ -94,8 +145,8 @@ In the tenant that signs in your operators:
    a second single-tenant app registration with a **Mobile and desktop** redirect URI on the
    client's loopback callback (for Claude Code `http://localhost:<port>/callback`, with the port
    you pass as `--callback-port`) and **Allow public client flows** turned on; it needs no secret.
-   Then, on the MCP resource, pre-authorize that client id for `nimbus.observe`, and for
-   `nimbus.payload.read` only where needed, or grant consent for it.
+   Then, on the MCP resource, pre-authorize that client id for `nimbus.observe`, and for the other
+   scopes only where needed, or grant consent for them.
 
 The endpoint accepts v2.0 tokens (issuer `https://login.microsoftonline.com/<tenant>/v2.0`,
 audience the client id) and v1.0 tokens (issuer `https://sts.windows.net/<tenant>/`, audience the
@@ -125,7 +176,7 @@ keys, rather than serving an unauthenticated endpoint.
 ### 3. Verify
 
 - `GET https://<webapp>/.well-known/oauth-protected-resource/mcp` returns the resource metadata:
-  the authorization server and the two scopes.
+  the authorization server and the six scopes.
 - `POST https://<webapp>/mcp` without a token returns `401` with a `WWW-Authenticate` header that
   points at that metadata.
 - An MCP client that signs in with the `nimbus.observe` scope can call `nimbus_get_capabilities`.
@@ -136,13 +187,19 @@ keys, rather than serving an unauthenticated endpoint.
   claude mcp add --transport http --client-id <mcp-client-app-id> --callback-port <port> nimbus https://<webapp>/mcp
   ```
 
+- With a write scope and Contributor, `nimbus_get_capabilities` lists the action in
+  `permittedActions`. After you add a scope to the registration, sign in again so the token
+  carries it.
+
 In [private networking mode](spec/034-private-networking/spec.md), only clients inside the network
 can reach `/mcp`. Cloud-hosted agents need a path through the Application Gateway.
 
 ## Limits
 
 `/mcp` has its own rate-limit policy, `nimbus-mcp`: 60 requests per 60 seconds, per tenant,
-client application and user. See [rate limiting](rate-limiting.md).
+client application and user. Tools that change a message are also limited to 5 per 60 seconds
+for the same caller (`RateLimiting:McpMutations`), and answer `[RateLimited]` beyond that. See
+[rate limiting](rate-limiting.md).
 
 ## Migrating from NimBus.Mcp
 

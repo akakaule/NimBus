@@ -1,5 +1,8 @@
 # Spec 035 Phase 2a (Operate): implementation plan
 
+Status: implemented (PRs 1-3 merged 2026-10-06 as #209, #210 and #211; PR 4 is the documentation).
+The delegated Azure pilot is open. See [As built](#as-built).
+
 ## Context
 
 Phase 1 shipped read-only operator MCP tools and passed its Azure pilot on 2026-10-06 (PR #207;
@@ -202,3 +205,42 @@ Implement them in:
   3. Retry the same token: `StaleMessage`.
   4. In the Web UI, a stale resubmit shows the 409 toast; capture a screenshot for the PR.
 - Delegated pilot in Azure with Claude Code (exit criterion).
+
+## As built
+
+Delivered as planned, with these differences:
+
+- **Order inside a command:** claim, then audit, then publish. The plan listed the audit before
+  the claim. Writing it after the claim means the loser of a race leaves no `Resubmit` row (the
+  Web UI's resubmit count reads those rows), and the audit still precedes the only side effect
+  that leaves the WebApp. If the audit write fails, the claim is released.
+- **Store methods** also take the expected `ResolutionStatus`:
+  `TryArchiveUnresolvedEvent(eventId, sessionId, endpointId, expectedStatus, expectedLastMessageId,
+  expectedUpdatedAt)` and `TryRestoreArchivedEvent(...)`. Cosmos archives and restores by
+  replace under the ETag; restoring puts back the unresolved-row TTL.
+- **Fresh ACL check:** `IEndpointAuthorizationService.HasRoleFreshAsync` invalidates the snapshot
+  cache and resolves again, bypassing the per-request memo. The existing invalidation semantics
+  already fail closed on a store fault (only claim-based and code-defined grants remain), so no
+  `GetFreshSnapshotAsync` was needed.
+- **Web UI eligibility** is the set the UI actually offers: Failed, DeadLettered, Unsupported,
+  Deferred, and Pending with the Handoff sub-status. MCP accepts Failed, DeadLettered and
+  Unsupported.
+- **Lookups:** the coordinator has `FindByMessageAsync` (REST: the row's latest message must be
+  the one the page loaded) and `FindCurrentAsync` (MCP: by endpoint and event id, version checked
+  by the caller).
+- **Idempotency keys** must be GUIDs and are recorded in the audit row. They are not deduplicated
+  yet; Phase 2b's journal does that. A retried token fails with `StaleMessage` once the first
+  command is sent, because the row has moved on.
+- **Errors:** `AuditUnavailable` was added to the planned codes. An invalid, expired or foreign
+  token and a changed message all map to `StaleMessage`.
+- **Report** goes through the coordinator with a required audit row, but keeps last-writer-wins:
+  a marker is an annotation, not a state change.
+- PR 3 carried #208 (null members in tool results), which the new results need; #208 merged first.
+
+Verified: the Release build and the full test suite with live SQL Server and Cosmos DB containers
+on each PR, and an end-to-end run on the local Aspire stack with the Service Bus emulator:
+get, prepare and resubmit over `/mcp`; the replayed token refused; and a Web UI resubmit of the
+same message refused with 409 after an agent acted first.
+
+Remaining for the exit criterion: release, deploy to the nonproduction WebApp, add the four scopes
+to the MCP app registration, and pilot the write tools with a delegated client.

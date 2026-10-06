@@ -19,6 +19,11 @@ Exceeding a limit returns **HTTP 429**.
 | `nimbus-intelligence` | `POST /api/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
 | `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
 
+The operator MCP tools that change a message (resubmit, skip, report, classify) are further limited
+to 5 per 60 s per tenant, client application and user (`RateLimiting:McpMutations`). Every tool
+call shares the one `/mcp` route, so this limit is counted inside the tools and answered with a
+`[RateLimited]` tool error rather than a 429. It is off when `Enabled` is false.
+
 `GET /account/login` — the sign-in *page* — is deliberately not throttled;
 only the credential POST is.
 
@@ -160,6 +165,8 @@ a restart, which an App Service application-setting change triggers anyway.
 | `RateLimiting:Intelligence:WindowSeconds` | `60` |
 | `RateLimiting:Mcp:PermitLimit` | `60` |
 | `RateLimiting:Mcp:WindowSeconds` | `60` |
+| `RateLimiting:McpMutations:PermitLimit` | `5` |
+| `RateLimiting:McpMutations:WindowSeconds` | `60` |
 
 In App Service these are environment-variable style keys:
 `RateLimiting__Login__PermitLimit`, and so on.

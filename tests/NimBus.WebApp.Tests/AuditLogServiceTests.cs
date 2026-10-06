@@ -129,6 +129,60 @@ public sealed class AuditLogServiceTests
             "a warning must have been logged for the store failure");
     }
 
+    // ───────── Spec 035 Phase 2a: commands that must not run unaudited ─────────
+
+    [TestMethod]
+    public async Task LogRequiredAuditAsync_throws_when_the_store_write_fails()
+    {
+        var store = new ThrowingStore(new InvalidOperationException("simulated cosmos outage"));
+        var sut = new AuditLogService(NullLogger(), store);
+
+        await Assert.ThrowsExactlyAsync<AuditUnavailableException>(() =>
+            sut.LogRequiredAuditAsync(MessageAuditType.Resubmit, MakeContextWithClaims(("name", "Auditor")), eventId: "evt-r"));
+    }
+
+    [TestMethod]
+    public async Task LogRequiredAuditAsync_records_a_type_the_selection_switched_off()
+    {
+        var store = new CapturingStore();
+        var sut = new AuditLogService(NullLogger(), store, new EverythingDisabled());
+        var ctx = MakeContextWithClaims(("name", "Auditor"));
+
+        await sut.LogAuditAsync(MessageAuditType.SearchEvents, ctx, eventId: "evt-s");
+        await sut.LogRequiredAuditAsync(MessageAuditType.Skip, ctx, data: "{\"reason\":\"r\"}", eventId: "evt-s", endpointId: "Crm");
+
+        var entry = store.Entries.Single();
+        Assert.AreEqual(MessageAuditType.Skip, entry.Entity.AuditType);
+        Assert.AreEqual("Crm", entry.EndpointId);
+        Assert.AreEqual("Auditor", entry.Entity.AuditorName);
+        Assert.IsFalse(entry.Entity.AccessDenied);
+    }
+
+    [TestMethod]
+    public void Commands_that_change_a_message_are_always_recorded()
+    {
+        foreach (var type in new[]
+                 {
+                     MessageAuditType.Resubmit, MessageAuditType.ResubmitWithChanges, MessageAuditType.Skip,
+                     MessageAuditType.ReportEvent, MessageAuditType.CommandNotSent,
+                 })
+        {
+            Assert.Contains(type, AuditSettingsProvider.AlwaysRecorded);
+            Assert.DoesNotContain(type, AuditSettingsProvider.Configurable);
+        }
+    }
+
+    private sealed class EverythingDisabled : IAuditSettingsProvider
+    {
+        public Task<bool> IsRecordedAsync(MessageAuditType type) => Task.FromResult(false);
+
+        public Task<IReadOnlySet<MessageAuditType>> GetDisabledAsync() =>
+            Task.FromResult<IReadOnlySet<MessageAuditType>>(new HashSet<MessageAuditType>(Enum.GetValues<MessageAuditType>()));
+
+        public Task<IReadOnlySet<MessageAuditType>> SaveAsync(IEnumerable<MessageAuditType> disabled) =>
+            throw new NotSupportedException();
+    }
+
     // ───────── FR-050 case 4: logger (App Insights) failure is absorbed ─────────
 
     [TestMethod]

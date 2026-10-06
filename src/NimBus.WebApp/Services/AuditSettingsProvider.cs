@@ -48,10 +48,18 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
 
     /// <summary>
     /// Types recorded regardless of the selection: turning auditing down must itself
-    /// leave a trace.
+    /// leave a trace, and operator commands that change a message (Spec 035 Phase 2a)
+    /// run only once their audit row exists.
     /// </summary>
-    public static readonly IReadOnlySet<MessageAuditType> AlwaysRecorded =
-        new HashSet<MessageAuditType> { MessageAuditType.UpdateAuditSettings };
+    public static readonly IReadOnlySet<MessageAuditType> AlwaysRecorded = new HashSet<MessageAuditType>
+    {
+        MessageAuditType.UpdateAuditSettings,
+        MessageAuditType.Resubmit,
+        MessageAuditType.ResubmitWithChanges,
+        MessageAuditType.Skip,
+        MessageAuditType.ReportEvent,
+        MessageAuditType.CommandNotSent,
+    };
 
     /// <summary>
     /// Types an operator may switch off: every type the WebApp audit writer records,

@@ -61,7 +61,24 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
         if (required == AccessRole.None)
             return true;
 
-        var access = await GetCurrentUserAccessAsync();
+        return Satisfies(await GetCurrentUserAccessAsync(), required, endpointId);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> HasRoleFreshAsync(AccessRole required, string endpointId)
+    {
+        if (required == AccessRole.None)
+            return true;
+
+        // Dropping the cached snapshot makes the next read reload from the store; if that load
+        // fails, an invalidated generation resolves to the empty snapshot, so store grants fail
+        // closed. The per-request memo is bypassed for the same reason.
+        _snapshotProvider.Invalidate();
+        return Satisfies(await ResolveAsync(), required, endpointId);
+    }
+
+    private bool Satisfies(CurrentUserAccess access, AccessRole required, string? endpointId)
+    {
         var effective = access.SiteRole;
         if (endpointId != null
             && access.EndpointRoles.TryGetValue(endpointId, out var endpointRole)

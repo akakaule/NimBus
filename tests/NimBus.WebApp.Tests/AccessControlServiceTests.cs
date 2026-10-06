@@ -285,6 +285,40 @@ public class AccessControlServiceTests
     }
 
     [TestMethod]
+    public async Task Fresh_check_honors_a_revocation_the_cached_snapshot_still_grants()
+    {
+        await SeedSite(contributors: new[] { UserEmail });
+        var warm = CreateService(EmailPrincipal());
+        Assert.IsTrue(await warm.HasRoleAsync(AccessRole.Contributor, "Storefront"));
+
+        // Revoked directly in the store, as another instance would: this instance's cache
+        // still grants it until the TTL, which operator commands must not rely on.
+        await SeedSite();
+        var cached = CreateService(EmailPrincipal());
+        Assert.IsTrue(await cached.HasRoleAsync(AccessRole.Contributor, "Storefront"));
+
+        var fresh = CreateService(EmailPrincipal());
+        Assert.IsFalse(await fresh.HasRoleFreshAsync(AccessRole.Contributor, "Storefront"));
+    }
+
+    [TestMethod]
+    public async Task Fresh_check_fails_closed_on_a_store_fault_but_keeps_compat()
+    {
+        await SeedSite(contributors: new[] { UserEmail });
+        var faultingStore = new FaultableStore(_store);
+        using var provider = new AccessControlSnapshotProvider(faultingStore, NullLogger<AccessControlSnapshotProvider>.Instance);
+        Assert.IsTrue(await CreateService(EmailPrincipal(), snapshotProvider: provider).HasRoleAsync(AccessRole.Contributor, "Storefront"));
+
+        faultingStore.Fail = true;
+
+        Assert.IsFalse(await CreateService(EmailPrincipal(), snapshotProvider: provider)
+            .HasRoleFreshAsync(AccessRole.Contributor, "Storefront"));
+        var admin = Principal(new Claim("groups", EndpointAuthorizationService.AdminMarkerClaimValue));
+        Assert.IsTrue(await CreateService(admin, snapshotProvider: provider)
+            .HasRoleFreshAsync(AccessRole.Contributor, "Storefront"));
+    }
+
+    [TestMethod]
     public async Task Invalidate_during_in_flight_refresh_does_not_cache_stale_snapshot()
     {
         var store = new PausableAccessControlStore(new AccessControlList

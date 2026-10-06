@@ -208,6 +208,14 @@ paths:
           description: OK
         '404':
           description: Event not found
+        '409':
+          description: >-
+            The message changed since it was loaded (it was resubmitted, skipped
+            or failed again), or its current state does not allow the command.
+            Nothing was sent.
+        '503':
+          description: >-
+            The audit log could not record the command, so it was not run.
       tags:
         - Event
   '/api/event/skip/{eventId}/{messageId}':
@@ -230,6 +238,14 @@ paths:
           description: OK
         '404':
           description: Event not found
+        '409':
+          description: >-
+            The message changed since it was loaded (it was resubmitted, skipped
+            or failed again), or its current state does not allow the command.
+            Nothing was sent.
+        '503':
+          description: >-
+            The audit log could not record the command, so it was not run.
       tags:
         - Event
   '/api/event/handoff/complete/{endpointId}/{eventId}/{messageId}':
@@ -433,6 +449,14 @@ paths:
           description: OK
         '404':
           description: Event not found
+        '409':
+          description: >-
+            The message changed since it was loaded (it was resubmitted, skipped
+            or failed again), or its current state does not allow the command.
+            Nothing was sent.
+        '503':
+          description: >-
+            The audit log could not record the command, so it was not run.
       requestBody:
         content:
           application/json:
@@ -1207,6 +1231,9 @@ paths:
           description: Bad Request
         '404':
           description: Not Found
+        '503':
+          description: >-
+            The audit log could not record the command, so it was not run.
       tags:
         - Event
       requestBody:
@@ -1436,8 +1463,10 @@ paths:
       summary: Choose which audit types are recorded
       description: >-
         Replaces the disabled audit types. Only types listed in
-        configurableAuditTypes can be disabled; access-denied attempts and
-        updateAuditSettings itself are always recorded.
+        configurableAuditTypes can be disabled; access-denied attempts,
+        updateAuditSettings itself and the commands that change a message
+        (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are
+        always recorded.
       operationId: put-admin-audit-settings
       tags:
         - Admin
@@ -3881,6 +3910,7 @@ components:
             - acknowledgeEndpoint
             - clearEndpointAcknowledgement
             - updateAuditSettings
+            - commandNotSent
         comment:
           type: string
           nullable: true
@@ -5182,6 +5212,7 @@ components:
             - acknowledgeEndpoint
             - clearEndpointAcknowledgement
             - updateAuditSettings
+            - commandNotSent
         createdAtFrom:
           type: string
           format: date-time
@@ -5808,6 +5839,7 @@ components:
             - acknowledgeEndpoint
             - clearEndpointAcknowledgement
             - updateAuditSettings
+            - commandNotSent
         comment:
           type: string
           nullable: true

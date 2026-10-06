@@ -29,6 +29,11 @@ import {
 } from "functions/endpoint.functions";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { notifyError } from "functions/notifications.functions";
+import {
+  describeCommandError,
+  isStaleCommand,
+} from "functions/operator-command.functions";
 
 // Threshold above which we surface an "Above P95" callout next to the timing
 // bar. The number is a UI heuristic, not a server-supplied value — the design
@@ -658,8 +663,13 @@ export default function MessageListing(props: IMessageListingProps) {
         props.eventDetails?.lastMessageId!,
       );
       setSkipButton({ text: "Skipped", isDisabled: true });
-    } catch {
-      setSkipButton({ text: "Skip failed", isDisabled: false });
+    } catch (caught) {
+      notifyError(describeCommandError(caught, "skip"));
+      setSkipButton(
+        isStaleCommand(caught)
+          ? { text: "Changed - refresh", isDisabled: true }
+          : { text: "Skip failed", isDisabled: false },
+      );
     }
   };
 
@@ -671,8 +681,13 @@ export default function MessageListing(props: IMessageListingProps) {
         props.eventDetails?.lastMessageId!,
       );
       setResubmitButton({ text: "Resubmitted", isDisabled: true });
-    } catch {
-      setResubmitButton({ text: "Resubmit failed", isDisabled: false });
+    } catch (caught) {
+      notifyError(describeCommandError(caught, "resubmit"));
+      setResubmitButton(
+        isStaleCommand(caught)
+          ? { text: "Changed - refresh", isDisabled: true }
+          : { text: "Resubmit failed", isDisabled: false },
+      );
     }
   };
 
@@ -701,11 +716,13 @@ export default function MessageListing(props: IMessageListingProps) {
         body,
       );
       setResubmitWithChangesButton({ text: "Resubmitted", isDisabled: true });
-    } catch {
-      setResubmitWithChangesButton({
-        text: "Resubmit failed",
-        isDisabled: false,
-      });
+    } catch (caught) {
+      notifyError(describeCommandError(caught, "resubmit"));
+      setResubmitWithChangesButton(
+        isStaleCommand(caught)
+          ? { text: "Changed - refresh", isDisabled: true }
+          : { text: "Resubmit failed", isDisabled: false },
+      );
     }
   };
 

@@ -10,6 +10,7 @@ using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Tests;
 
@@ -106,6 +107,7 @@ public sealed class EventImplementationMissingEventTests
         });
         var manager = new SkipCapturingManagerClient();
 
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, "evt-1", "term-1");
         var result = await Create(store, manager).PostSkipEventIdsAsync("evt-1", "term-1");
 
         Assert.IsInstanceOfType<OkResult>(result);

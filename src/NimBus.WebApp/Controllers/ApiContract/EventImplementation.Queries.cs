@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using System.Net;
 
+using NimBus.WebApp.Services.Operations;
+
 namespace NimBus.WebApp.Controllers.ApiContract;
 
 public partial class EventImplementation
@@ -422,70 +424,5 @@ public partial class EventImplementation
     // ErrorResponse, which for a failed hand-off carries neither payload nor
     // event type. Internal for unit tests (InternalsVisibleTo).
     internal static MessageEntity? LatestRequestMessageWithPayload(IEnumerable<MessageEntity> history) =>
-        history
-            .Where(m => PayloadCarryingRequestTypes.Contains(m.MessageType)
-                     && !string.IsNullOrEmpty(m.MessageContent?.EventContent?.EventJson))
-            .OrderByDescending(m => m.EnqueuedTimeUtc)
-            .FirstOrDefault();
-
-    private async Task<MessageEntity> GetMessageWithFallback(string eventId, string messageId)
-    {
-        var message = await messageStore.GetMessage(eventId, messageId);
-        if (message != null) return message;
-
-        // Fallback: the message wasn't in the shared messages container, so probe
-        // the per-endpoint containers. An event lives in exactly one of them, so
-        // probe concurrently rather than serially — the old loop cost one
-        // cross-partition query per endpoint in sequence (10-20s on large
-        // topologies) on what is a rare error/recovery path.
-        var probes = platform.Endpoints.Select(async ep =>
-        {
-            try
-            {
-                return (ep.Id, Event: await messageStore.GetEvent(ep.Id, eventId));
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Fallback lookup failed for endpoint {EndpointId}", ep.Id);
-                return (ep.Id, Event: (UnresolvedEvent)null);
-            }
-        });
-
-        var hit = Array.Find(await Task.WhenAll(probes), r => r.Event != null);
-        if (hit.Event != null)
-        {
-            logger.LogInformation("Message {MessageId} not found in messages container, using fallback from endpoint {EndpointId}", messageId, hit.Id);
-            return MessageEntityFromUnresolvedEvent(hit.Event);
-        }
-
-        return null;
-    }
-
-    private static MessageEntity MessageEntityFromUnresolvedEvent(UnresolvedEvent e)
-    {
-        return new MessageEntity
-        {
-            EventId = e.EventId,
-            MessageId = e.LastMessageId,
-            EventTypeId = e.EventTypeId,
-            OriginatingMessageId = e.OriginatingMessageId,
-            ParentMessageId = e.ParentMessageId,
-            From = e.From,
-            To = e.To,
-            OriginatingFrom = e.OriginatingFrom,
-            SessionId = e.SessionId,
-            CorrelationId = e.CorrelationId,
-            EnqueuedTimeUtc = e.EnqueuedTimeUtc,
-            MessageContent = e.MessageContent,
-            MessageType = e.MessageType,
-            EndpointRole = e.EndpointRole,
-            EndpointId = e.EndpointId,
-            RetryCount = e.RetryCount,
-            RetryLimit = e.RetryLimit,
-            DeadLetterReason = e.DeadLetterReason,
-            DeadLetterErrorDescription = e.DeadLetterErrorDescription,
-            QueueTimeMs = e.QueueTimeMs,
-            ProcessingTimeMs = e.ProcessingTimeMs,
-        };
-    }
+        OperatorCommandCoordinator.LatestRequestMessageWithPayload(history);
 }

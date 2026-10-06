@@ -3,6 +3,7 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
@@ -35,119 +36,24 @@ public partial class EventImplementation
     {
         logger.LogInformation("Resubmit message. EventId:{EventId}, MessageId:{MessageId}", eventId, messageId);
 
-        string eventTypeId;
-        string endpoint;
-        MessageEntity errorResponse = await GetMessageWithFallback(eventId, messageId);
-        if (errorResponse == null)
-        {
-            logger.LogWarning("Could not resubmit message. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
-            return new NotFoundObjectResult("Message not found");
-        }
+        var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
+        if (lookup.Target == null)
+            return LookupFailure(lookup.Status, eventId, messageId);
 
-        // Resubmit must replay the original event payload. For a failed
-        // hand-off the lastMessageId points at the terminal ErrorResponse,
-        // whose MessageContent carries no usable event JSON — so source the
-        // payload (and, when missing, the event type) from the latest REQUEST
-        // message that actually carries it (the original EventRequest, or a
-        // later Resubmission/Retry/Continuation/ProcessDeferredRequest). Falls
-        // back to the resolved message so non-hand-off resubmits are
-        // unchanged. Same source as the frontend's resubmit prefill and the
-        // resubmit-with-changes event-type resolution below.
-        var history = await messageStore.GetEventHistory(eventId);
-        MessageEntity? latestRequest = LatestRequestMessageWithPayload(history);
-        // A CloudEvent may be stored without native EventContent. The subscriber's
-        // PendingHandoffResponse preserves the validated event JSON it parked.
-        var parkedPayload = history
-            .Where(message => message.MessageType == Core.Messages.MessageType.PendingHandoffResponse
-                && !string.IsNullOrEmpty(message.MessageContent?.EventContent?.EventJson))
-            .OrderByDescending(message => message.EnqueuedTimeUtc)
-            .FirstOrDefault();
-        MessageEntity requestMessage = latestRequest ?? parkedPayload ?? errorResponse;
-
-        eventTypeId = errorResponse.EventTypeId;
-        if (string.IsNullOrEmpty(eventTypeId))
-        {
-            MessageEntity typeSource = latestRequest ?? parkedPayload
-                ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
-                ?? errorResponse;
-            eventTypeId = !string.IsNullOrWhiteSpace(typeSource.EventTypeId)
-                ? typeSource.EventTypeId
-                : typeSource.MessageContent?.EventContent?.EventTypeId!;
-        }
-
-        if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))
-        {
-            endpoint = errorResponse.To;
-        }
-        else
-        {
-            endpoint = errorResponse.From;
-        }
-
-        var eventJson = requestMessage.MessageContent?.EventContent?.EventJson!;
-
-        if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
-        {
-            await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
-                accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-            return new ForbidResult();
-        }
-
-        // Deliberately sequential — do not parallelize. ArchiveFailedEvent
-        // soft-deletes the event (deleted=true + 30d TTL); if the publish
-        // fails, the event must remain visible in the failed list. Running
-        // these concurrently would archive events whose resubmit never left.
-        await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, eventJson);
-        await messageStore.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-        await auditLogService.LogAuditAsync(MessageAuditType.Resubmit, httpContextAccessor.HttpContext,
-            eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-        return new OkResult();
+        var result = await operatorCommands.ResubmitAsync(lookup.Target, WebAppCommand);
+        return CommandResult(result);
     }
 
     public async Task<IActionResult> PostSkipEventIdsAsync(string eventId, string messageId)
     {
         logger.LogInformation("Skip message. EventId:{EventId}, MessageId:{MessageId}", eventId, messageId);
 
-        string eventTypeId;
-        string endpoint;
-        MessageEntity errorResponse = await GetMessageWithFallback(eventId, messageId);
-        if (errorResponse == null)
-        {
-            logger.LogWarning("Could not skip message. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
-            return new NotFoundObjectResult("Message not found");
-        }
+        var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
+        if (lookup.Target == null)
+            return LookupFailure(lookup.Status, eventId, messageId);
 
-        eventTypeId = errorResponse.EventTypeId;
-        if (string.IsNullOrEmpty(eventTypeId))
-        {
-            // The originating request can be gone; skip routes on To and does not
-            // need the event type, so proceed without it rather than failing.
-            MessageEntity? origMessage = await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId);
-            eventTypeId = origMessage?.EventTypeId!;
-        }
-
-        if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))
-        {
-            endpoint = errorResponse.To;
-        }
-        else
-        {
-            endpoint = errorResponse.From;
-        }
-
-        if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
-        {
-            await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
-                accessDenied: true, eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-            return new ForbidResult();
-        }
-
-        await managerClient.Skip(errorResponse, endpoint, eventTypeId);
-        await auditLogService.LogAuditAsync(MessageAuditType.Skip, httpContextAccessor.HttpContext,
-            eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-        await messageStore.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-
-        return new OkResult();
+        var result = await operatorCommands.SkipAsync(lookup.Target, WebAppCommand);
+        return CommandResult(result);
     }
 
     public async Task<IActionResult> PostReportEventAsync(ReportEventRequest body, string endpointId, string eventId)
@@ -158,49 +64,10 @@ public partial class EventImplementation
         // not a silent "clear the marker".
         if (body?.Reported is not bool reported)
             return new BadRequestObjectResult("The 'reported' field is required.");
-        if (string.IsNullOrEmpty(endpointId) || string.IsNullOrEmpty(eventId))
-            return new BadRequestObjectResult("endpointId and eventId are required.");
 
-        if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpointId))
-        {
-            await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
-                accessDenied: true, eventId: eventId, endpointId: endpointId);
-            return new ForbidResult();
-        }
-
-        if (!EndpointVerificationService.EndpointExists(platform, endpointId))
-            return new NotFoundObjectResult("Endpoint not found");
-
-        // Store under the platform's canonical endpoint casing: authorization
-        // and existence checks are case-insensitive, but Cosmos partitions
-        // (and the enrichment lookups) match the endpoint id exactly — a
-        // lowercase request must not create a marker searches never find.
-        endpointId = CanonicalEndpointId(endpointId);
-
-        string ticketId = null;
-        if (reported && !string.IsNullOrWhiteSpace(body.TicketId))
-        {
-            ticketId = body.TicketId.Trim();
-            if (!TicketIdPattern.IsMatch(ticketId))
-            {
-                return new BadRequestObjectResult("Ticket id may use letters, digits, '.', '_' and '-' (max 64 chars).");
-            }
-        }
-
-        var reportedBy = authorizationService.GetCurrentUserName() ?? "anonymous";
-        await messageStore.SetEventReport(endpointId, eventId, reported, reportedBy, ticketId);
-        await auditLogService.LogAuditAsync(MessageAuditType.ReportEvent, httpContextAccessor.HttpContext,
-            eventId: eventId, endpointId: endpointId,
-            data: JsonConvert.SerializeObject(new { reported, ticketId }));
-
-        return new OkResult();
+        var result = await operatorCommands.SetReportedAsync(endpointId, eventId, reported, body.TicketId, WebAppCommand);
+        return CommandResult(result);
     }
-
-    // Generic external-ticket reference: a sane cross-tool subset (Jira keys,
-    // ServiceNow INC numbers, plain ids). Mirrored by the frontend's
-    // normalizeTicketId and the EventReports TicketId column width (64).
-    private static readonly System.Text.RegularExpressions.Regex TicketIdPattern =
-        new(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     public async Task<ActionResult<DeferredReprocessResult>> PostReprocessDeferredAsync(string endpointId, string sessionId)
     {
@@ -282,35 +149,27 @@ public partial class EventImplementation
     public async Task<IActionResult> PostResubmitWithChangesEventIdsAsync(ResubmitWithChanges body, string eventId, string messageId)
     {
         logger.LogInformation("Resubmit message with changes. EventId:{EventId}, MessageId:{MessageId}, Body:{Body}", eventId, messageId, JsonConvert.SerializeObject(body));
-        string endpoint;
 
-        MessageEntity errorResponse = await GetMessageWithFallback(eventId, messageId);
-        if (errorResponse == null)
-        {
-            logger.LogWarning("Could not resubmit message with changes. Message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
-            return new NotFoundObjectResult("Message not found");
-        }
+        var lookup = await operatorCommands.FindByMessageAsync(eventId, messageId);
+        if (lookup.Target == null)
+            return LookupFailure(lookup.Status, eventId, messageId);
 
-        // If error response message is a result of forwarding a deadlettered message.
-        if (BlockedEventRules.IsSelfOriginating(errorResponse.OriginatingMessageId))
-        {
-            endpoint = errorResponse.To;
-        }
-        else
-        {
-            endpoint = errorResponse.From;
-        }
+        var target = lookup.Target;
+        var endpoint = target.EndpointId;
+        var auditData = JsonConvert.SerializeObject(body);
 
         string eventTypeId = body.EventTypeId;
         if (string.IsNullOrEmpty(body.EventTypeId))
         {
-            eventTypeId = await ResolveServerEventTypeIdAsync(eventId, errorResponse);
+            eventTypeId = await operatorCommands.ResolveEventTypeIdAsync(target);
         }
 
+        // Checked here as well as in the coordinator so a caller without the role is refused
+        // before the payload checks below reveal anything about the event type.
         if (!await authorizationService.HasRoleAsync(AccessRole.Contributor, endpoint))
         {
             await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
-                accessDenied: true, data: JsonConvert.SerializeObject(body),
+                accessDenied: true, data: auditData,
                 eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
             throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
         }
@@ -324,13 +183,13 @@ public partial class EventImplementation
         {
             var serverEventTypeId = string.IsNullOrEmpty(body.EventTypeId)
                 ? eventTypeId
-                : await ResolveServerEventTypeIdAsync(eventId, errorResponse);
+                : await operatorCommands.ResolveEventTypeIdAsync(target);
 
             // Fail closed: with no resolvable type we cannot prove the body is clean.
             if (string.IsNullOrEmpty(serverEventTypeId))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
-                    accessDenied: true, data: JsonConvert.SerializeObject(body),
+                    accessDenied: true, data: auditData,
                     eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 return new BadRequestObjectResult(
                     "Resubmit rejected: the event type could not be resolved server-side, so the payload cannot be checked for masked PII. Ask a site Owner for the PiiReader role on the Access Control page.");
@@ -339,7 +198,7 @@ public partial class EventImplementation
             if (masker.ContainsRedactPlaceholder(serverEventTypeId, body.EventContent))
             {
                 await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
-                    accessDenied: true, data: JsonConvert.SerializeObject(body),
+                    accessDenied: true, data: auditData,
                     eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
                 return new BadRequestObjectResult(
                     "Resubmit rejected: sensitive fields still contain the mask placeholder. Re-enter every masked value, or ask a site Owner for the PiiReader role to resubmit the payload unmodified.");
@@ -350,38 +209,40 @@ public partial class EventImplementation
         // the marker never leaks into the actual event payload.
         var forwardedContent = masker.StripMaskedMarker(body.EventContent);
 
-        // Deliberately sequential — do not parallelize. ArchiveFailedEvent
-        // soft-deletes the event (deleted=true + 30d TTL); if the publish
-        // fails, the event must remain visible in the failed list.
-        await managerClient.Resubmit(errorResponse, endpoint, eventTypeId, forwardedContent);
-        await messageStore.ArchiveFailedEvent(eventId, errorResponse.SessionId, endpoint);
-        await auditLogService.LogAuditAsync(MessageAuditType.ResubmitWithChanges, httpContextAccessor.HttpContext,
-            data: JsonConvert.SerializeObject(body),
-            eventId: eventId, endpointId: endpoint, eventTypeId: eventTypeId);
-
-        return new OkResult();
+        var result = await operatorCommands.ResubmitWithChangesAsync(target, eventTypeId, forwardedContent, auditData, WebAppCommand);
+        if (result.Status == OperatorCommandStatus.Forbidden)
+            throw new UnauthorizedAccessException($"User is unauthorized to manage endpoint '{endpoint}'.");
+        return CommandResult(result);
     }
 
-    // Resolves the event type id from stored messages only, never from the request
-    // body. Same source as the frontend's resubmit prefill: the latest request
-    // message that carries the event payload (the original EventRequest, or a later
-    // resubmission/retry). For a failed hand-off the terminal ErrorResponse carries
-    // no event type, so resolve it from the request history rather than the
-    // originating message. Falls back to the originating-message lookup when no
-    // request message carries a payload, and finally to the terminal message itself.
-    private async Task<string> ResolveServerEventTypeIdAsync(string eventId, MessageEntity errorResponse)
+    private static readonly OperatorCommandContext WebAppCommand = new(OperatorChannel.WebApp);
+
+    private const string StaleMessageDetail =
+        "This message changed since it was loaded: it was resubmitted, skipped or failed again. Refresh and try again.";
+
+    private IActionResult LookupFailure(OperatorCommandStatus status, string eventId, string messageId)
     {
-        if (!string.IsNullOrEmpty(errorResponse.EventTypeId))
-            return errorResponse.EventTypeId;
+        if (status == OperatorCommandStatus.Stale)
+        {
+            logger.LogInformation("Operator command refused: message {MessageId} of event {EventId} is no longer current", messageId, eventId);
+            return new ConflictObjectResult(StaleMessageDetail);
+        }
 
-        var history = await messageStore.GetEventHistory(eventId);
-        MessageEntity requestMessage = LatestRequestMessageWithPayload(history)
-            ?? await GetMessageWithFallback(eventId, errorResponse.OriginatingMessageId)
-            ?? errorResponse;
-        return !string.IsNullOrWhiteSpace(requestMessage.EventTypeId)
-            ? requestMessage.EventTypeId
-            : requestMessage.MessageContent?.EventContent?.EventTypeId!;
+        logger.LogWarning("Operator command refused: message not found. EventId: {EventId}, MessageId: {MessageId}", eventId, messageId);
+        return new NotFoundObjectResult("Message not found");
     }
+
+    private static IActionResult CommandResult(OperatorCommandResult result) => result.Status switch
+    {
+        OperatorCommandStatus.Accepted => new OkResult(),
+        OperatorCommandStatus.NotFound => new NotFoundObjectResult(result.Detail ?? "Message not found"),
+        OperatorCommandStatus.Stale => new ConflictObjectResult(StaleMessageDetail),
+        OperatorCommandStatus.NotAllowed => new ConflictObjectResult(result.Detail),
+        OperatorCommandStatus.Forbidden => new ForbidResult(),
+        OperatorCommandStatus.Invalid => new BadRequestObjectResult(result.Detail),
+        OperatorCommandStatus.AuditUnavailable => new ObjectResult(result.Detail) { StatusCode = StatusCodes.Status503ServiceUnavailable },
+        _ => throw new InvalidOperationException($"Unhandled operator command status {result.Status}."),
+    };
 
     public async Task<IActionResult> DeleteEventInvalidIdAsync(string endpointId, string eventId, string sessionId)
     {

@@ -14,6 +14,7 @@ using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Tests;
 
@@ -156,6 +157,8 @@ public sealed class EventImplementationResubmitPiiGateTests
             TerminalMessageId, NimBus.Core.Messages.MessageType.ErrorResponse, "2026-06-01T10:00:05Z",
             eventTypeId: storedEventTypeId,
             from: Endpoint, to: "Resolver", originatingMessageId: "req-1"));
+
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
 
         var manager = new CapturingManagerClient();
         var sut = new EventImplementation(

@@ -30,6 +30,7 @@ import { EmptyState } from "components/ui/empty-state";
 import { cn } from "lib/utils";
 import ReportPopover from "./report-popover";
 import { notifyWithUndo, notifyError } from "functions/notifications.functions";
+import { describeCommandError } from "functions/operator-command.functions";
 import { reportedCellState } from "functions/reported.functions";
 import { useTicketLinkTemplate } from "hooks/app-status";
 import { useCurrentUser } from "hooks/use-current-user";
@@ -589,12 +590,18 @@ const EventsPanel = (props: EventsPanelProps) => {
 
   const skipSingleEvent = (event: api.Event): void => {
     removeFromTable(event);
-    client.postSkipEventIds(event.eventId!, event.lastMessageId!);
+    client
+      .postSkipEventIds(event.eventId!, event.lastMessageId!)
+      .catch((caught: unknown) => notifyError(describeCommandError(caught, "skip")));
   };
 
   const resubmitSingleEvent = (event: api.Event): void => {
     removeFromTable(event);
-    client.postResubmitEventIds(event.eventId!, event.lastMessageId!);
+    client
+      .postResubmitEventIds(event.eventId!, event.lastMessageId!)
+      .catch((caught: unknown) =>
+        notifyError(describeCommandError(caught, "resubmit")),
+      );
   };
 
   const reprocessDeferredBySession = async (

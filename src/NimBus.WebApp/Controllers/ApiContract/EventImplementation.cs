@@ -7,27 +7,13 @@ using NimBus.MessageStore.Abstractions;
 using NimBus.SDK;
 using NimBus.WebApp.ManagementApi;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 using NimBus.WebApp.Services.ApplicationInsights;
 
 namespace NimBus.WebApp.Controllers.ApiContract;
 
 public partial class EventImplementation : IEventApiController
 {
-    // Payload-carrying request message types — the ones that actually carry
-    // the original event JSON to be re-delivered on resubmit. Handoff control
-    // requests (HandoffCompleted/FailedRequest) and SkipRequest carry no
-    // payload; terminal *Response messages may carry a stale/empty payload
-    // (notably a failed hand-off's ErrorResponse). Mirrored by the frontend's
-    // PAYLOAD_REQUEST_TYPES in message-listing.tsx.
-    private static readonly Core.Messages.MessageType[] PayloadCarryingRequestTypes =
-    {
-        Core.Messages.MessageType.EventRequest,
-        Core.Messages.MessageType.ResubmissionRequest,
-        Core.Messages.MessageType.RetryRequest,
-        Core.Messages.MessageType.ContinuationRequest,
-        Core.Messages.MessageType.ProcessDeferredRequest,
-    };
-
     private readonly IPlatform platform;
     private readonly ILogger<EventImplementation> logger;
     private readonly IMessageTrackingStore messageStore;
@@ -43,6 +29,7 @@ public partial class EventImplementation : IEventApiController
     private readonly IHttpContextAccessor httpContextAccessor;
     private readonly PayloadRedaction payloadRedaction;
     private readonly IEventJsonMasker masker;
+    private readonly IOperatorCommands operatorCommands;
 
     public EventImplementation(
         IApplicationInsightsService applicationInsightsService,
@@ -59,7 +46,8 @@ public partial class EventImplementation : IEventApiController
         IHttpContextAccessor httpContextAccessor,
         PayloadRedaction payloadRedaction,
         IEventJsonMasker masker,
-        ServiceBusAdministrationClient? serviceBusAdministrationClient = null)
+        ServiceBusAdministrationClient? serviceBusAdministrationClient = null,
+        IOperatorCommands? operatorCommands = null)
     {
         this.payloadRedaction = payloadRedaction;
         this.masker = masker ?? NullEventJsonMasker.Instance;
@@ -76,6 +64,10 @@ public partial class EventImplementation : IEventApiController
         this.auditLogService = auditLogService;
         this.handoffSettlement = handoffSettlement;
         this.httpContextAccessor = httpContextAccessor;
+        // Registered in DI; built here only for callers that construct the controller directly.
+        this.operatorCommands = operatorCommands ?? new OperatorCommandCoordinator(
+            messageStore, managerClient, authorizationService, auditLogService, httpContextAccessor, platform,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OperatorCommandCoordinator>.Instance);
     }
 
     // The platform definition's casing is canonical — store writes and

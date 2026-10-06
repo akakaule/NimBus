@@ -20,6 +20,15 @@ public interface IEndpointAuthorizationService
     Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null);
 
     /// <summary>
+    /// Like <see cref="HasRoleAsync"/>, but resolved from access-control lists re-read from the
+    /// store rather than the cached snapshot, so a grant revoked moments ago is honored. Operator
+    /// commands check this just before they change a message. A store failure fails closed:
+    /// only claim-based and code-defined grants remain. The default implementation falls back to
+    /// <see cref="HasRoleAsync"/> for implementations that predate it.
+    /// </summary>
+    Task<bool> HasRoleFreshAsync(AccessRole required, string endpointId) => HasRoleAsync(required, endpointId);
+
+    /// <summary>
     /// Whether the current principal may view raw event payloads. Deliberately
     /// NOT implied by <see cref="AccessRole.Owner"/> or any compat grant
     /// (spec 021: PII reveal is a separately-granted capability).

@@ -12,6 +12,7 @@ using NimBus.MessageStore;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Tests;
 
@@ -41,6 +42,7 @@ public sealed class EventImplementationPlainResubmitTests
         await store.StoreMessage(Entity(TerminalMessageId, MessageType.ErrorResponse, "2026-06-01T10:00:02Z",
             from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
         var manager = new CapturingManagerClient();
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
         var result = await CreateSut(store, manager).PostResubmitEventIdsAsync(EventId, TerminalMessageId);
         Assert.IsInstanceOfType<OkResult>(result);
         Assert.AreEqual("{\"v\":2}", manager.EventJson);
@@ -67,6 +69,7 @@ public sealed class EventImplementationPlainResubmitTests
             from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
 
         var manager = new CapturingManagerClient();
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
         var sut = CreateSut(store, manager);
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
@@ -97,6 +100,7 @@ public sealed class EventImplementationPlainResubmitTests
             from: "SubscriberEp", to: "Resolver", originatingMessageId: "resub-1"));
 
         var manager = new CapturingManagerClient();
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
         var sut = CreateSut(store, manager);
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
@@ -117,6 +121,7 @@ public sealed class EventImplementationPlainResubmitTests
             from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
 
         var manager = new CapturingManagerClient();
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
         var sut = CreateSut(store, manager);
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
@@ -139,6 +144,7 @@ public sealed class EventImplementationPlainResubmitTests
             from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
 
         var manager = new CapturingManagerClient();
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
         var sut = CreateSut(store, manager);
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
@@ -162,6 +168,7 @@ public sealed class EventImplementationPlainResubmitTests
             from: "PublisherEp", to: "SubscriberEp", originatingMessageId: "Self"));
 
         var manager = new CapturingManagerClient();
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
         var sut = CreateSut(store, manager);
 
         var result = await sut.PostResubmitEventIdsAsync(EventId, TerminalMessageId);
@@ -169,6 +176,25 @@ public sealed class EventImplementationPlainResubmitTests
         Assert.IsInstanceOfType(result, typeof(OkResult));
         Assert.AreEqual("SubscriberEp", manager.Endpoint,
             "A self-originating terminal must target its To endpoint regardless of casing");
+    }
+
+    [TestMethod]
+    public async Task Resubmit_of_a_message_that_is_no_longer_the_latest_attempt_returns_409()
+    {
+        // The page loaded term-1, but the endpoint has since failed again (term-2):
+        // replaying the old attempt would act on a state the operator never saw.
+        var store = new InMemoryMessageStore();
+        await store.StoreMessage(Entity(
+            TerminalMessageId, MessageType.ErrorResponse, "2026-06-01T10:00:05Z",
+            eventJson: "{\"orig\":1}", eventTypeId: "Demo.Type",
+            from: "SubscriberEp", to: "Resolver", originatingMessageId: "req-1"));
+        await OperatorCommandTestRows.SeedFailedRowAsync(store, "SubscriberEp", EventId, "sess-1", "term-2");
+
+        var manager = new CapturingManagerClient();
+        var result = await CreateSut(store, manager).PostResubmitEventIdsAsync(EventId, TerminalMessageId);
+
+        Assert.IsInstanceOfType<ConflictObjectResult>(result);
+        Assert.IsNull(manager.Endpoint, "Nothing may be sent for a stale message.");
     }
 
     private static MessageEntity Entity(

@@ -62,19 +62,7 @@ public sealed class AuditLogService : IAuditLogService
             return;
         }
 
-        // Build the entity upfront so both sinks see the same payload.
-        var entity = new MessageAuditEntity
-        {
-            AuditorName = string.IsNullOrWhiteSpace(auditorNameOverride)
-                ? ResolveAuditorName(context)
-                : auditorNameOverride,
-            AuditTimestamp = DateTime.UtcNow,
-            AuditType = type,
-            AccessDenied = accessDenied,
-            Data = TruncateData(data),
-            EventId = eventId,
-            EndpointId = endpointId,
-        };
+        var entity = CreateEntity(type, context, accessDenied, data, eventId, endpointId, auditorNameOverride);
 
         // (1) Durable sink: message store. Catch and log so a transient store
         //     failure cannot fail the user action — see User Story 5.
@@ -91,9 +79,63 @@ public sealed class AuditLogService : IAuditLogService
                 entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
         }
 
-        // (2) Short-term sink: App Insights via structured ILogger. The
-        //     BeginScope dictionary keys MUST match the entity property names
-        //     so KQL queries can pivot on customDimensions.<FieldName>.
+        EmitStructuredLog(entity);
+    }
+
+    /// <inheritdoc/>
+    public async Task LogRequiredAuditAsync(
+        MessageAuditType type,
+        HttpContext context,
+        string? data = null,
+        string? eventId = null,
+        string? endpointId = null,
+        string? eventTypeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        // No Admin → Audit check: a command recorded here may only run once its row exists.
+        var entity = CreateEntity(type, context, accessDenied: false, data, eventId, endpointId, auditorNameOverride: null);
+        try
+        {
+            await _messageStore.StoreMessageAudit(eventId ?? string.Empty, entity, endpointId, eventTypeId)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(
+                ex,
+                "Required audit write failed for AuditType={AuditType} EventId={EventId} EndpointId={EndpointId} AuditorName={AuditorName}; the command is refused",
+                entity.AuditType, entity.EventId, entity.EndpointId, entity.AuditorName);
+            throw new AuditUnavailableException("The audit row could not be recorded, so the command was not run.", ex);
+        }
+
+        EmitStructuredLog(entity);
+    }
+
+    private static MessageAuditEntity CreateEntity(
+        MessageAuditType type,
+        HttpContext? context,
+        bool accessDenied,
+        string? data,
+        string? eventId,
+        string? endpointId,
+        string? auditorNameOverride) => new()
+    {
+        AuditorName = string.IsNullOrWhiteSpace(auditorNameOverride)
+            ? ResolveAuditorName(context)
+            : auditorNameOverride,
+        AuditTimestamp = DateTime.UtcNow,
+        AuditType = type,
+        AccessDenied = accessDenied,
+        Data = TruncateData(data),
+        EventId = eventId,
+        EndpointId = endpointId,
+    };
+
+    // Short-term sink: App Insights via structured ILogger. The BeginScope dictionary keys
+    // MUST match the entity property names so KQL queries can pivot on
+    // customDimensions.<FieldName>.
+    private void EmitStructuredLog(MessageAuditEntity entity)
+    {
         try
         {
             var scope = new Dictionary<string, object?>

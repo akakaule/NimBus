@@ -159,4 +159,11 @@ public enum MessageAuditType
     /// recorded as Data). Always recorded, whatever the selection.
     /// </summary>
     UpdateAuditSettings,
+
+    /// <summary>
+    /// An operator command (resubmit, skip) was accepted and audited, but publishing it
+    /// failed, so the message was restored and nothing was sent. The cause is recorded as Data.
+    /// Always recorded, whatever the selection.
+    /// </summary>
+    CommandNotSent,
 }

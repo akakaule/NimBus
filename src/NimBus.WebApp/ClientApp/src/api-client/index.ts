@@ -505,6 +505,14 @@ export class Client extends ApiClientBase {
             return response.text().then((_responseText) => {
             return throwException("Event not found", status, _responseText, _headers);
             });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
+            });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
             return throwException("An unexpected server error occurred.", status, _responseText, _headers);
@@ -549,6 +557,14 @@ export class Client extends ApiClientBase {
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             return throwException("Event not found", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -897,6 +913,14 @@ export class Client extends ApiClientBase {
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             return throwException("Event not found", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            return throwException("The message changed since it was loaded (it was resubmitted, skipped or failed again), or its current state does not allow the command. Nothing was sent.", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -2557,6 +2581,10 @@ export class Client extends ApiClientBase {
         } else if (status === 404) {
             return response.text().then((_responseText) => {
             return throwException("Not Found", status, _responseText, _headers);
+            });
+        } else if (status === 503) {
+            return response.text().then((_responseText) => {
+            return throwException("The audit log could not record the command, so it was not run.", status, _responseText, _headers);
             });
         } else if (status !== 200 && status !== 204) {
             return response.text().then((_responseText) => {
@@ -17682,6 +17710,7 @@ export enum MessageAuditAuditType {
     AcknowledgeEndpoint = "acknowledgeEndpoint",
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
     UpdateAuditSettings = "updateAuditSettings",
+    CommandNotSent = "commandNotSent",
 }
 
 export class MessageContent implements IMessageContent {
@@ -17822,6 +17851,7 @@ export enum AuditSearchFilterAuditType {
     AcknowledgeEndpoint = "acknowledgeEndpoint",
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
     UpdateAuditSettings = "updateAuditSettings",
+    CommandNotSent = "commandNotSent",
 }
 
 export enum StalePendingRowVerdict {
@@ -17898,6 +17928,7 @@ export enum AuditEntryAuditType {
     AcknowledgeEndpoint = "acknowledgeEndpoint",
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
     UpdateAuditSettings = "updateAuditSettings",
+    CommandNotSent = "commandNotSent",
 }
 
 export enum AgentSettleRequestOutcome {

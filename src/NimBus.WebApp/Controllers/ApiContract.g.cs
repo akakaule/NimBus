@@ -1311,7 +1311,7 @@ namespace NimBus.WebApp.ManagementApi
         /// </summary>
 
         /// <remarks>
-        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts and updateAuditSettings itself are always recorded.
+        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts, updateAuditSettings itself and the commands that change a message (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are always recorded.
         /// </remarks>
 
         /// <returns>OK</returns>
@@ -1746,7 +1746,7 @@ namespace NimBus.WebApp.ManagementApi
         /// Choose which audit types are recorded
         /// </summary>
         /// <remarks>
-        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts and updateAuditSettings itself are always recorded.
+        /// Replaces the disabled audit types. Only types listed in configurableAuditTypes can be disabled; access-denied attempts, updateAuditSettings itself and the commands that change a message (resubmit, resubmitWithChanges, skip, reportEvent, commandNotSent) are always recorded.
         /// </remarks>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/admin/audit/settings")]
@@ -18061,6 +18061,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"updateAuditSettings")]
         UpdateAuditSettings = 33,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"commandNotSent")]
+        CommandNotSent = 34,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -18349,6 +18352,9 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"updateAuditSettings")]
         UpdateAuditSettings = 33,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"commandNotSent")]
+        CommandNotSent = 34,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -18558,6 +18564,9 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"updateAuditSettings")]
         UpdateAuditSettings = 33,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"commandNotSent")]
+        CommandNotSent = 34,
 
     }
 

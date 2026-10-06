@@ -235,5 +235,6 @@ public partial class Startup
         // Shared hand-off settlement core used by both the operator (EventImplementation)
         // and agent (AgentImplementation) settle endpoints so neither can skip the audit row.
         services.AddScoped<IHandoffSettlementService, HandoffSettlementService>();
+        services.AddScoped<NimBus.WebApp.Services.Operations.IOperatorCommands, NimBus.WebApp.Services.Operations.OperatorCommandCoordinator>();
     }
 }

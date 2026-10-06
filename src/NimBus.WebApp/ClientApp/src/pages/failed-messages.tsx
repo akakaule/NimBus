@@ -30,6 +30,7 @@ import FailedErrorGroupsView from "components/failed-messages/failed-error-group
 import { useUrlFilters } from "hooks/use-url-filters";
 import { formatMoment } from "functions/endpoint.functions";
 import { notifyError, notifySuccess } from "functions/notifications.functions";
+import { isStaleCommand } from "functions/operator-command.functions";
 import moment from "moment";
 import {
   EMPTY_FAILED_FILTER,
@@ -329,11 +330,19 @@ export default function FailedMessages() {
             : client.postSkipEventIds(t.eventId!, t.lastMessageId!),
         ),
       ).then((results) => {
-        const failed = results.filter((r) => r.status === "rejected").length;
-        const done = results.length - failed;
+        const rejected = results.filter(
+          (r): r is PromiseRejectedResult => r.status === "rejected",
+        );
+        const stale = rejected.filter((r) => isStaleCommand(r.reason)).length;
+        const failed = rejected.length - stale;
+        const done = results.length - rejected.length;
         if (done > 0)
           notifySuccess(
             `${action === "Resubmit" ? "Resubmitted" : "Skipped"} ${done} failure${done === 1 ? "" : "s"}.`,
+          );
+        if (stale > 0)
+          notifyError(
+            `${stale} message${stale === 1 ? " had" : "s had"} changed since the list loaded and ${stale === 1 ? "was" : "were"} not ${action === "Resubmit" ? "resubmitted" : "skipped"}.`,
           );
         if (failed > 0)
           notifyError(

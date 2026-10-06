@@ -19,6 +19,7 @@ using NimBus.MessageStore;
 using NimBus.Testing.Conformance;
 using NimBus.WebApp.Controllers.ApiContract;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 
 namespace NimBus.WebApp.Tests;
 
@@ -115,6 +116,8 @@ public sealed class EventImplementationAuthorizationDenialTests
                 EventContent = new EventContent { EventJson = "{\"v\":1}", EventTypeId = "Demo.Type" },
             },
         });
+
+        await OperatorCommandTestRows.SeedRowForMessageAsync(store, EventId, TerminalMessageId);
 
         var context = new DefaultHttpContext
         {

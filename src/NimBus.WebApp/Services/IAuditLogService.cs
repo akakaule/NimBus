@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -56,4 +57,53 @@ public interface IAuditLogService
         string? eventTypeId = null,
         string? auditorNameOverride = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records an operator command that must not run unaudited. Unlike
+    /// <see cref="LogAuditAsync"/>, it ignores the Admin → Audit selection and throws
+    /// <see cref="AuditUnavailableException"/> when the row cannot be persisted, so the caller
+    /// can refuse the command. The default implementation keeps the best-effort behavior of
+    /// <see cref="LogAuditAsync"/> for implementations that predate it.
+    /// </summary>
+    /// <param name="type">The <see cref="MessageAuditType"/> describing the command.</param>
+    /// <param name="context">The current <see cref="HttpContext"/>, used to resolve the auditor.</param>
+    /// <param name="data">Structured command context, truncated like <see cref="LogAuditAsync"/>.</param>
+    /// <param name="eventId">Event id the audit row is associated with.</param>
+    /// <param name="endpointId">Endpoint id the audit row is associated with.</param>
+    /// <param name="eventTypeId">Event-type id the audit row is associated with, when known.</param>
+    /// <param name="cancellationToken">Token observed by the underlying store write.</param>
+    Task LogRequiredAuditAsync(
+        MessageAuditType type,
+        HttpContext context,
+        string? data = null,
+        string? eventId = null,
+        string? endpointId = null,
+        string? eventTypeId = null,
+        CancellationToken cancellationToken = default) =>
+        LogAuditAsync(type, context, data: data, eventId: eventId, endpointId: endpointId,
+            eventTypeId: eventTypeId, cancellationToken: cancellationToken);
+}
+
+/// <summary>
+/// Thrown by <see cref="IAuditLogService.LogRequiredAuditAsync"/> when the audit row could not be
+/// persisted, so the command it was recording must not run.
+/// </summary>
+public sealed class AuditUnavailableException : Exception
+{
+    /// <summary>Creates the exception.</summary>
+    public AuditUnavailableException()
+    {
+    }
+
+    /// <summary>Creates the exception with a message.</summary>
+    public AuditUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Creates the exception with a message and the store failure.</summary>
+    public AuditUnavailableException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }

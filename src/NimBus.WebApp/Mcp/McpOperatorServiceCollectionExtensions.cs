@@ -1,6 +1,9 @@
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol;
 using ModelContextProtocol.Authentication;
 using ModelContextProtocol.Protocol;
 using NimBus.WebApp.Mcp.Operations;
@@ -62,9 +65,9 @@ public static class McpOperatorServiceCollectionExtensions
                 Version = ServerVersion(),
             })
             .WithHttpTransport(http => http.Stateless = true)
-            .WithTools<OperatorDiscoveryTools>()
-            .WithTools<OperatorMessageTools>()
-            .WithTools<OperatorInsightTools>();
+            .WithTools<OperatorDiscoveryTools>(ToolSerializerOptions)
+            .WithTools<OperatorMessageTools>(ToolSerializerOptions)
+            .WithTools<OperatorInsightTools>(ToolSerializerOptions);
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();
@@ -105,6 +108,13 @@ public static class McpOperatorServiceCollectionExtensions
     }
 
     // The release version stamped by the build, without the source-revision suffix.
+    // The SDK's defaults omit null members, but the output schemas it derives from the result
+    // records mark every member required, so a null member fails client-side validation.
+    private static readonly JsonSerializerOptions ToolSerializerOptions = new(McpJsonUtilities.DefaultOptions)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+    };
+
     private static string ServerVersion()
     {
         var informational = typeof(McpOperatorServiceCollectionExtensions).Assembly

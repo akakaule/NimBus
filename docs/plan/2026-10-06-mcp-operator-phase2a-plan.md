@@ -1,7 +1,7 @@
 # Spec 035 Phase 2a (Operate): implementation plan
 
-Status: implemented (PRs 1-3 merged 2026-10-06 as #209, #210 and #211; PR 4 is the documentation).
-The delegated Azure pilot is open. See [As built](#as-built).
+Status: complete (pilot 2026-10-06). PRs 1-3 merged as #209, #210 and #211, the documentation as
+#212 and #213, and the delegated pilot passed on v4.5.0. See [As built](#as-built).
 
 ## Context
 
@@ -242,5 +242,19 @@ on each PR, and an end-to-end run on the local Aspire stack with the Service Bus
 get, prepare and resubmit over `/mcp`; the replayed token refused; and a Web UI resubmit of the
 same message refused with 409 after an agent acted first.
 
-Remaining for the exit criterion: release, deploy to the nonproduction WebApp, add the four scopes
-to the MCP app registration, and pilot the write tools with a delegated client.
+Phase 2a exit, the delegated pilot, was done on 2026-10-06 against v4.5.0, deployed to the
+nonproduction WebApp by the NimBusDemo pipeline (`nb setup`). The four scopes were added to the MCP
+resource registration and the Claude Code client was pre-authorized for them; the client's refreshed
+token carried them without a new consent prompt. Claude Code, signed in through Entra, listed all
+16 tools and, on a simulated `CrmEndpoint` failure: read its `messageVersion` and
+`eligibleActions`, prepared and ran a resubmit (one `ResubmissionRequest` sent, `resubmitCount` 1),
+had a second resubmit with the same token, sent concurrently with the first, refused with
+`[StaleMessage]` and nothing sent twice (the local Aspire run had already covered a strictly
+sequential replay), marked the message reported with a ticket id, classified another failure, and
+saw `permittedActions` list all four actions.
+
+One finding, documented rather than changed: for the seconds between the command and the Resolver
+recording it, `nimbus_get_message` returns `[MessageNotFound]`, because the claim archives the row.
+The Web UI's resubmit always archived the row the same way. Also, a Claude Code desktop session
+opened before the upgrade kept its 11-tool list even after reconnecting the server; a new session
+listed all 16.

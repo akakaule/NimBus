@@ -1,6 +1,6 @@
 # Spec 035 Phase 1 (Observe): implementation plan
 
-Status: in progress. Spec: [docs/spec/035-mcp-operator-access](../spec/035-mcp-operator-access/spec.md).
+Status: complete (pilot 2026-10-06). Spec: [docs/spec/035-mcp-operator-access](../spec/035-mcp-operator-access/spec.md).
 
 Phase 1 adds an opt-in, read-only operator MCP endpoint to the WebApp, deploys it to Azure and
 retires `NimBus.Mcp`. It ships as four pull requests. Each one builds in Release and leaves `/mcp`
@@ -128,10 +128,14 @@ verification, migration). `NimBus.Mcp` and its tests are removed; it only ever w
 local-dev authentication, which the hosted endpoint covers under Aspire, so removal does not wait
 for the pilot.
 
-Remaining for Phase 1 exit (needs Azure access, not done in this PR): create the MCP app
-registration, set the `NimBus__Mcp__*` settings on a nonproduction WebApp, and pilot with a real
-MCP client, including the Entra sign-in flow, which so far is covered only by tests with locally
-signed tokens.
+Phase 1 exit, the nonproduction Azure pilot, was done on 2026-10-06 against a v4.2.0 WebApp deployed
+by `nb setup`: an MCP resource registration, a public client registration for Claude Code
+pre-authorized for both scopes, and the three `NimBus__Mcp__*` settings. The metadata endpoint and
+the unauthenticated `401` challenge behaved as documented, and Claude Code signed in through Entra
+and called the read tools. One gap surfaced: Claude Code sends the endpoint URL as the OAuth
+`resource` parameter, which Entra rejects (`AADSTS9010010`) unless that URL is also an Application
+ID URI of the MCP resource. Adding it fixed sign-in with no code change; `docs/mcp-server.md` now
+covers it, the v2.0 token setting and the client registration.
 
 ## Verification per PR
 

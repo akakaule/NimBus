@@ -1,5 +1,7 @@
 # Memory
 
+- MCP classification correction: validate an explicit failure message ID against the requested endpoint before invoking a provider; the classification service resolves the message independently and only uses the supplied endpoint ID for error text. Check Contributor through the fresh ACL path before starting a classification, because the ordinary per-request ACL snapshot can outlive a revoked grant.
+
 - Failed-page control correction: compare every applied filter value before treating a submit as an unchanged search; presentation and brushed-window patches must still reach the URL. Pending asynchronous panel navigation belongs to its originating open event and must be discarded on close or other navigation. A modal that initially focuses itself must wrap Shift+Tab from the dialog and prevent Tab from escaping while it has no controls.
 - Release-build correction: when a frontend change replaces hashed SPA assets during a solution build, the WebApp test project may still copy paths captured before the rebuild and fail with MSB3030. Verify the SPA build succeeded, then rerun the unchanged solution build against the current assets before treating this as a source defect.
 

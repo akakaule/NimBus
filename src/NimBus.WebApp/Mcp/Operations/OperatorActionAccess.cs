@@ -123,4 +123,8 @@ public sealed class OperatorActionAccess
     /// <summary>True when the caller holds the scope and Contributor on <paramref name="endpointId"/>.</summary>
     public async Task<bool> MayAsync(OperatorAction action, string endpointId)
         => HasScope(action) && await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
+
+    /// <summary>Checks the action scope and Contributor against the current endpoint ACL.</summary>
+    public async Task<bool> MayFreshAsync(OperatorAction action, string endpointId)
+        => HasScope(action) && await _authorization.HasRoleFreshAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using NimBus.MessageStore.Abstractions;
 using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Services.Operations;
 
@@ -26,6 +27,7 @@ public sealed class OperatorActionTools
     private readonly OperatorMutationLimiter _limiter;
     private readonly OperatorQueries _queries;
     private readonly IOperatorClassificationSource _classifications;
+    private readonly IMessageTrackingStore _store;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<OperatorActionTools> _logger;
 
@@ -38,6 +40,7 @@ public sealed class OperatorActionTools
         OperatorMutationLimiter limiter,
         OperatorQueries queries,
         IOperatorClassificationSource classifications,
+        IMessageTrackingStore store,
         IHttpContextAccessor httpContextAccessor,
         ILogger<OperatorActionTools> logger)
     {
@@ -48,6 +51,7 @@ public sealed class OperatorActionTools
         _limiter = limiter;
         _queries = queries;
         _classifications = classifications;
+        _store = store;
         _httpContextAccessor = httpContextAccessor;
         _logger = logger;
     }
@@ -163,12 +167,18 @@ public sealed class OperatorActionTools
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
 
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
+        if (!await _access.MayFreshAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false))
+            throw OperatorToolErrors.PermissionDenied($"Classifying a failure requires the Contributor role on endpoint '{endpoint}'.");
         var id = RequireEventId(eventId);
         var key = RequireGuid(idempotencyKey);
         var attempt = string.IsNullOrWhiteSpace(messageId)
             ? (await FindAsync(endpoint, id).ConfigureAwait(false)).Row.LastMessageId
             : messageId.Trim();
         if (string.IsNullOrEmpty(attempt))
+            throw OperatorToolErrors.MessageNotFound(endpoint, id);
+
+        var failedMessage = await _store.GetMessage(id, attempt).ConfigureAwait(false);
+        if (!string.Equals(failedMessage?.EndpointId, endpoint, StringComparison.OrdinalIgnoreCase))
             throw OperatorToolErrors.MessageNotFound(endpoint, id);
 
         _limiter.Acquire(Http());

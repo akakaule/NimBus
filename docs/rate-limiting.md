@@ -19,6 +19,12 @@ Exceeding a limit returns **HTTP 429**.
 | `nimbus-intelligence` | `POST /api/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
 | `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
 
+Every MCP tool call shares the one `/mcp` route, so the MCP tools that change something
+(resubmit, skip, mark reported and classify) also take a permit from a second fixed window,
+`RateLimiting:McpMutations` (default 5 per 60 s, same partition as `nimbus-mcp`). It is counted
+inside the tools, not as an endpoint policy, and a refusal is a `[RateLimited]` tool error
+rather than an HTTP 429. `Enabled: false` turns it off as well.
+
 `GET /account/login` — the sign-in *page* — is deliberately not throttled;
 only the credential POST is.
 
@@ -42,6 +48,7 @@ quote:
 | `nimbus-login` | ≤ 50 per address | ≤ 100 | 600/hour per address |
 | `nimbus-intelligence` | ≤ 10 per user | ≤ 20 | 600/hour per user |
 | `nimbus-mcp` | ≤ 60 per caller and client | ≤ 120 | 3,600/hour per caller and client |
+| MCP changes (`McpMutations`) | ≤ 5 per caller and client | ≤ 10 | 300/hour per caller and client |
 
 **A caller pacing at or below the sustained rate is never rejected**, and
 therefore never logged. These policies are rate ceilings, not intrusion
@@ -160,6 +167,8 @@ a restart, which an App Service application-setting change triggers anyway.
 | `RateLimiting:Intelligence:WindowSeconds` | `60` |
 | `RateLimiting:Mcp:PermitLimit` | `60` |
 | `RateLimiting:Mcp:WindowSeconds` | `60` |
+| `RateLimiting:McpMutations:PermitLimit` | `5` |
+| `RateLimiting:McpMutations:WindowSeconds` | `60` |
 
 In App Service these are environment-variable style keys:
 `RateLimiting__Login__PermitLimit`, and so on.

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Authentication;
@@ -67,12 +68,18 @@ public static class McpOperatorServiceCollectionExtensions
             .WithHttpTransport(http => http.Stateless = true)
             .WithTools<OperatorDiscoveryTools>(ToolSerializerOptions)
             .WithTools<OperatorMessageTools>(ToolSerializerOptions)
-            .WithTools<OperatorInsightTools>(ToolSerializerOptions);
+            .WithTools<OperatorInsightTools>(ToolSerializerOptions)
+            .WithTools<OperatorActionTools>(ToolSerializerOptions);
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();
         services.AddScoped<OperatorPayloadAccess>();
         services.AddScoped<IOperatorClassificationSource, OperatorClassificationSource>();
+        services.AddScoped<OperatorActionAccess>();
+        services.AddSingleton<OperatorActionTokens>();
+        services.AddSingleton<OperatorMutationLimiter>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddDataProtection();
 
         return services;
     }
@@ -148,11 +155,7 @@ public static class McpOperatorServiceCollectionExtensions
                     {
                         Resource = $"{request.Scheme}://{request.Host}{request.PathBase}{McpOperatorOptions.Path}",
                         AuthorizationServers = [authority],
-                        ScopesSupported =
-                        [
-                            $"{applicationIdUri}/{McpOperatorPermissions.ObserveScope}",
-                            $"{applicationIdUri}/{McpOperatorPermissions.PayloadReadScope}",
-                        ],
+                        ScopesSupported = McpOperatorPermissions.AllScopes.Select(scope => $"{applicationIdUri}/{scope}").ToList(),
                         ResourceName = "NimBus operator MCP",
                     };
                     return Task.CompletedTask;

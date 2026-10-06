@@ -20,6 +20,13 @@ public interface IOperatorCommands
     Task<OperatorTargetLookup> FindByMessageAsync(string eventId, string messageId);
 
     /// <summary>
+    /// Finds the visible row of <paramref name="eventId"/> on <paramref name="endpointId"/> and its
+    /// latest message, at the row's current version. Used by callers that address a message by
+    /// endpoint and event id and carry the version they decided on separately (the MCP tools).
+    /// </summary>
+    Task<OperatorTargetLookup> FindCurrentAsync(string endpointId, string eventId);
+
+    /// <summary>
     /// Resolves the event type of <paramref name="target"/> from stored messages only, never from
     /// a request body.
     /// </summary>

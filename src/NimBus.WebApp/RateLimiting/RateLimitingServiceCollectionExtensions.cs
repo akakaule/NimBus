@@ -111,7 +111,7 @@ public static class RateLimitingServiceCollectionExtensions
            ?? "ip:" + ClientIpPartitionKey.Resolve(context, options);
 
     // MCP tokens keep raw claim names (MapInboundClaims = false).
-    private static string McpPartitionKey(HttpContext context, RateLimitOptions options)
+    internal static string McpPartitionKey(HttpContext context, RateLimitOptions options)
     {
         var user = context.User;
         var caller = user.FindFirstValue("oid") ?? user.FindFirstValue("sub") ?? UserPartitionKey(context, options);

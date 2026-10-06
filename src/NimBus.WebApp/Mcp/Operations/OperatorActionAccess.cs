@@ -1,0 +1,126 @@
+using NimBus.MessageStore;
+using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
+
+namespace NimBus.WebApp.Mcp.Operations;
+
+/// <summary>An action the operator MCP tools can take on a message (Spec 035 Phase 2a).</summary>
+public enum OperatorAction
+{
+    /// <summary>Replay the message's latest payload.</summary>
+    Resubmit,
+
+    /// <summary>Skip the message, which can release later messages in its session.</summary>
+    Skip,
+
+    /// <summary>Set or clear the "reported" marker.</summary>
+    Report,
+
+    /// <summary>Request an AI classification of the failure.</summary>
+    Classify,
+}
+
+/// <summary>
+/// Decides whether the current MCP caller may take an <see cref="OperatorAction"/>. An Entra
+/// caller needs the action's delegated scope; a workload token, which carries app roles and no
+/// <c>scp</c>, never qualifies in Phase 2a. Local development has no scopes. The endpoint role
+/// (Contributor) is checked separately, and again against fresh access-control lists when a
+/// command runs.
+/// </summary>
+public sealed class OperatorActionAccess
+{
+    private readonly IEndpointAuthorizationService _authorization;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly McpOperatorRuntime _runtime;
+
+    /// <summary>Creates the check for one request.</summary>
+    public OperatorActionAccess(IEndpointAuthorizationService authorization, IHttpContextAccessor httpContextAccessor, McpOperatorRuntime runtime)
+    {
+        _authorization = authorization;
+        _httpContextAccessor = httpContextAccessor;
+        _runtime = runtime;
+    }
+
+    /// <summary>The delegated scope <paramref name="action"/> requires.</summary>
+    public static string ScopeOf(OperatorAction action) => action switch
+    {
+        OperatorAction.Resubmit => McpOperatorPermissions.ResubmitScope,
+        OperatorAction.Skip => McpOperatorPermissions.SkipScope,
+        OperatorAction.Report => McpOperatorPermissions.AnnotateScope,
+        OperatorAction.Classify => McpOperatorPermissions.ClassifyScope,
+        _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
+    };
+
+    /// <summary>The name agents see for <paramref name="action"/>.</summary>
+    public static string NameOf(OperatorAction action) => action.ToString().ToLowerInvariant();
+
+    /// <summary>True when the caller holds <paramref name="action"/>'s scope.</summary>
+    public bool HasScope(OperatorAction action)
+    {
+        if (_runtime.Mode == McpAuthenticationMode.LocalDevelopment)
+            return true;
+
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user is not null && McpOperatorPermissions.HasDelegatedScope(user, ScopeOf(action));
+    }
+
+    /// <summary>Throws <c>[PermissionDenied]</c> unless the caller holds the scope.</summary>
+    public void RequireScope(OperatorAction action)
+    {
+        if (!HasScope(action))
+        {
+            throw OperatorToolErrors.PermissionDenied(
+                $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot change messages.");
+        }
+    }
+
+    /// <summary>
+    /// The actions the caller may take on <paramref name="row"/> right now: Contributor on the
+    /// endpoint, the action's scope, and a state the action accepts.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> EligibleActionsAsync(UnresolvedEvent row, string endpointId, bool classificationAvailable)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (!await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false))
+            return [];
+
+        var actions = new List<string>();
+        if (OperatorCommandCoordinator.IsActionable(row, OperatorChannel.Mcp))
+        {
+            if (HasScope(OperatorAction.Resubmit)) actions.Add(NameOf(OperatorAction.Resubmit));
+            if (HasScope(OperatorAction.Skip)) actions.Add(NameOf(OperatorAction.Skip));
+        }
+
+        if (HasScope(OperatorAction.Report)) actions.Add(NameOf(OperatorAction.Report));
+        if (classificationAvailable && HasScope(OperatorAction.Classify)
+            && row.ResolutionStatus is ResolutionStatus.Failed or ResolutionStatus.DeadLettered)
+        {
+            actions.Add(NameOf(OperatorAction.Classify));
+        }
+
+        return actions;
+    }
+
+    /// <summary>
+    /// The actions the caller holds the scope for and may take on at least one endpoint, as
+    /// Contributor there or site-wide.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> PermittedActionsAsync(bool classificationAvailable)
+    {
+        var access = await _authorization.GetCurrentUserAccessAsync().ConfigureAwait(false);
+        var contributorSomewhere = access.SiteRole >= AccessRole.Contributor
+            || access.EndpointRoles.Values.Any(role => role >= AccessRole.Contributor);
+        if (!contributorSomewhere)
+            return [];
+
+        return Enum.GetValues<OperatorAction>()
+            .Where(action => action != OperatorAction.Classify || classificationAvailable)
+            .Where(HasScope)
+            .Select(NameOf)
+            .ToList();
+    }
+
+    /// <summary>True when the caller holds the scope and Contributor on <paramref name="endpointId"/>.</summary>
+    public async Task<bool> MayAsync(OperatorAction action, string endpointId)
+        => HasScope(action) && await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
+}

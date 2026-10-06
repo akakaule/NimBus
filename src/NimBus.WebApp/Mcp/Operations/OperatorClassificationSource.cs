@@ -13,6 +13,14 @@ public interface IOperatorClassificationSource
     /// caller cannot read it. The classification service applies its own endpoint Reader check.
     /// </summary>
     Task<FailureClassification?> GetLatestAsync(string eventId, string messageId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Requests or reuses an AI classification of one failed attempt through the classification
+    /// service, which checks Contributor, eligibility and the idempotency key and audits the
+    /// request. Returns the classification and whether a stored one was reused.
+    /// </summary>
+    Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(string endpointId, string eventId, string messageId,
+        string idempotencyKey, bool force, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -48,6 +56,36 @@ public sealed class OperatorClassificationSource : IOperatorClassificationSource
         catch (ClassificationServiceException exception)
         {
             throw OperatorToolErrors.SourceUnavailable($"Failure classification is unavailable ({exception.Code}).");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<(FailureClassification Result, bool Cached)> AnalyzeAsync(string endpointId, string eventId, string messageId,
+        string idempotencyKey, bool force, CancellationToken cancellationToken)
+    {
+        if (_service is null)
+            throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
+
+        try
+        {
+            return await _service.AnalyzeAsync(eventId, messageId, idempotencyKey, force, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ClassificationServiceException exception)
+        {
+            throw exception.Code switch
+            {
+                "FailureNotFound" or "FailureDeleted" => OperatorToolErrors.MessageNotFound(endpointId, eventId),
+                "Forbidden" or "EndpointNotAllowed" => OperatorToolErrors.PermissionDenied(
+                    "Classifying a failure requires the Contributor role on the endpoint."),
+                "FailureNotEligible" => OperatorToolErrors.ActionNotAllowed(
+                    "Only a Failed or DeadLettered message's error can be classified."),
+                "AnalysisInProgress" => OperatorToolErrors.ActionNotAllowed(
+                    "A classification of this failure is already running. Read it with nimbus_get_classification shortly."),
+                "InvalidIdempotencyKey" or "IdempotencyConflict" => OperatorToolErrors.InvalidArgument(
+                    "idempotencyKey must be a new GUID, or the one you used before with the same force value."),
+                "AnalysisOutcomeUnknown" => OperatorToolErrors.OutcomeUnknown("The classification may or may not have been stored."),
+                _ => OperatorToolErrors.SourceUnavailable($"Failure classification is unavailable ({exception.Code})."),
+            };
         }
     }
 }

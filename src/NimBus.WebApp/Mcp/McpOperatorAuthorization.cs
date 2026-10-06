@@ -41,6 +41,33 @@ public static class McpOperatorPermissions
     /// </summary>
     public const string PayloadReadScope = "nimbus.payload.read";
 
+    /// <summary>Delegated scope for <c>nimbus_resubmit_message</c> (Spec 035 Phase 2a).</summary>
+    public const string ResubmitScope = "nimbus.resubmit";
+
+    /// <summary>Delegated scope for <c>nimbus_skip_message</c>.</summary>
+    public const string SkipScope = "nimbus.skip";
+
+    /// <summary>Delegated scope for <c>nimbus_set_message_reported</c>.</summary>
+    public const string AnnotateScope = "nimbus.annotate";
+
+    /// <summary>Delegated scope for <c>nimbus_classify_failure</c>.</summary>
+    public const string ClassifyScope = "nimbus.classify";
+
+    /// <summary>
+    /// Every delegated scope the endpoint understands, in the order the protected-resource
+    /// metadata advertises them. The write scopes have no workload app role: in Phase 2a only an
+    /// interactive, delegated caller may change a message.
+    /// </summary>
+    public static readonly IReadOnlyList<string> AllScopes =
+        [ObserveScope, PayloadReadScope, ResubmitScope, SkipScope, AnnotateScope, ClassifyScope];
+
+    /// <summary>True when <paramref name="user"/> holds the delegated <paramref name="scope"/>.</summary>
+    public static bool HasDelegatedScope(ClaimsPrincipal user, string scope)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        return HasScope(user, scope);
+    }
+
     /// <summary>True when <paramref name="user"/> holds the observe scope or app role.</summary>
     public static bool CanObserve(ClaimsPrincipal user)
     {

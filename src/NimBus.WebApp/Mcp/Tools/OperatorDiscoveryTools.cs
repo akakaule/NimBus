@@ -22,6 +22,7 @@ public sealed class OperatorDiscoveryTools
     private readonly OperatorEndpointCatalog _catalog;
     private readonly McpOperatorRuntime _runtime;
     private readonly OperatorPayloadAccess _payloadAccess;
+    private readonly OperatorActionAccess _actionAccess;
     private readonly RateLimitOptions _rateLimits;
     private readonly bool _classificationEnabled;
 
@@ -32,6 +33,7 @@ public sealed class OperatorDiscoveryTools
         OperatorEndpointCatalog catalog,
         McpOperatorRuntime runtime,
         OperatorPayloadAccess payloadAccess,
+        OperatorActionAccess actionAccess,
         IOptions<RateLimitOptions> rateLimits,
         IEnumerable<IntegrationIntelligenceActivation> intelligence)
     {
@@ -40,6 +42,7 @@ public sealed class OperatorDiscoveryTools
         _catalog = catalog;
         _runtime = runtime;
         _payloadAccess = payloadAccess;
+        _actionAccess = actionAccess;
         _rateLimits = rateLimits.Value;
         _classificationEnabled = intelligence.Any(activation => activation.Enabled);
     }
@@ -60,7 +63,7 @@ public sealed class OperatorDiscoveryTools
             new CallerInfo(_authorization.GetCurrentUserName(), access.ObjectId, access.SiteRole.ToString(), await _payloadAccess.CanReadPayloadsAsync().ConfigureAwait(false)),
             _runtime.Mode.ToString(),
             await _catalog.GetReadableEndpointIdsAsync().ConfigureAwait(false),
-            [],
+            await _actionAccess.PermittedActionsAsync(_classificationEnabled).ConfigureAwait(false),
             limits,
             new FeatureInfo(_classificationEnabled));
     }
@@ -93,7 +96,7 @@ public sealed class OperatorDiscoveryTools
 /// <param name="Caller">The authenticated caller.</param>
 /// <param name="AuthenticationMode"><c>Entra</c> or <c>LocalDevelopment</c>.</param>
 /// <param name="ReadableEndpoints">Endpoint ids the caller holds Reader on.</param>
-/// <param name="PermittedActions">Recovery actions the caller may take through MCP. Empty in this release.</param>
+/// <param name="PermittedActions">Actions the caller may take through MCP on at least one endpoint: resubmit, skip, report, classify. nimbus_get_message lists what applies to one message.</param>
 /// <param name="Limits">The MCP request limit, or null when rate limiting is off.</param>
 /// <param name="Features">Optional features available in this deployment.</param>
 public sealed record CapabilitiesResult(

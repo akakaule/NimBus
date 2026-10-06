@@ -42,6 +42,13 @@ public sealed class RateLimitOptions
     /// <summary>Fixed-window limits for the operator MCP endpoint (Spec 035).</summary>
     public WindowLimits Mcp { get; set; } = new() { PermitLimit = 60, WindowSeconds = 60 };
 
+    /// <summary>
+    /// Fixed-window limits for operator MCP tools that change a message (resubmit, skip,
+    /// report, classify), per tenant, client application and user. Counted inside the tools,
+    /// on top of <see cref="Mcp"/>, because every tool call shares the one <c>/mcp</c> route.
+    /// </summary>
+    public WindowLimits McpMutations { get; set; } = new() { PermitLimit = 5, WindowSeconds = 60 };
+
     /// <summary>Permit count and queue depth for a concurrency limiter.</summary>
     public sealed class AgentReceiveLimits
     {

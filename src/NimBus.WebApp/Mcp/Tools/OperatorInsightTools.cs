@@ -191,19 +191,7 @@ public sealed class OperatorInsightTools
             attempt,
             classification is not null,
             true,
-            classification is null ? null : new ClassificationInfo(
-                classification.FailureMessageId,
-                classification.Category,
-                classification.CategoryConfidence,
-                classification.RetryLikelihood,
-                classification.ChangeRequiredLikelihood,
-                classification.ExternalDependencyLikelihood,
-                classification.Guidance.ToString(),
-                classification.Provider,
-                classification.Model,
-                classification.Revision,
-                classification.CreatedAtUtc,
-                classification.EventPayloadIncluded));
+            classification is null ? null : ClassificationInfo.From(classification));
     }
 
     private static List<MetricCount> Counts(ICollection<EndpointEventTypeMessageCount>? rows)
@@ -322,4 +310,24 @@ public sealed record ClassificationResult(
 public sealed record ClassificationInfo(
     string SourceMessageId, string Category, double CategoryConfidence, double RetryLikelihood,
     double ChangeRequiredLikelihood, double ExternalDependencyLikelihood, string Guidance, string Provider,
-    string Model, int Revision, DateTimeOffset CreatedAtUtc, bool EventPayloadIncluded);
+    string Model, int Revision, DateTimeOffset CreatedAtUtc, bool EventPayloadIncluded)
+{
+    /// <summary>Projects a stored classification.</summary>
+    public static ClassificationInfo From(FailureClassification classification)
+    {
+        ArgumentNullException.ThrowIfNull(classification);
+        return new(
+            classification.FailureMessageId,
+            classification.Category,
+            classification.CategoryConfidence,
+            classification.RetryLikelihood,
+            classification.ChangeRequiredLikelihood,
+            classification.ExternalDependencyLikelihood,
+            classification.Guidance.ToString(),
+            classification.Provider,
+            classification.Model,
+            classification.Revision,
+            classification.CreatedAtUtc,
+            classification.EventPayloadIncluded);
+    }
+}

@@ -33,6 +33,29 @@ public static class OperatorToolErrors
     public static McpException FeatureUnavailable(string detail)
         => new($"[FeatureUnavailable] {detail}");
 
+    /// <summary>
+    /// The message changed since it was read, or the action token is expired or not valid for
+    /// this call. Nothing was sent.
+    /// </summary>
+    public static McpException StaleMessage(string detail)
+        => new($"[StaleMessage] {detail} Nothing was sent. Read the message again and call nimbus_prepare_action for a new token.");
+
+    /// <summary>The message's current state does not allow the action.</summary>
+    public static McpException ActionNotAllowed(string detail)
+        => new($"[ActionNotAllowed] {detail}");
+
+    /// <summary>The caller sent too many changes in the current window.</summary>
+    public static McpException RateLimited(int permits, int windowSeconds)
+        => new($"[RateLimited] At most {permits} changes per {windowSeconds} seconds. Wait and try again.");
+
+    /// <summary>The audit log could not record the action, so it was not run.</summary>
+    public static McpException AuditUnavailable()
+        => new("[AuditUnavailable] The audit log could not record the action, so it was not run. Try again later.");
+
+    /// <summary>Sending the command failed after it was accepted; the message was restored.</summary>
+    public static McpException OutcomeUnknown(string detail)
+        => new($"[OutcomeUnknown] {detail} Read the message again before you retry.");
+
     /// <summary>The data source could not answer.</summary>
     public static McpException SourceUnavailable(string detail)
         => new($"[SourceUnavailable] {detail}");

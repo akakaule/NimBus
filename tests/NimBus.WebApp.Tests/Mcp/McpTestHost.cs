@@ -26,9 +26,14 @@ using ModelContextProtocol.Client;
 using NimBus.Core;
 using NimBus.Core.Endpoints;
 using NimBus.Core.Events;
+using NimBus.Manager;
+using NimBus.MessageStore;
+using NimBus.MessageStore.Abstractions;
+using NimBus.Testing.Conformance;
 using NimBus.WebApp.Mcp;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Services;
+using NimBus.WebApp.Services.Operations;
 using CoreEndpoint = NimBus.Core.Endpoints.Endpoint;
 
 namespace NimBus.WebApp.Tests.Mcp;
@@ -56,6 +61,9 @@ internal sealed class McpTestHost : IAsyncDisposable
     }
 
     public TestServer Server { get; }
+
+    /// <summary>A service from the host, for seeding state and asserting side effects.</summary>
+    public T Get<T>() where T : notnull => _host.Services.GetRequiredService<T>();
 
     public static string Issuer => $"https://login.microsoftonline.com/{TenantId}/v2.0";
 
@@ -107,6 +115,17 @@ internal sealed class McpTestHost : IAsyncDisposable
                     services.AddSingleton<IPlatform>(new TestCatalog());
                     services.AddSingleton(new StubAccess());
                     services.AddScoped<IEndpointAuthorizationService, StubAuthorization>();
+
+                    // The shared operator-command path the write tools (and get_message's
+                    // version) run through, over an in-memory store with recording sinks.
+                    var store = new InMemoryMessageStore();
+                    services.AddSingleton(store);
+                    services.AddSingleton<IMessageTrackingStore>(store);
+                    services.AddSingleton<RecordingManagerClient>();
+                    services.AddSingleton<IManagerClient>(sp => sp.GetRequiredService<RecordingManagerClient>());
+                    services.AddSingleton<RecordingAuditLog>();
+                    services.AddSingleton<IAuditLogService>(sp => sp.GetRequiredService<RecordingAuditLog>());
+                    services.AddScoped<IOperatorCommands, OperatorCommandCoordinator>();
 
                     // The REST implementations the read tools delegate to. Unconfigured
                     // fakes by default; tests replace them through configureServices.
@@ -196,11 +215,12 @@ internal sealed class McpTestHost : IAsyncDisposable
         string audience = ClientId,
         string? scopes = "nimbus.observe",
         string? roles = null,
-        string issuer = "")
+        string issuer = "",
+        string oid = "33333333-3333-3333-3333-333333333333")
     {
         var claims = new Dictionary<string, object>
         {
-            ["oid"] = "33333333-3333-3333-3333-333333333333",
+            ["oid"] = oid,
             ["tid"] = TenantId,
             ["azp"] = "44444444-4444-4444-4444-444444444444",
             ["name"] = "Agent Operator",
@@ -251,9 +271,19 @@ internal sealed class McpTestHost : IAsyncDisposable
     private sealed class StubAuthorization(StubAccess access) : IEndpointAuthorizationService
     {
         public Task<bool> HasRoleAsync(AccessRole required, string? endpointId = null)
-            => Task.FromResult(required <= AccessRole.Reader && (endpointId is null
-                ? access.SiteReader
-                : ReadableEndpoints.Contains(endpointId, StringComparer.OrdinalIgnoreCase)));
+            => Task.FromResult(Grants(required, endpointId, access.Contributor));
+
+        public Task<bool> HasRoleFreshAsync(AccessRole required, string endpointId)
+            => Task.FromResult(Grants(required, endpointId, access.ContributorFresh ?? access.Contributor));
+
+        private bool Grants(AccessRole required, string? endpointId, bool contributor)
+        {
+            if (endpointId is null)
+                return required <= AccessRole.Reader && access.SiteReader;
+
+            var readable = ReadableEndpoints.Contains(endpointId, StringComparer.OrdinalIgnoreCase);
+            return readable && (required <= AccessRole.Reader || (contributor && required <= AccessRole.Contributor));
+        }
 
         public Task<bool> CanReadPiiAsync() => Task.FromResult(access.PiiReader);
 
@@ -263,6 +293,8 @@ internal sealed class McpTestHost : IAsyncDisposable
                 ObjectId = "33333333-3333-3333-3333-333333333333",
                 SiteRole = access.SiteReader ? AccessRole.Reader : AccessRole.None,
                 IsPiiReader = access.PiiReader,
+                EndpointRoles = ReadableEndpoints.ToDictionary(
+                    id => id, _ => access.Contributor ? AccessRole.Contributor : AccessRole.Reader, StringComparer.OrdinalIgnoreCase),
             });
 
         public string? GetCurrentUserName() => "Agent Operator";
@@ -276,5 +308,57 @@ internal sealed class McpTestHost : IAsyncDisposable
 
         /// <summary>PiiReader: may see raw payloads.</summary>
         public bool PiiReader { get; init; }
+
+        /// <summary>Contributor on <see cref="ReadableEndpoints"/>: may change messages there.</summary>
+        public bool Contributor { get; init; }
+
+        /// <summary>The fresh access-control answer, when it differs from the cached grant.</summary>
+        public bool? ContributorFresh { get; init; }
+    }
+
+    /// <summary>Records the commands the coordinator publishes.</summary>
+    public sealed class RecordingManagerClient : IManagerClient
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _sent = new();
+
+        public IReadOnlyList<string> Sent => _sent.ToList();
+
+        public Task Resubmit(MessageEntity errorResponse, string endpoint, string eventTypeId, string eventJson)
+        {
+            _sent.Enqueue($"resubmit:{endpoint}:{errorResponse.EventId}");
+            return Task.CompletedTask;
+        }
+
+        public Task Skip(MessageEntity errorResponse, string endpoint, string eventTypeId)
+        {
+            _sent.Enqueue($"skip:{endpoint}:{errorResponse.EventId}");
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>One recorded audit row.</summary>
+    public sealed record AuditRow(MessageAuditType Type, bool Denied, string? Data, bool Required);
+
+    /// <summary>Records audit rows, marking the required ones.</summary>
+    public sealed class RecordingAuditLog : IAuditLogService
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<AuditRow> _rows = new();
+
+        public IReadOnlyList<AuditRow> Rows => _rows.ToList();
+
+        public Task LogAuditAsync(MessageAuditType type, HttpContext context, bool accessDenied = false, string? data = null,
+            string? eventId = null, string? endpointId = null, string? eventTypeId = null, string? auditorNameOverride = null,
+            System.Threading.CancellationToken cancellationToken = default)
+        {
+            _rows.Enqueue(new AuditRow(type, accessDenied, data, false));
+            return Task.CompletedTask;
+        }
+
+        public Task LogRequiredAuditAsync(MessageAuditType type, HttpContext context, string? data = null, string? eventId = null,
+            string? endpointId = null, string? eventTypeId = null, System.Threading.CancellationToken cancellationToken = default)
+        {
+            _rows.Enqueue(new AuditRow(type, false, data, true));
+            return Task.CompletedTask;
+        }
     }
 }

@@ -15,12 +15,20 @@ namespace NimBus.WebApp.Tests.Mcp;
 [TestClass]
 public class McpOperatorEndpointTests
 {
-    private static readonly string[] OperatorTools =
+    private static readonly string[] ReadTools =
     [
         "nimbus_get_capabilities", "nimbus_list_endpoints", "nimbus_get_overview", "nimbus_get_endpoint",
         "nimbus_find_messages", "nimbus_get_message", "nimbus_get_message_history", "nimbus_get_session",
-        "nimbus_search_messages", "nimbus_get_metrics", "nimbus_get_classification",
+        "nimbus_search_messages", "nimbus_get_metrics", "nimbus_get_classification", "nimbus_prepare_action",
     ];
+
+    // Spec 035 Phase 2a. Listed for every caller; each checks its own delegated scope and role.
+    private static readonly string[] WriteTools =
+    [
+        "nimbus_resubmit_message", "nimbus_skip_message", "nimbus_set_message_reported", "nimbus_classify_failure",
+    ];
+
+    private static readonly string[] OperatorTools = [.. ReadTools, .. WriteTools];
 
     [TestMethod]
     public async Task Disabled_does_not_map_the_endpoint()
@@ -65,14 +73,17 @@ public class McpOperatorEndpointTests
     }
 
     [TestMethod]
-    public async Task Operator_tools_are_marked_read_only()
+    public async Task Read_tools_are_read_only_and_write_tools_say_what_they_change()
     {
         await using var host = await McpTestHost.StartLocalDevelopmentAsync();
         await using var client = await host.CreateClientAsync();
 
-        var tools = await client.ListToolsAsync();
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool.Annotations);
 
-        Assert.IsTrue(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true));
+        Assert.IsTrue(ReadTools.All(name => tools[name]?.ReadOnlyHint == true));
+        Assert.IsTrue(WriteTools.All(name => tools[name]?.ReadOnlyHint == false));
+        Assert.IsTrue(tools["nimbus_skip_message"]?.DestructiveHint == true, "Skip can release later messages and is never undone.");
+        Assert.IsTrue(tools["nimbus_resubmit_message"]?.DestructiveHint == false);
     }
 
     [TestMethod]
@@ -170,7 +181,8 @@ public class McpOperatorEndpointTests
         var servers = document.RootElement.GetProperty("authorization_servers").EnumerateArray().Select(e => e.GetString()).ToArray();
         CollectionAssert.Contains(servers, McpTestHost.Issuer);
         var scopes = document.RootElement.GetProperty("scopes_supported").EnumerateArray().Select(e => e.GetString()).ToArray();
-        CollectionAssert.Contains(scopes, $"api://{McpTestHost.ClientId}/nimbus.observe");
+        foreach (var scope in new[] { "nimbus.observe", "nimbus.payload.read", "nimbus.resubmit", "nimbus.skip", "nimbus.annotate", "nimbus.classify" })
+            CollectionAssert.Contains(scopes, $"api://{McpTestHost.ClientId}/{scope}");
     }
 
     [TestMethod]

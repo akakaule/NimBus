@@ -156,6 +156,37 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     }
 
     /// <inheritdoc/>
+    public async Task<OperatorTargetLookup> FindCurrentAsync(string endpointId, string eventId)
+    {
+        if (string.IsNullOrEmpty(endpointId) || string.IsNullOrEmpty(eventId))
+            return new(OperatorCommandStatus.NotFound);
+
+        UnresolvedEvent? row;
+        try
+        {
+            row = await _store.GetEvent(endpointId, eventId);
+        }
+        catch (EndpointNotFoundException)
+        {
+            return new(OperatorCommandStatus.NotFound);
+        }
+
+        if (row == null)
+            return new(OperatorCommandStatus.NotFound);
+
+        var message = (string.IsNullOrEmpty(row.LastMessageId) ? null : await _store.GetMessage(eventId, row.LastMessageId))
+            ?? MessageEntityFromUnresolvedEvent(row);
+
+        // Commands go to the endpoint the latest message names. A row whose message points
+        // elsewhere is not one this endpoint's caller may act on.
+        if (!string.Equals(TargetEndpoint(message), endpointId, StringComparison.OrdinalIgnoreCase))
+            return new(OperatorCommandStatus.NotAllowed);
+
+        return new(OperatorCommandStatus.Accepted,
+            new OperatorCommandTarget(endpointId, row, message, OperatorMessageVersion.From(row)));
+    }
+
+    /// <inheritdoc/>
     public async Task<string> ResolveEventTypeIdAsync(OperatorCommandTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -420,15 +451,15 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
     private static MessageEntity MessageEntityFromUnresolvedEvent(UnresolvedEvent e) => new()
     {
         EventId = e.EventId,
-        MessageId = e.LastMessageId,
-        EventTypeId = e.EventTypeId,
-        OriginatingMessageId = e.OriginatingMessageId,
-        ParentMessageId = e.ParentMessageId,
-        From = e.From,
-        To = e.To,
-        OriginatingFrom = e.OriginatingFrom,
-        SessionId = e.SessionId,
-        CorrelationId = e.CorrelationId,
+        MessageId = e.LastMessageId!,
+        EventTypeId = e.EventTypeId!,
+        OriginatingMessageId = e.OriginatingMessageId!,
+        ParentMessageId = e.ParentMessageId!,
+        From = e.From!,
+        To = e.To!,
+        OriginatingFrom = e.OriginatingFrom!,
+        SessionId = e.SessionId!,
+        CorrelationId = e.CorrelationId!,
         EnqueuedTimeUtc = e.EnqueuedTimeUtc,
         MessageContent = e.MessageContent,
         MessageType = e.MessageType,
@@ -436,8 +467,8 @@ public sealed partial class OperatorCommandCoordinator : IOperatorCommands
         EndpointId = e.EndpointId,
         RetryCount = e.RetryCount,
         RetryLimit = e.RetryLimit,
-        DeadLetterReason = e.DeadLetterReason,
-        DeadLetterErrorDescription = e.DeadLetterErrorDescription,
+        DeadLetterReason = e.DeadLetterReason!,
+        DeadLetterErrorDescription = e.DeadLetterErrorDescription!,
         QueueTimeMs = e.QueueTimeMs,
         ProcessingTimeMs = e.ProcessingTimeMs,
     };

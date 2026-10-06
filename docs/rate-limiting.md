@@ -19,11 +19,10 @@ Exceeding a limit returns **HTTP 429**.
 | `nimbus-intelligence` | `POST /api/integration-intelligence/failures/{eventId}/{messageId}/classification` | Fixed window | 10 per 60 s | user id |
 | `nimbus-mcp` | `/mcp` (operator MCP endpoint, when enabled) | Fixed window | 60 per 60 s | tenant + client application + user |
 
-Every MCP tool call shares the one `/mcp` route, so the MCP tools that change something
-(resubmit, skip, mark reported and classify) also take a permit from a second fixed window,
-`RateLimiting:McpMutations` (default 5 per 60 s, same partition as `nimbus-mcp`). It is counted
-inside the tools, not as an endpoint policy, and a refusal is a `[RateLimited]` tool error
-rather than an HTTP 429. `Enabled: false` turns it off as well.
+The operator MCP tools that change a message (resubmit, skip, report, classify) are further limited
+to 5 per 60 s per tenant, client application and user (`RateLimiting:McpMutations`). Every tool
+call shares the one `/mcp` route, so this limit is counted inside the tools and answered with a
+`[RateLimited]` tool error rather than a 429. It is off when `Enabled` is false.
 
 `GET /account/login` — the sign-in *page* — is deliberately not throttled;
 only the credential POST is.

@@ -179,7 +179,15 @@ curl -X POST \
      "https://nimbus.example.com/api/event/resubmit/evt-123/msg-456"
 ```
 
-(Operation id `post-resubmit-event-ids`, `api-spec.yaml:162-183`.)
+(Operation id `post-resubmit-event-ids`.)
+
+Resubmit, skip and resubmit-with-changes act on the event's latest attempt: `messageId` must be the
+event's `lastMessageId`. They return **409** and send nothing when it no longer is, because the
+event was resubmitted or skipped meanwhile (from the Web UI or an MCP agent) or failed again; reload
+the event and retry. They return **503** when the audit row cannot be written. These commands share
+one guarded path with the operator MCP tools: the caller's Contributor role is re-read from the
+store, the event is claimed at the version loaded, the audit row is written, and only then is the
+command published.
 
 ### EventType
 
@@ -405,15 +413,20 @@ audit row to two independent sinks:
    `"Webapp AuditEvent occurred"` so KQL queries can pivot on it directly.
 
 Both writes are best-effort: a failure to either sink is logged as a warning
-and absorbed — the user's action proceeds either way.
+and absorbed — the user's action proceeds either way. The commands that change
+a message are the exception: resubmit, resubmit-with-changes, skip and report
+use `IAuditLogService.LogRequiredAuditAsync`, which writes the durable row
+before the command runs and refuses the command (503) if it cannot.
 
 ### Choosing which actions are recorded
 
 A site Owner can switch individual audit types off in **Admin → Audit**
 (`GET`/`PUT /api/admin/audit/settings`) — for example `SearchEvents`, which
-fires on every list refresh. A disabled type is skipped by both sinks. Two
-rows are always written regardless: access-denied attempts, and
-`UpdateAuditSettings`, which records every change to the selection.
+fires on every list refresh. A disabled type is skipped by both sinks. Some
+rows are always written regardless: access-denied attempts;
+`UpdateAuditSettings`, which records every change to the selection; and the
+commands that change a message (`Resubmit`, `ResubmitWithChanges`, `Skip`,
+`ReportEvent` and `CommandNotSent`), which are not offered in the selection.
 
 The selection is one record per platform (`IEndpointMetadataStore.GetAuditSettings`),
 cached by each WebApp instance for 30 seconds; a save takes effect at once on
@@ -442,6 +455,11 @@ controller method that fires each one:
 | `Compose`             | `EventImplementation.PostComposeNewEventAsync`            |
 | `ReconcileStalePending` | `AdminImplementation.PostAdminStalePendingReconcileAsync` — one row per invocation (request + counts as `Data`) plus one per repaired event |
 | `UpdateAuditSettings` | `AdminImplementation.PutAdminAuditSettingsAsync` — the disabled types as `Data`; always recorded |
+| `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
+
+Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
+operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency
+key an MCP caller gave, the client application, the prior status and the message version.
 
 `Retry` and `Comment` remain on the enum for backward compatibility with rows
 written before spec 008.

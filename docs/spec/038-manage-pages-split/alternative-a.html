@@ -364,8 +364,16 @@ function show(view){
     node.querySelector('[data-title]').textContent=g.t; node.querySelector('[data-desc]').textContent=g.d; node.querySelector('[data-note]').textContent=g.n;
     content.appendChild(node);
   }
-  const label = LABELS[view] || GENERIC[view].t;
-  crumbs.innerHTML = view==='overview' ? '<b>Admin</b>' : 'Admin / <b>'+label+'</b> <span style="color:var(--faint)">· /Admin/'+view+'</span>';
+  // Built from text nodes: the view name can come from the URL hash.
+  const label = Object.hasOwn(LABELS,view) ? LABELS[view] : GENERIC[view].t;
+  crumbs.replaceChildren();
+  const b=document.createElement('b');
+  if(view==='overview'){ b.textContent='Admin'; crumbs.append(b); }
+  else{
+    b.textContent=label;
+    const path=document.createElement('span'); path.style.color='var(--faint)'; path.textContent=' · /Admin/'+view;
+    crumbs.append('Admin / ', b, path);
+  }
   content.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>show(el.dataset.go)));
   content.querySelectorAll('.anchors button,.seg button').forEach(b=>b.addEventListener('click',()=>{b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}));
   try{history.replaceState(null,'','#'+view);}catch(e){}
@@ -378,7 +386,9 @@ document.getElementById('themeBtn').addEventListener('click',()=>{
   r.dataset.theme = dark ? 'light' : 'dark';
 });
 const start=(location.hash||'').slice(1);
-show(document.getElementById('v-'+start)||GENERIC[start]?start:'overview');
+// Only known views: a template, or an own key of GENERIC (never a prototype key).
+const known=v=>!!v&&(!!document.getElementById('v-'+v)||Object.hasOwn(GENERIC,v));
+show(known(start)?start:'overview');
 </script>
 </body>
 </html>

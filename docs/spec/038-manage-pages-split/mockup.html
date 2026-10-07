@@ -324,7 +324,8 @@ pre.code{background:var(--code-bg);color:var(--code-fg);border-radius:10px;paddi
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const note=(html)=>`<div class="note">${html}</div>`;
-function toast(msg){const t=document.createElement('div');t.className='toast';t.innerHTML=msg;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),3800);}
+// Toasts take plain text: nothing reaching them is ever parsed as HTML.
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),3800);}
 function modal(html,wire){$('#modalBox').innerHTML=html;$('#modal').classList.add('open');wire&&wire($('#modalBox'));}
 function closeModal(){$('#modal').classList.remove('open');}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
@@ -389,7 +390,7 @@ function crumbs(){const {parts}=parse();$('#crumbs').innerHTML='<b>'+esc(parts[0
 let D=null; // open drawer state {id, tab, draft, init, reviewing}
 function render(){
   const {parts,q}=parse(); let page=parts[0]||'Operations';
-  if(page==='Admin'){toast('<b>/Admin</b> redirected to <b>/Operations</b> (§12)');go('/Operations');return;}
+  if(page==='Admin'){toast('/Admin redirected to /Operations (§12)');go('/Operations');return;}
   // unsaved-changes guard when navigation would close an open drawer
   if(D && dirty().length && !(page==='Settings' && parts[1]===D.id)){
     const back='/Settings/'+D.id+'?tab='+D.tab;
@@ -505,7 +506,7 @@ function wireEpRows(){
       : ch==='recv'&&on?'The subscription stops delivering. Messages wait in Service Bus and nothing is lost.':'The endpoint starts '+(ch==='recv'?'processing':'publishing')+' again immediately.';
     modal(`<h3>${title}</h3><p>${body}</p><div class="acts"><button class="btn" data-x>Cancel</button><button class="btn ${on?'danger solid':'primary'}" data-ok>${on?'Pause':'Resume'}</button></div>`,m=>{
       $('[data-x]',m).onclick=closeModal;
-      $('[data-ok]',m).onclick=()=>{if(ch==='recv'){e.recv=!e.recv;e.since=e.recv?null:'now';}else e.send=!e.send;closeModal();toast(`${ch==='recv'?'Receive':'Send'} ${on?'paused':'resumed'} on <b>${e.id}</b> · audit-logged`);render();};
+      $('[data-ok]',m).onclick=()=>{if(ch==='recv'){e.recv=!e.recv;e.since=e.recv?null:'now';}else e.send=!e.send;closeModal();toast(`${ch==='recv'?'Receive':'Send'} ${on?'paused':'resumed'} on ${e.id} · audit-logged`);render();};
     });
   });
   $$('[data-pre]').forEach(b=>b.onclick=()=>{go('/Operations/'+b.dataset.pre+'?endpoint='+b.dataset.ep);setTimeout(()=>$('#opdetail')?.scrollIntoView({behavior:'smooth',block:'start'}),50);});
@@ -517,7 +518,7 @@ function wireOpDetail(){
   const run=$('#runop');
   run.onclick=()=>{
     const go2=()=>{run.disabled=true;const p=$('#prog');p.style.display='block';requestAnimationFrame(()=>$('i',p).style.width='100%');
-      setTimeout(()=>{const r=$('#res');r.style.display='block';r.innerHTML=`<span class="badge ok">done</span> ${esc($('#pvn').textContent)} processed on <span class="mono">${esc($('#pvep').textContent)}</span> · recorded in the <a href="#/Audits">Audit Log</a>`;toast(`<b>${esc(o.name)}</b> finished`);},1500);};
+      setTimeout(()=>{const r=$('#res');r.style.display='block';r.innerHTML=`<span class="badge ok">done</span> ${esc($('#pvn').textContent)} processed on <span class="mono">${esc($('#pvep').textContent)}</span> · recorded in the <a href="#/Audits">Audit Log</a>`;toast(`${o.name} finished`);},1500);};
     // Every operation keeps today's typed confirmation (ConfirmDestructiveAction).
     const expect=o.id==='to'?'erp-legacy':$('#pvep').textContent;
     const consequence={recovery:'Handlers process these messages again.',cleanup:'Messages are not replayed.',movement:'Service Bus or the target instance changes.',danger:'This cannot be undone.'}[o.g];
@@ -698,10 +699,13 @@ function dirty(){ if(!D) return []; return Object.keys(D.draft).filter(k=>String
 function fmt(v){return v===true?'on':v===false?'off':v===''?'(deployment default)':String(v);}
 
 function openDrawer(id,tab){
-  const def=DRAWERS[id]; if(!def){go('/Settings');return;}
+  // Ids and tabs come from the URL, so accept only known own keys.
+  if(!Object.hasOwn(DRAWERS,id)){go('/Settings');return;}
+  const def=DRAWERS[id];
   const firstTab=Object.keys(def.tabs)[0];
-  tab=def.tabs[tab]?tab:firstTab;
-  if(!D||D.id!==id){D={id,tab,init:{...FS[id]},draft:{...FS[id]},reviewing:false};}
+  tab=Object.hasOwn(def.tabs,tab)?tab:firstTab;
+  const copy=()=>Object.assign(Object.create(null),FS[id]);
+  if(!D||D.id!==id){D={id,tab,init:copy(),draft:copy(),reviewing:false};}
   D.tab=tab;
   drawDrawer();
   document.body.classList.add('dopen');
@@ -723,7 +727,7 @@ function drawDrawer(){
     <p class="lead">${esc(def.lead)}</p>
     ${D.reviewing?'':`<div class="dtabs" role="tablist">${Object.entries(def.tabs).map(([k,l])=>`<button role="tab" data-tab="${k}" class="${k===D.tab?'on':''}">${l}${tabDirty(k)?'<span class="dot" title="Unsaved changes"></span>':''}</button>`).join('')}</div>`}
   </div>
-  <div class="dbody" id="dbody">${D.reviewing?reviewBody(ch):banner()+TAB[D.id][D.tab]()}</div>
+  <div class="dbody" id="dbody">${D.reviewing?reviewBody(ch):banner()+renderTab()}</div>
   <div class="dfoot">${D.reviewing
     ?`<span class="sum">${esc(def.apply)}</span><button class="btn" id="dback">Back to editing</button><button class="btn primary" id="dsave">Save ${ch.length} change${ch.length>1?'s':''}</button>`
     :`<span class="sum">${ch.length?`<b>${ch.length} unsaved change${ch.length>1?'s':''}</b>${ch.some(c=>c.kind==='widens')?` · <span style="color:var(--warn-ink)">${ch.filter(c=>c.kind==='widens').length} widen${ch.filter(c=>c.kind==='widens').length>1?'':'s'} access</span>`:''}`:'No unsaved changes · '+esc(def.apply)}</span>
@@ -731,6 +735,15 @@ function drawDrawer(){
   </div>`;
   wireDrawer();
 }
+// Renders the open drawer's tab. D.id and D.tab are validated in openDrawer;
+// the own-key and function checks keep the lookup to TAB's own renderers.
+function renderTab(){
+  const tabs=Object.hasOwn(TAB,D.id)?TAB[D.id]:null;
+  const fn=tabs&&Object.hasOwn(tabs,D.tab)?tabs[D.tab]:null;
+  return typeof fn==='function'?fn():'';
+}
+// A draft key must be one the feature already has; never a prototype key.
+const isDraftKey=k=>k!=='__proto__'&&k!=='constructor'&&k!=='prototype'&&Object.hasOwn(D.init,k);
 const TABKEYS={
   mcp:{overview:['enabled'],permissions:['report','classify','resubmit','skip','payloads','workloads'],who:['people','peopleList','clients','endpoints'],limits:['limitReq','limitMut']},
   fi:{provider:['enabled','model','apiKey'],evidence:['payload','history','historyItems','redacted'],scope:['scope','endpointIds','timeout']},
@@ -831,10 +844,10 @@ function wireDrawer(){
   $('#dclose').onclick=requestClose;
   const dq=$('#dquick'); if(dq) dq.onclick=()=>{$$('[data-quick="mcp"]')[0]?.click();};
   $$('#drawer [data-tab]').forEach(b=>b.onclick=()=>{D.tab=b.dataset.tab;setRoute('/Settings/'+D.id+'?tab='+D.tab);drawDrawer();});
-  $$('#drawer .toggle[data-k]').forEach(t=>t.onclick=()=>{D.draft[t.dataset.k]=!D.draft[t.dataset.k];drawDrawer();});
+  $$('#drawer .toggle[data-k]').forEach(t=>t.onclick=()=>{const k=t.dataset.k;if(!isDraftKey(k))return;D.draft[k]=!D.draft[k];drawDrawer();});
   $$('#drawer input[data-k],#drawer select[data-k]').forEach(i=>{
     const ev=i.tagName==='SELECT'?'change':'input';
-    i.addEventListener(ev,()=>{const k=i.dataset.k;D.draft[k]=i.type==='number'?(i.value===''?'':Number(i.value)):i.value;
+    i.addEventListener(ev,()=>{const k=i.dataset.k;if(!isDraftKey(k))return;D.draft[k]=i.type==='number'?(i.value===''?'':Number(i.value)):i.value;
       if(i.tagName==='SELECT'){drawDrawer();return;}
       refreshFoot();});
   });
@@ -842,12 +855,12 @@ function wireDrawer(){
   const ds=$('#dsim'); if(ds) ds.onclick=()=>toast('Would open /Simulate');
   const hb=$('#hbsend'); if(hb) hb.onclick=()=>toast('Heartbeat sent to 8 endpoint(s)');
   const rv=$('#dreview'); if(rv) rv.onclick=()=>{D.reviewing=true;drawDrawer();};
-  const dd=$('#ddiscard'); if(dd) dd.onclick=()=>{D.draft={...D.init};drawDrawer();};
+  const dd=$('#ddiscard'); if(dd) dd.onclick=()=>{D.draft=Object.assign(Object.create(null),D.init);drawDrawer();};
   const bk=$('#dback'); if(bk) bk.onclick=()=>{D.reviewing=false;drawDrawer();};
   const sv=$('#dsave'); if(sv){const reqs=$$('#drawer .req');const upd=()=>sv.disabled=reqs.some(r=>!r.checked);reqs.forEach(r=>r.onchange=upd);upd();
-    sv.onclick=()=>{const n=dirty().length;Object.assign(FS[D.id],D.draft);D.init={...D.draft};D.reviewing=false;
+    sv.onclick=()=>{const n=dirty().length;for(const k of Object.keys(D.draft)){if(isDraftKey(k))FS[D.id][k]=D.draft[k];}D.init=Object.assign(Object.create(null),D.draft);D.reviewing=false;
       if(D.id==='mcp')DRAWERS.mcp.rev='Revision 9e41b07c · saved by Alvin Kaule just now · applies to every instance within 30 s, no restart';
-      toast(`<b>${DRAWERS[D.id].title}</b>: ${n} change${n>1?'s':''} saved · ${DRAWERS[D.id].apply.toLowerCase()}`);drawDrawer();refreshSettingsList();};}
+      toast(`${DRAWERS[D.id].title}: ${n} change${n>1?'s':''} saved · ${DRAWERS[D.id].apply.toLowerCase()}`);drawDrawer();refreshSettingsList();};}
 }
 function refreshFoot(){ // re-render footer + tab dots without losing input focus
   const ch=dirty(), def=DRAWERS[D.id];

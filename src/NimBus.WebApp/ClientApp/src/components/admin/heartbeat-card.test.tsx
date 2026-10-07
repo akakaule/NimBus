@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import HeartbeatCard from "./heartbeat-card";
+import { renderInPanel } from "../../test-utils/render-in-panel";
 
 const mocks = vi.hoisted(() => ({
   getAdminHeartbeatSettings: vi.fn(),
@@ -213,5 +214,41 @@ describe("HeartbeatCard", () => {
 
     expect(screen.queryByText("included")).toBeNull();
     expect(screen.getByText("excluded")).toBeTruthy();
+  });
+
+  // Spec 038 slice 2: inside the Settings panel frame.
+  describe("in the Settings panel", () => {
+    it("counts unsaved schedule edits and discards them", async () => {
+      const { onDirtyChange } = renderInPanel(<HeartbeatCard />, "heartbeat");
+      const interval = (await screen.findByLabelText("Interval seconds")) as HTMLInputElement;
+      await waitFor(() => expect(interval.value).toBe("300"));
+
+      fireEvent.change(interval, { target: { value: "120" } });
+      fireEvent.click(screen.getByRole("switch", { name: "Scheduled heartbeat enabled" }));
+
+      expect(onDirtyChange).toHaveBeenLastCalledWith(2);
+      fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+      expect(interval.value).toBe("300");
+      expect(onDirtyChange).toHaveBeenLastCalledWith(0);
+    });
+
+    it("shows only the Probing tab's controls", async () => {
+      renderInPanel(<HeartbeatCard />, "heartbeat");
+
+      expect(await screen.findByLabelText("Interval seconds")).toBeTruthy();
+      expect(screen.queryByLabelText("Filter endpoints")).toBeNull();
+    });
+  });
+
+  it("keeps unsaved schedule edits when sending a heartbeat now", async () => {
+    renderCard();
+    const interval = (await screen.findByLabelText("Interval seconds")) as HTMLInputElement;
+    await waitFor(() => expect(interval.value).toBe("300"));
+    fireEvent.change(interval, { target: { value: "120" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+
+    await screen.findByText("Heartbeat sent to 2 endpoint(s).");
+    expect(interval.value).toBe("120");
   });
 });

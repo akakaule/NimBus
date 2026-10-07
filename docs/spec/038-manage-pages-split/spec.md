@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved 2026-10-07 (option B). Slice 1 implemented on branch `claude/admin-page-ui-simplify-4e82d0`; slices 2–4 not started. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
+| **Status** | Approved 2026-10-07 (option B). Slice 1 in PR context-and-oss/NimBus#218. Slice 2 implemented on branch `claude/settings-panel-frame` ([plan](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md)); slices 3–4 not started. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
 | **Date** | 2026-10-07 |
 | **Baseline** | master `0f3b02ef` |
 | **Mockup** | [mockup.html](mockup.html). Open it in a browser. The yellow **Design notes** cite the sections below. The **Mock state** bar switches between the states in §7.3. [alternative-a.html](alternative-a.html) is the rejected alternative in §15. |
@@ -217,7 +217,7 @@ The drawer is `SidePanel`, about 880 px wide, and full-screen below 820 px. The 
 
 ### 8.2 Tabs for each feature
 
-Each tab maps to today's numbered cards. The `01 · …` prefixes go away, because the tabs carry the order.
+Each tab maps to today's numbered cards. The `01 · …` prefixes are kept for now. Inside the panel every tab is a single column, so previews such as *Effective access* sit below their controls rather than beside them (slice 2 decision, 2026-10-08).
 
 | Feature | Tabs (source) |
 |---|---|
@@ -241,7 +241,9 @@ Under the hood, each feature's existing `save()` is called unchanged. The drawer
 
 ### 8.4 Unsaved changes
 
-Closing the drawer with a non-empty draft asks "Discard N unsaved changes?" and lists them. Closing means ✕, Escape, a backdrop click, the browser back button, or any navigation. The question shows *Keep editing* and *Discard*. The same check runs when you switch to another feature's drawer.
+Closing the drawer with a non-empty draft asks "Discard N unsaved changes?". Closing means ✕, Escape or a backdrop click. The question shows *Keep editing* and *Discard*. While edits are unsaved, reloading or closing the browser tab asks the browser's own leave-page question.
+
+The browser Back button is **not** guarded (slice 2 decision, 2026-10-08). Intercepting it needs React Router's `useBlocker`, which only works under a data router, and the app uses a classic `BrowserRouter`. Back closes the drawer and drops the edits. Moving to a data router is a separate decision.
 
 ### 8.5 URLs and history
 

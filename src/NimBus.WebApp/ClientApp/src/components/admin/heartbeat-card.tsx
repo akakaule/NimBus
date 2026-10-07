@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import * as api from "api-client";
 import { Button } from "components/ui/button";
@@ -14,6 +14,12 @@ import {
 } from "components/ui/card";
 import { subscribeHeartbeatUpdates } from "lib/grid-events-connection";
 import { formatMoment } from "functions/endpoint.functions";
+import {
+  PanelFooter,
+  PanelSection,
+  useInPanel,
+  usePanelDirty,
+} from "components/settings/panel-frame";
 
 /** Fallback poll cadence while the hub is down (see PlatformServicesCard). */
 const POLL_MS = 30_000;
@@ -85,6 +91,23 @@ const sendIcon = (
   </svg>
 );
 
+// The schedule fields an operator edits; per-endpoint inclusion saves on click.
+const SCHEDULE_FIELDS = [
+  "enabled",
+  "intervalSeconds",
+  "timeoutSeconds",
+] as const;
+
+/** Number of schedule fields that differ from the saved settings. */
+function countScheduleChanges(
+  saved: api.HeartbeatSettings | null,
+  draft: api.HeartbeatSettings | null,
+): number {
+  if (!saved || !draft) return 0;
+  return SCHEDULE_FIELDS.filter((field) => saved[field] !== draft[field])
+    .length;
+}
+
 /**
  * Settings → Heartbeat probing. The scheduled endpoint fan-out: its schedule,
  * a manual send, and the per-endpoint answer table. Adapters answer the probe
@@ -92,7 +115,10 @@ const sendIcon = (
  * endpoint is not draining its subscription.
  */
 export default function HeartbeatCard() {
+  // `settings` is the draft the form edits; `saved` is what the server holds.
   const [settings, setSettings] = useState<api.HeartbeatSettings | null>(null);
+  const [saved, setSaved] = useState<api.HeartbeatSettings | null>(null);
+  const savedRef = useRef<api.HeartbeatSettings | null>(null);
   const [overview, setOverview] = useState<api.HeartbeatOverviewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -105,6 +131,26 @@ export default function HeartbeatCard() {
     useState<InclusionFilter>("all");
 
   const client = useMemo(() => new api.Client(api.CookieAuth()), []);
+  const inPanel = useInPanel();
+
+  const changes = countScheduleChanges(saved, settings);
+  usePanelDirty(changes);
+
+  // A reload (Refresh, Send now) must not throw away unsaved schedule edits:
+  // only the server-owned last-send time is taken into a dirty draft.
+  const acceptSaved = useCallback((next: api.HeartbeatSettings) => {
+    const previous = savedRef.current;
+    savedRef.current = next;
+    setSaved(next);
+    setSettings((draft) =>
+      draft && countScheduleChanges(previous, draft) > 0
+        ? new api.HeartbeatSettings({
+            ...draft,
+            lastSentAtUtc: next.lastSentAtUtc,
+          })
+        : next,
+    );
+  }, []);
 
   const loadOverview = useCallback(async () => {
     setOverview(await client.getAdminHeartbeatOverview());
@@ -116,7 +162,7 @@ export default function HeartbeatCard() {
         client.getAdminHeartbeatSettings(),
         client.getAdminHeartbeatOverview(),
       ]);
-      setSettings(nextSettings);
+      acceptSaved(nextSettings);
       setOverview(nextOverview);
       setError(null);
     } catch (err: unknown) {
@@ -128,7 +174,7 @@ export default function HeartbeatCard() {
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [client, acceptSaved]);
 
   useEffect(() => {
     void loadAll();
@@ -166,8 +212,10 @@ export default function HeartbeatCard() {
     if (!settings) return;
     setSaving(true);
     try {
-      const saved = await client.putAdminHeartbeatSettings(settings);
-      setSettings(saved);
+      const stored = await client.putAdminHeartbeatSettings(settings);
+      savedRef.current = stored;
+      setSaved(stored);
+      setSettings(stored);
       setError(null);
     } catch (err: unknown) {
       setError(
@@ -224,10 +272,12 @@ export default function HeartbeatCard() {
   return (
     <Card>
       <CardHeader className="px-5 py-4">
-        <div className="flex items-center gap-2">
-          {activityIcon}
-          <CardTitle className="text-xl">Heartbeat</CardTitle>
-        </div>
+        {!inPanel && (
+          <div className="flex items-center gap-2">
+            {activityIcon}
+            <CardTitle className="text-xl">Heartbeat</CardTitle>
+          </div>
+        )}
         <CardDescription>
           Endpoint health, round-trip latency, and SDK version.
         </CardDescription>
@@ -242,178 +292,195 @@ export default function HeartbeatCard() {
           </div>
         )}
 
-        <div className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[minmax(15rem,1fr)_13rem_13rem_auto_auto] lg:items-end">
-            <div className="flex h-12 items-center gap-3 rounded-nb-md border border-border bg-muted/30 px-4">
-              <Toggle
-                checked={enabled}
-                disabled={loading || saving}
-                onChange={(next) => patchSettings({ enabled: next })}
-                aria-label="Scheduled heartbeat enabled"
-              />
-              <span className="font-semibold">Enabled</span>
+        <PanelSection tab="probing">
+          <div className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(15rem,1fr)_13rem_13rem_auto_auto_auto] lg:items-end">
+              <div className="flex h-12 items-center gap-3 rounded-nb-md border border-border bg-muted/30 px-4">
+                <Toggle
+                  checked={enabled}
+                  disabled={loading || saving}
+                  onChange={(next) => patchSettings({ enabled: next })}
+                  aria-label="Scheduled heartbeat enabled"
+                />
+                <span className="font-semibold">Enabled</span>
+              </div>
+
+              <label className="text-sm font-medium text-foreground">
+                Interval seconds
+                <Input
+                  type="number"
+                  min={30}
+                  className="mt-1 h-12 w-full"
+                  value={settings?.intervalSeconds ?? DEFAULT_INTERVAL_SECONDS}
+                  disabled={loading || saving}
+                  onChange={(event) =>
+                    patchSettings({
+                      intervalSeconds: Number(event.currentTarget.value),
+                    })
+                  }
+                />
+              </label>
+
+              <label className="text-sm font-medium text-foreground">
+                Timeout seconds
+                <Input
+                  type="number"
+                  min={5}
+                  className="mt-1 h-12 w-full"
+                  value={settings?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS}
+                  disabled={loading || saving}
+                  onChange={(event) =>
+                    patchSettings({
+                      timeoutSeconds: Number(event.currentTarget.value),
+                    })
+                  }
+                />
+              </label>
+
+              <PanelFooter>
+                <Button
+                  variant="ghost"
+                  colorScheme="gray"
+                  size={inPanel ? "md" : "lg"}
+                  onClick={() => setSettings(saved)}
+                  disabled={changes === 0 || saving}
+                >
+                  Discard
+                </Button>
+                <Button
+                  variant={inPanel ? "solid" : "outline"}
+                  colorScheme={inPanel ? "primary" : "gray"}
+                  size={inPanel ? "md" : "lg"}
+                  leftIcon={saveIcon}
+                  onClick={() => void saveSettings()}
+                  disabled={!settings || saving}
+                  isLoading={saving}
+                >
+                  Save
+                </Button>
+              </PanelFooter>
+
+              <Button
+                colorScheme="primary"
+                size="lg"
+                leftIcon={sendIcon}
+                onClick={() => void sendNow()}
+                disabled={sending}
+                isLoading={sending}
+              >
+                Send now
+              </Button>
             </div>
 
-            <label className="text-sm font-medium text-foreground">
-              Interval seconds
-              <Input
-                type="number"
-                min={30}
-                className="mt-1 h-12 w-full"
-                value={settings?.intervalSeconds ?? DEFAULT_INTERVAL_SECONDS}
-                disabled={loading || saving}
-                onChange={(event) =>
-                  patchSettings({
-                    intervalSeconds: Number(event.currentTarget.value),
-                  })
-                }
-              />
-            </label>
-
-            <label className="text-sm font-medium text-foreground">
-              Timeout seconds
-              <Input
-                type="number"
-                min={5}
-                className="mt-1 h-12 w-full"
-                value={settings?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS}
-                disabled={loading || saving}
-                onChange={(event) =>
-                  patchSettings({
-                    timeoutSeconds: Number(event.currentTarget.value),
-                  })
-                }
-              />
-            </label>
-
-            <Button
-              variant="outline"
-              colorScheme="gray"
-              size="lg"
-              leftIcon={saveIcon}
-              onClick={() => void saveSettings()}
-              disabled={!settings || saving}
-              isLoading={saving}
-            >
-              Save
-            </Button>
-
-            <Button
-              colorScheme="primary"
-              size="lg"
-              leftIcon={sendIcon}
-              onClick={() => void sendNow()}
-              disabled={sending}
-              isLoading={sending}
-            >
-              Send now
-            </Button>
-          </div>
-
-          <p className="text-sm text-muted-foreground">
-            Choose which endpoints are probed. Live status, uptime and gaps are
-            on the{" "}
-            <Link className="text-primary hover:underline" to="/Heartbeat">
-              Heartbeat page
-            </Link>
-            .
-          </p>
-
-          {sentCount !== null && (
-            <p className="text-xs text-muted-foreground">
-              Heartbeat sent to {sentCount} endpoint(s).
+            <p className="text-sm text-muted-foreground">
+              Choose which endpoints are probed. Live status, uptime and gaps
+              are on the{" "}
+              <Link className="text-primary hover:underline" to="/Heartbeat">
+                Heartbeat page
+              </Link>
+              .
             </p>
-          )}
-        </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            Last scheduled send:{" "}
-            {settings?.lastSentAtUtc
-              ? formatMoment(settings.lastSentAtUtc)
-              : "never"}
-          </p>
-          <div className="flex items-center gap-3">
-            <Select
-              aria-label="Filter endpoints"
-              className="h-10 w-44"
-              value={inclusionFilter}
-              onChange={(event) =>
-                setInclusionFilter(event.currentTarget.value as InclusionFilter)
-              }
-              options={[
-                { value: "all", label: "All endpoints" },
-                { value: "included", label: "Included" },
-                { value: "excluded", label: "Excluded" },
-              ]}
-            />
-            <Button
-              variant="ghost"
-              colorScheme="gray"
-              size="sm"
-              leftIcon={refreshIcon}
-              onClick={() => void loadAll()}
-              disabled={loading}
-            >
-              Refresh
-            </Button>
+            {sentCount !== null && (
+              <p className="text-xs text-muted-foreground">
+                Heartbeat sent to {sentCount} endpoint(s).
+              </p>
+            )}
           </div>
-        </div>
+        </PanelSection>
 
-        <div className="overflow-x-auto rounded-nb-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted">
-                <th className="text-left p-3 font-medium">Endpoint ↑</th>
-                <th className="p-3 text-right font-medium">Included</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOverview.map((row) => {
-                // Null means "never configured either way", which is included.
-                const included = row.isHeartbeatEnabled !== false;
-                const endpointId = row.endpointId ?? "";
-                const isBusy = busy[endpointId] ?? false;
-                return (
-                  <tr
-                    key={endpointId}
-                    className="border-b border-border/50 last:border-b-0"
-                  >
-                    <td className="p-3 font-mono text-sm">{endpointId}</td>
-                    <td className="p-3 text-right">
-                      <Toggle
-                        checked={included}
-                        onChange={(next) =>
-                          void setEndpointEnabled(endpointId, next)
-                        }
-                        aria-label={`Include ${endpointId} in heartbeat probes`}
-                        disabled={endpointId === "" || isBusy}
-                      />
+        <PanelSection tab="endpoints">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Last scheduled send:{" "}
+              {settings?.lastSentAtUtc
+                ? formatMoment(settings.lastSentAtUtc)
+                : "never"}
+            </p>
+            <div className="flex items-center gap-3">
+              <Select
+                aria-label="Filter endpoints"
+                className="h-10 w-44"
+                value={inclusionFilter}
+                onChange={(event) =>
+                  setInclusionFilter(
+                    event.currentTarget.value as InclusionFilter,
+                  )
+                }
+                options={[
+                  { value: "all", label: "All endpoints" },
+                  { value: "included", label: "Included" },
+                  { value: "excluded", label: "Excluded" },
+                ]}
+              />
+              <Button
+                variant="ghost"
+                colorScheme="gray"
+                size="sm"
+                leftIcon={refreshIcon}
+                onClick={() => void loadAll()}
+                disabled={loading}
+              >
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-nb-md border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted">
+                  <th className="text-left p-3 font-medium">Endpoint ↑</th>
+                  <th className="p-3 text-right font-medium">Included</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOverview.map((row) => {
+                  // Null means "never configured either way", which is included.
+                  const included = row.isHeartbeatEnabled !== false;
+                  const endpointId = row.endpointId ?? "";
+                  const isBusy = busy[endpointId] ?? false;
+                  return (
+                    <tr
+                      key={endpointId}
+                      className="border-b border-border/50 last:border-b-0"
+                    >
+                      <td className="p-3 font-mono text-sm">{endpointId}</td>
+                      <td className="p-3 text-right">
+                        <Toggle
+                          checked={included}
+                          onChange={(next) =>
+                            void setEndpointEnabled(endpointId, next)
+                          }
+                          aria-label={`Include ${endpointId} in heartbeat probes`}
+                          disabled={endpointId === "" || isBusy}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredOverview.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="p-6 text-center text-muted-foreground"
+                    >
+                      {/* Never claim "no endpoints" when the load failed — the
+                        banner above already says what actually happened. */}
+                      {loading
+                        ? "Loading…"
+                        : error
+                          ? "—"
+                          : overview.length === 0
+                            ? "No endpoints."
+                            : "No matching endpoints."}
                     </td>
                   </tr>
-                );
-              })}
-              {filteredOverview.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={2}
-                    className="p-6 text-center text-muted-foreground"
-                  >
-                    {/* Never claim "no endpoints" when the load failed — the
-                        banner above already says what actually happened. */}
-                    {loading
-                      ? "Loading…"
-                      : error
-                        ? "—"
-                        : overview.length === 0
-                          ? "No endpoints."
-                          : "No matching endpoints."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PanelSection>
       </CardContent>
     </Card>
   );

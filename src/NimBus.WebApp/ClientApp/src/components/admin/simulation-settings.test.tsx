@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import SimulationSettings from "./simulation-settings";
 import { simulationStatus } from "components/simulate/simulation-fixtures";
+import { renderInPanel } from "../../test-utils/render-in-panel";
 
 const mocks = vi.hoisted(() => ({
   getAdminSimulation: vi.fn(),
@@ -96,5 +97,37 @@ describe("Settings → Simulation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save simulation settings" }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/cannot change while the simulation is running/);
+  });
+
+  // Spec 038 slice 2: inside the Settings panel frame.
+  describe("in the Settings panel", () => {
+    it("shows one tab at a time", async () => {
+      renderInPanel(<SimulationSettings />, "simulation", "endpoints");
+
+      expect(await screen.findByLabelText("Simulator owns BillingEndpoint")).toBeTruthy();
+      expect(screen.queryByRole("switch", { name: "Enable simulate mode" })).toBeNull();
+    });
+
+    it("counts unsaved edits, including a confirmed ownership change, and resets them", async () => {
+      const { onDirtyChange } = renderInPanel(<SimulationSettings />, "simulation", "endpoints");
+
+      fireEvent.click(await screen.findByLabelText("Simulator owns BillingEndpoint"));
+      fireEvent.click(screen.getByRole("button", { name: "Take ownership" }));
+
+      expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+      fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+      expect(onDirtyChange).toHaveBeenLastCalledWith(0);
+    });
+
+    it("closes only the ownership dialog on Escape", async () => {
+      renderInPanel(<SimulationSettings />, "simulation", "endpoints");
+      fireEvent.click(await screen.findByLabelText("Simulator owns BillingEndpoint"));
+      expect(screen.getByRole("button", { name: "Take ownership" })).toBeTruthy();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      expect(screen.queryByRole("button", { name: "Take ownership" })).toBeNull();
+      expect(screen.getByLabelText("Simulator owns BillingEndpoint")).toBeTruthy();
+    });
   });
 });

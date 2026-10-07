@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import McpAccessSettings from "./mcp-access-settings";
+import { renderInPanel } from "../../test-utils/render-in-panel";
 import { describeChanges, previewAccess, type McpDeployment, type McpSettings, type McpState } from "./mcp-access-model";
 
 const originalFetch = globalThis.fetch;
@@ -41,6 +42,39 @@ function mockFetch(...responses: Response[]) {
   globalThis.fetch = fetchMock as typeof fetch;
   return fetchMock;
 }
+
+// Spec 038 slice 2: inside the Settings panel frame.
+describe("MCP access settings in the Settings panel", () => {
+  it("shows one tab at a time", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "connect");
+
+    expect(await screen.findByText("Connect an agent")).toBeTruthy();
+    expect(screen.queryByText("01 · Activation")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Active now" })).toBeNull();
+  });
+
+  it("puts the tiles and activation on Overview", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "overview");
+
+    expect(await screen.findByRole("region", { name: "Active now" })).toBeTruthy();
+    expect(screen.getByText("01 · Activation")).toBeTruthy();
+  });
+
+  it("counts unsaved changes and reviews them from the footer, replacing the tabs", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    const { onDirtyChange } = renderInPanel(<McpAccessSettings />, "mcp", "permissions");
+
+    await userEvent.click(await screen.findByRole("switch", { name: "Mark reported" }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+
+    await userEvent.click(within(screen.getByRole("contentinfo")).getByRole("button", { name: "Review changes" }));
+    expect(screen.getByRole("region", { name: "Review changes" })).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Mark reported" })).toBeNull();
+  });
+});
 
 describe("MCP access settings", () => {
   it("reviews a widening change, requires confirmation and saves with CSRF and the revision", async () => {

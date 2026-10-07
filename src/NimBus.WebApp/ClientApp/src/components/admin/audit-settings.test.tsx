@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import AuditSettings from "./audit-settings";
+import { renderInPanel } from "../../test-utils/render-in-panel";
 
 const mocks = vi.hoisted(() => ({
   getAdminAuditSettings: vi.fn(),
@@ -115,5 +116,20 @@ describe("AuditSettings", () => {
     render(<AuditSettings />);
 
     expect((await screen.findByRole("alert")).textContent).toBe("Forbidden");
+  });
+
+  // Spec 038 slice 2: inside the Settings panel frame.
+  it("reports unsaved changes to the panel and saves from its footer", async () => {
+    const { onDirtyChange } = renderInPanel(<AuditSettings />, "audit");
+    const footer = screen.getByRole("contentinfo");
+    const search = await screen.findByRole("switch", { name: "Record Search events" });
+
+    fireEvent.click(search);
+    fireEvent.click(screen.getByRole("switch", { name: "Record Get event details" }));
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith(2);
+    fireEvent.click(within(footer).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(0));
+    expect(mocks.putAdminAuditSettings).toHaveBeenCalledTimes(1);
   });
 });

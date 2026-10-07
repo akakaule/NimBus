@@ -50,6 +50,15 @@ export interface McpState {
   csrfToken: string;
 }
 
+export type McpEndpointState = "notSetUp" | "unavailable" | "serving" | "off";
+
+/** Whether /mcp is serving right now; shared by the panel's tiles and the Settings list. */
+export function mcpEndpointState(state: McpState): McpEndpointState {
+  if (state.deployment.mode === "disabled") return "notSetUp";
+  if (!state.policyLoaded) return "unavailable";
+  return (state.effective ?? state.saved).enabled ? "serving" : "off";
+}
+
 export interface McpChange { text: string; widens: boolean }
 export interface McpProblem { code: string; errors?: string[]; changes?: McpChange[] }
 

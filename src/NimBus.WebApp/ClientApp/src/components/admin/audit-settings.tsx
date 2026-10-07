@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "components/ui/card";
 import { formatAuditType } from "functions/audit.functions";
+import { PanelFooter, useInPanel, usePanelDirty } from "components/settings/panel-frame";
 
 // Presentation only: the server's configurableAuditTypes decides what is listed,
 // and a type missing here lands in "Other" rather than disappearing.
@@ -91,8 +92,9 @@ function groupTypes(configurable: string[]) {
   return groups.filter((g) => g.types.length > 0);
 }
 
-function sameSet(a: Set<string>, b: Set<string>) {
-  return a.size === b.size && [...a].every((x) => b.has(x));
+/** Number of action types whose recorded state differs between the two sets. */
+function differenceCount(a: Set<string>, b: Set<string>) {
+  return [...a].filter((x) => !b.has(x)).length + [...b].filter((x) => !a.has(x)).length;
 }
 
 /**
@@ -135,7 +137,10 @@ export default function AuditSettings() {
   }, [client, apply]);
 
   const groups = useMemo(() => groupTypes(configurable), [configurable]);
-  const dirty = !sameSet(saved, disabled);
+  const changes = differenceCount(saved, disabled);
+  const dirty = changes > 0;
+  usePanelDirty(changes);
+  const inPanel = useInPanel();
 
   function setRecorded(type: string, recorded: boolean) {
     setSavedNotice(false);
@@ -182,10 +187,12 @@ export default function AuditSettings() {
   return (
     <Card>
       <CardHeader className="px-5 py-4">
-        <div className="flex items-center gap-2">
-          {shieldIcon}
-          <CardTitle className="text-xl">Audit logging</CardTitle>
-        </div>
+        {!inPanel && (
+          <div className="flex items-center gap-2">
+            {shieldIcon}
+            <CardTitle className="text-xl">Audit logging</CardTitle>
+          </div>
+        )}
         <CardDescription>
           Choose which operator actions are written to the audit log and
           Application Insights. Access-denied attempts and changes to this
@@ -209,29 +216,31 @@ export default function AuditSettings() {
               : `${recordedCount} of ${configurable.length} action types recorded.`}
             {savedNotice && !dirty && " Saved."}
           </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              colorScheme="gray"
-              size="sm"
-              onClick={() => {
-                setDisabled(new Set(saved));
-                setSavedNotice(false);
-              }}
-              disabled={!dirty || saving}
-            >
-              Discard changes
-            </Button>
-            <Button
-              colorScheme="primary"
-              size="sm"
-              onClick={() => void save()}
-              disabled={loading || !dirty || saving}
-              isLoading={saving}
-            >
-              Save
-            </Button>
-          </div>
+          <PanelFooter>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                colorScheme="gray"
+                size="sm"
+                onClick={() => {
+                  setDisabled(new Set(saved));
+                  setSavedNotice(false);
+                }}
+                disabled={!dirty || saving}
+              >
+                Discard changes
+              </Button>
+              <Button
+                colorScheme="primary"
+                size="sm"
+                onClick={() => void save()}
+                disabled={loading || !dirty || saving}
+                isLoading={saving}
+              >
+                Save
+              </Button>
+            </div>
+          </PanelFooter>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">

@@ -7,14 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "components/ui/card";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "components/ui/modal";
 import { cn } from "lib/utils";
 import {
-  CAPABILITIES, PERSONAS, READ_TOOL_COUNT, TOTAL_TOOL_COUNT, describeChanges, listedToolCount, previewAccess, validate,
+  CAPABILITIES, PERSONAS, READ_TOOL_COUNT, TOTAL_TOOL_COUNT, describeChanges, listedToolCount, mcpEndpointState, previewAccess, validate,
   type ApprovedClient, type CapabilityKey, type McpActivity, type McpChange, type McpProblem, type McpSettings, type McpState, type Persona,
 } from "./mcp-access-model";
+import { PanelFooter, PanelSection, useInPanel, usePanelDirty, usePanelReviewing } from "components/settings/panel-frame";
 
 // Spec 037 — Settings → MCP access. Site Owner only. The policy narrows what the
 // deployment, Entra scopes and NimBus roles allow, and applies to every instance
 // within 30 seconds without a restart.
 
+const FORM_ID = "mcp-access-settings";
 const settingsUrl = "/api/admin/mcp/settings";
 const turnOffUrl = "/api/admin/mcp/turn-off";
 const activityUrl = "/api/admin/mcp/activity?hours=24";
@@ -75,6 +77,9 @@ export default function McpAccessSettings() {
   const changes = useMemo(() => (state && draft ? describeChanges(state.saved, draft) : []), [state, draft]);
   const widens = (serverChanges ?? changes).some(c => c.widens);
   const enablesSkip = !!state && !!draft && draft.capabilities.skip && !state.saved.capabilities.skip;
+  const inPanel = useInPanel();
+  usePanelDirty(changes.length);
+  usePanelReviewing(reviewing);
 
   if (!state || !draft) {
     return <div className="space-y-3"><p role={error ? "alert" : "status"}>{error ?? "Loading MCP access settings…"}</p>
@@ -123,8 +128,17 @@ export default function McpAccessSettings() {
 
   const save = () => write(settingsUrl, "PUT", { revision: state.saved.revision ?? null, settings: draft, confirmWidening: widens && confirmed });
 
+  // In the Settings panel these sit in its sticky footer, which shows the unsaved count itself.
+  const actions = (
+    <div className="flex items-center gap-2">
+      {!inPanel && changes.length > 0 && <span className="rounded-full bg-status-warning-50 px-2 font-mono text-xs text-status-warning-ink">{changes.length} unsaved change{changes.length === 1 ? "" : "s"}</span>}
+      <Button type="button" variant="outline" disabled={saving || changes.length === 0} onClick={() => { setDraft(clone(state.saved)); setReviewing(false); setError(undefined); }}>Discard changes</Button>
+      <Button type="submit" form={FORM_ID} disabled={saving || loading || changes.length === 0}>Review changes</Button>
+    </div>
+  );
+
   return (
-    <form className="w-full min-w-0 space-y-6" onSubmit={event => {
+    <form id={FORM_ID} className="w-full min-w-0 space-y-6" onSubmit={event => {
       event.preventDefault();
       const invalid = validate(draft, deployment);
       if (invalid) { setError(invalid); return; }
@@ -132,7 +146,7 @@ export default function McpAccessSettings() {
     }}>
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
-          <h2 className="text-xl font-semibold">MCP access</h2>
+          {!inPanel && <h2 className="text-xl font-semibold">MCP access</h2>}
           <p className="text-muted-foreground">Let AI agents such as Claude Code check endpoint health, investigate failed messages and, for signed-in Contributors, recover them through <code>/mcp</code>. These settings can only narrow what Entra scopes and NimBus roles already allow.</p>
           <p className="mt-2 text-xs text-muted-foreground">
             {state.saved.revision
@@ -148,91 +162,107 @@ export default function McpAccessSettings() {
       {error && <p role="alert" className="text-status-danger">{error}</p>}
       {message && <p role="status" className="text-status-success">{message}</p>}
 
-      <Tiles state={state} activity={activity} />
+      <PanelSection tab="overview">
+        <Tiles state={state} activity={activity} />
+      </PanelSection>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div className={inPanel ? "space-y-5" : "grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]"}>
         <fieldset disabled={saving || loading} className="min-w-0 space-y-5">
-          <Card><CardHeader><CardTitle>01 · Activation</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
-            <SettingRow label="Serve the MCP endpoint" description={available
-              ? "Agents connect at the URL below and sign in as themselves. When off, every call gets 503 [Disabled] within 30 seconds on all instances, and the settings below are kept."
-              : "Unavailable until the deployment sets NimBus__Mcp__Enabled and the MCP app registration."}>
-              <Toggle aria-label="Serve the MCP endpoint" checked={draft.enabled} disabled={!available} onChange={v => edit(s => { s.enabled = v; })} />
-            </SettingRow>
-            <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-              <dt className="text-muted-foreground">Endpoint</dt><dd className="font-mono text-xs break-all">{available ? deployment.endpointUrl : "—"}</dd>
-              <dt className="text-muted-foreground">Resource metadata</dt><dd className="font-mono text-xs break-all">{deployment.resourceMetadataUrl ?? "—"}</dd>
-              <dt className="text-muted-foreground">Server</dt><dd className="font-mono text-xs">nimbus-operator {deployment.serverVersion} · Streamable HTTP, stateless</dd>
-            </dl>
-            <details className="rounded-md border border-border bg-background">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">Sign-in <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">managed by deployment</span></summary>
-              <div className="space-y-3 px-3 pb-3 text-sm">
-                <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1">
-                  {local ? <>
-                    <dt className="text-muted-foreground">Mode</dt><dd>Local-dev bypass: every call runs as Local Developer, loopback only</dd>
-                  </> : <>
-                    <dt className="text-muted-foreground">Tenant</dt><dd className="font-mono text-xs break-all">{deployment.tenantId ?? "not set"}</dd>
-                    <dt className="text-muted-foreground">MCP app (client) ID</dt><dd className="font-mono text-xs break-all">{deployment.clientId ?? "not set"}</dd>
-                    <dt className="text-muted-foreground">Application ID URI</dt><dd className="font-mono text-xs break-all">{deployment.applicationIdUri ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Browser origins</dt><dd className="text-xs">{deployment.allowedOrigins.length ? deployment.allowedOrigins.join(", ") : "none (desktop and CLI clients only)"}</dd>
-                  </>}
-                </dl>
-                <p className="border-l-2 border-border-strong pl-3 text-xs text-muted-foreground">These decide who can get a token for <code>/mcp</code>, so they stay in the WebApp's app settings (<code>NimBus__Mcp__*</code>): changing whom NimBus trusts needs Azure access, not only a NimBus Owner session.</p>
-              </div>
-            </details>
-          </CardContent></Card>
+          <PanelSection tab="overview">
+            <Card><CardHeader><CardTitle>01 · Activation</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
+              <SettingRow label="Serve the MCP endpoint" description={available
+                ? "Agents connect at the URL below and sign in as themselves. When off, every call gets 503 [Disabled] within 30 seconds on all instances, and the settings below are kept."
+                : "Unavailable until the deployment sets NimBus__Mcp__Enabled and the MCP app registration."}>
+                <Toggle aria-label="Serve the MCP endpoint" checked={draft.enabled} disabled={!available} onChange={v => edit(s => { s.enabled = v; })} />
+              </SettingRow>
+              <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+                <dt className="text-muted-foreground">Endpoint</dt><dd className="font-mono text-xs break-all">{available ? deployment.endpointUrl : "—"}</dd>
+                <dt className="text-muted-foreground">Resource metadata</dt><dd className="font-mono text-xs break-all">{deployment.resourceMetadataUrl ?? "—"}</dd>
+                <dt className="text-muted-foreground">Server</dt><dd className="font-mono text-xs">nimbus-operator {deployment.serverVersion} · Streamable HTTP, stateless</dd>
+              </dl>
+              <details className="rounded-md border border-border bg-background">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">Sign-in <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">managed by deployment</span></summary>
+                <div className="space-y-3 px-3 pb-3 text-sm">
+                  <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1">
+                    {local ? <>
+                      <dt className="text-muted-foreground">Mode</dt><dd>Local-dev bypass: every call runs as Local Developer, loopback only</dd>
+                    </> : <>
+                      <dt className="text-muted-foreground">Tenant</dt><dd className="font-mono text-xs break-all">{deployment.tenantId ?? "not set"}</dd>
+                      <dt className="text-muted-foreground">MCP app (client) ID</dt><dd className="font-mono text-xs break-all">{deployment.clientId ?? "not set"}</dd>
+                      <dt className="text-muted-foreground">Application ID URI</dt><dd className="font-mono text-xs break-all">{deployment.applicationIdUri ?? "—"}</dd>
+                      <dt className="text-muted-foreground">Browser origins</dt><dd className="text-xs">{deployment.allowedOrigins.length ? deployment.allowedOrigins.join(", ") : "none (desktop and CLI clients only)"}</dd>
+                    </>}
+                  </dl>
+                  <p className="border-l-2 border-border-strong pl-3 text-xs text-muted-foreground">These decide who can get a token for <code>/mcp</code>, so they stay in the WebApp's app settings (<code>NimBus__Mcp__*</code>): changing whom NimBus trusts needs Azure access, not only a NimBus Owner session.</p>
+                </div>
+              </details>
+            </CardContent></Card>
+          </PanelSection>
 
-          <Card><CardHeader><CardTitle>02 · What agents may do</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
-            <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-              A tool runs only when <b className="text-primary-600">the switch on this page</b> AND the Entra scope AND the NimBus role on the endpoint AND the message state allow it.
-            </p>
-            <ul className="divide-y divide-border rounded-md border border-border">
-              <li className="flex items-start justify-between gap-4 p-3">
-                <div><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
-                  <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics and stored classifications: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
-                <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
-              </li>
-              {CAPABILITIES.map(cap => (
-                <li key={cap.key} className="space-y-2 p-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold">{cap.label} <Risk risk={cap.risk} text={cap.riskText} /></p>
-                      <p className="text-xs text-muted-foreground">{cap.description}{cap.key === "classify" && !state.failureIntelligenceEnabled ? " Failure intelligence is off in this deployment." : ""}</p>
-                      <p className="mt-1 flex flex-wrap gap-1 font-mono text-[11px]">
-                        {cap.tools.map(t => <span key={t} className="rounded bg-muted px-1.5">{t}</span>)}
-                        <span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{cap.scope}</span>
-                        <span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{cap.role}</span>
-                      </p>
-                    </div>
-                    <Toggle aria-label={cap.label} checked={draft.capabilities[cap.key]} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
-                  </div>
-                  {draft.capabilities[cap.key] && cap.note && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-xs">{cap.note}</p>}
+          <PanelSection tab="permissions">
+            <Card><CardHeader><CardTitle>02 · What agents may do</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
+              <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+                A tool runs only when <b className="text-primary-600">the switch on this page</b> AND the Entra scope AND the NimBus role on the endpoint AND the message state allow it.
+              </p>
+              <ul className="divide-y divide-border rounded-md border border-border">
+                <li className="flex items-start justify-between gap-4 p-3">
+                  <div><p className="text-sm font-semibold">Observe <Risk risk="low" text="read" /></p>
+                    <p className="text-xs text-muted-foreground">Endpoint health, messages, history, sessions, metrics and stored classifications: {READ_TOOL_COUNT} read tools. Never stack traces.</p></div>
+                  <span className="shrink-0 rounded-full border border-dashed border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">Always on</span>
                 </li>
-              ))}
-            </ul>
-            <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Observe app role may use the read tools. Workloads can't change messages or read payloads whatever this page says.">
-              <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
-            </SettingRow>
-            <p className="text-xs text-muted-foreground">Switched-off tools are removed from <code>tools/list</code> and from <code>permittedActions</code>; a direct call gets <code>[PermissionDenied]</code>.</p>
-          </CardContent></Card>
+                {CAPABILITIES.map(cap => (
+                  <li key={cap.key} className="space-y-2 p-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">{cap.label} <Risk risk={cap.risk} text={cap.riskText} /></p>
+                        <p className="text-xs text-muted-foreground">{cap.description}{cap.key === "classify" && !state.failureIntelligenceEnabled ? " Failure intelligence is off in this deployment." : ""}</p>
+                        <p className="mt-1 flex flex-wrap gap-1 font-mono text-[11px]">
+                          {cap.tools.map(t => <span key={t} className="rounded bg-muted px-1.5">{t}</span>)}
+                          <span className="rounded bg-status-info-50 px-1.5 text-status-info-ink">{cap.scope}</span>
+                          <span className="rounded bg-nimbus-purple-50 px-1.5 text-nimbus-purple">{cap.role}</span>
+                        </p>
+                      </div>
+                      <Toggle aria-label={cap.label} checked={draft.capabilities[cap.key]} onChange={v => edit(s => { s.capabilities[cap.key as CapabilityKey] = v; })} />
+                    </div>
+                    {draft.capabilities[cap.key] && cap.note && <p className="rounded-md border border-status-warning/40 bg-status-warning/10 p-2 text-xs">{cap.note}</p>}
+                  </li>
+                ))}
+              </ul>
+              <SettingRow label="Unattended workloads (app-only tokens)" description="Callers with the Nimbus.Observe app role may use the read tools. Workloads can't change messages or read payloads whatever this page says.">
+                <Toggle aria-label="Allow workload tokens" checked={draft.allowWorkloads} disabled={local} onChange={v => edit(s => { s.allowWorkloads = v; })} />
+              </SettingRow>
+              <p className="text-xs text-muted-foreground">Switched-off tools are removed from <code>tools/list</code> and from <code>permittedActions</code>; a direct call gets <code>[PermissionDenied]</code>.</p>
+            </CardContent></Card>
+          </PanelSection>
 
-          <WhoAndWhere draft={draft} state={state} activity={activity} local={local} edit={edit} />
+          <PanelSection tab="who">
+            <WhoAndWhere draft={draft} state={state} activity={activity} local={local} edit={edit} />
+          </PanelSection>
 
-          <Card><CardHeader><CardTitle>04 · Limits</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
-            {!deployment.rateLimitsEnabled && <p className="text-sm text-muted-foreground">Rate limiting is off in this deployment, so there is nothing to lower.</p>}
-            <LimitRow label="Tool calls" description={`Every MCP request, per user and client. Deployment maximum ${deployment.requestLimit.permit} per ${deployment.requestLimit.windowSeconds} s.`}
-              value={draft.limits.requestsPerWindow} max={deployment.requestLimit.permit} disabled={!deployment.rateLimitsEnabled}
-              onChange={v => edit(s => { s.limits.requestsPerWindow = v; })} />
-            <LimitRow label="Message changes" description={`Resubmit, skip, report and classify. Deployment maximum ${deployment.mutationLimit.permit} per ${deployment.mutationLimit.windowSeconds} s.`}
-              value={draft.limits.mutationsPerWindow} max={deployment.mutationLimit.permit} disabled={!deployment.rateLimitsEnabled}
-              onChange={v => edit(s => { s.limits.mutationsPerWindow = v; })} />
-            <p className="text-xs text-muted-foreground">Leave a field empty to use the deployment's value. Raise the ceiling in <code>RateLimiting:Mcp</code> and <code>RateLimiting:McpMutations</code>.</p>
-          </CardContent></Card>
+          <PanelSection tab="limits">
+            <Card><CardHeader><CardTitle>04 · Limits</CardTitle></CardHeader><CardContent className="space-y-4 pt-4">
+              {!deployment.rateLimitsEnabled && <p className="text-sm text-muted-foreground">Rate limiting is off in this deployment, so there is nothing to lower.</p>}
+              <LimitRow label="Tool calls" description={`Every MCP request, per user and client. Deployment maximum ${deployment.requestLimit.permit} per ${deployment.requestLimit.windowSeconds} s.`}
+                value={draft.limits.requestsPerWindow} max={deployment.requestLimit.permit} disabled={!deployment.rateLimitsEnabled}
+                onChange={v => edit(s => { s.limits.requestsPerWindow = v; })} />
+              <LimitRow label="Message changes" description={`Resubmit, skip, report and classify. Deployment maximum ${deployment.mutationLimit.permit} per ${deployment.mutationLimit.windowSeconds} s.`}
+                value={draft.limits.mutationsPerWindow} max={deployment.mutationLimit.permit} disabled={!deployment.rateLimitsEnabled}
+                onChange={v => edit(s => { s.limits.mutationsPerWindow = v; })} />
+              <p className="text-xs text-muted-foreground">Leave a field empty to use the deployment's value. Raise the ceiling in <code>RateLimiting:Mcp</code> and <code>RateLimiting:McpMutations</code>.</p>
+            </CardContent></Card>
+          </PanelSection>
         </fieldset>
 
         <aside className="min-w-0 space-y-5">
-          <PreviewCard draft={draft} state={state} dirty={changes.length > 0} />
-          <ConnectCard draft={draft} state={state} />
-          <ActivityCard activity={activity} />
+          <PanelSection tab="permissions">
+            <PreviewCard draft={draft} state={state} dirty={changes.length > 0} />
+          </PanelSection>
+          <PanelSection tab="connect">
+            <ConnectCard draft={draft} state={state} />
+          </PanelSection>
+          <PanelSection tab="activity">
+            <ActivityCard activity={activity} />
+          </PanelSection>
         </aside>
       </div>
 
@@ -263,14 +293,12 @@ export default function McpAccessSettings() {
         </section>
       )}
 
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-        <p className="text-sm text-muted-foreground">Site Owner only · every change is audited · applies to all instances within 30 s, no restart</p>
-        <div className="flex items-center gap-2">
-          {changes.length > 0 && <span className="rounded-full bg-status-warning-50 px-2 font-mono text-xs text-status-warning-ink">{changes.length} unsaved change{changes.length === 1 ? "" : "s"}</span>}
-          <Button type="button" variant="outline" disabled={saving || changes.length === 0} onClick={() => { setDraft(clone(state.saved)); setReviewing(false); setError(undefined); }}>Discard changes</Button>
-          <Button type="submit" disabled={saving || loading || changes.length === 0}>Review changes</Button>
-        </div>
-      </footer>
+      {inPanel ? <PanelFooter>{actions}</PanelFooter> : (
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <p className="text-sm text-muted-foreground">Site Owner only · every change is audited · applies to all instances within 30 s, no restart</p>
+          {actions}
+        </footer>
+      )}
 
       <Modal isOpen={turnOffOpen} onClose={() => setTurnOffOpen(false)} size="md">
         <ModalHeader onClose={() => setTurnOffOpen(false)}>Turn off MCP access now?</ModalHeader>
@@ -320,11 +348,12 @@ function Banner({ state }: { state: McpState }) {
 
 function Tiles({ state, activity }: { state: McpState; activity?: McpActivity }) {
   const d = state.deployment;
-  const active = state.effective ?? state.saved;
-  const endpoint = d.mode === "disabled" ? { value: "Not set up", dot: "bg-ink-3", sub: "/mcp is not mapped" }
-    : !state.policyLoaded ? { value: "Unavailable", dot: "bg-status-danger", sub: "policy not loaded" }
-      : active.enabled ? { value: "Serving", dot: "bg-status-success", sub: `nimbus-operator ${d.serverVersion}` }
-        : { value: "Off", dot: "bg-status-warning", sub: "agents get 503 [Disabled]" };
+  const endpoint = {
+    notSetUp: { value: "Not set up", dot: "bg-ink-3", sub: "/mcp is not mapped" },
+    unavailable: { value: "Unavailable", dot: "bg-status-danger", sub: "policy not loaded" },
+    serving: { value: "Serving", dot: "bg-status-success", sub: `nimbus-operator ${d.serverVersion}` },
+    off: { value: "Off", dot: "bg-status-warning", sub: "agents get 503 [Disabled]" },
+  }[mcpEndpointState(state)];
   const signIn = d.mode === "entra" ? { value: "Entra ID", sub: d.tenantId ?? "" }
     : d.mode === "localDevelopment" ? { value: "Local developer", sub: "no sign-in · loopback only" } : { value: "—", sub: "no MCP app registration" };
   const byName = (list?: { name: string; count: number }[]) => (list ?? []).map(x => `${x.count} ${x.name}`).join(" · ");

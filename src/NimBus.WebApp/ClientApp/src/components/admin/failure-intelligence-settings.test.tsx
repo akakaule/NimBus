@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FailureIntelligenceSettings from "./failure-intelligence-settings";
+import { renderInPanel } from "../../test-utils/render-in-panel";
 
 const originalFetch = globalThis.fetch;
 const settings = { enabled: true, model: "jev-1.13.0", includeEventPayload: false, includeRecentFailureHistory: true,
@@ -97,5 +98,41 @@ describe("Failure intelligence settings", () => {
     await screen.findByLabelText("Model");
     expect(screen.queryByRole("link", { name: /Back to Admin/ })).toBeNull();
     expect(container.querySelector("form")?.className).not.toMatch(/fixed/);
+  });
+
+  it("offers no review until something changed", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(Response.json(state)) as typeof fetch;
+    render(<FailureIntelligenceSettings />);
+    await screen.findByLabelText("Model");
+
+    expect((screen.getByRole("button", { name: "Review changes" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // Spec 038 slice 2: inside the Settings panel frame.
+  describe("in the Settings panel", () => {
+    it("shows one tab at a time", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(Response.json(state)) as typeof fetch;
+      renderInPanel(<FailureIntelligenceSettings />, "failure-intelligence", "evidence");
+
+      expect(await screen.findByRole("switch", { name: "Include redacted event payload" })).toBeTruthy();
+      expect(screen.queryByLabelText("Model")).toBeNull();
+      expect(screen.getByText("What leaves NimBus")).toBeTruthy();
+    });
+
+    it("counts unsaved edits and reviews them from the footer, replacing the tabs", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(Response.json(state)) as typeof fetch;
+      const { onDirtyChange } = renderInPanel(<FailureIntelligenceSettings />, "failure-intelligence");
+      const model = await screen.findByLabelText("Model");
+
+      await userEvent.clear(model);
+      await userEvent.type(model, "jev-2");
+      expect(onDirtyChange).toHaveBeenLastCalledWith(1);
+
+      // The footer's submit button sits outside the form; it still submits it.
+      await userEvent.click(screen.getByRole("button", { name: "Review changes" }));
+      expect(screen.getByRole("region", { name: "Review settings" })).toBeTruthy();
+      expect(screen.queryByRole("tablist")).toBeNull();
+      expect(screen.queryByLabelText("Model")).toBeNull();
+    });
   });
 });

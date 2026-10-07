@@ -3,9 +3,9 @@
 Status: Phase 1 (Observe) is complete. It shipped in v4.0.0 (2026-09-28), and its exit criterion,
 a read-only pilot in a nonproduction Azure environment, passed on 2026-10-06; see the
 [Phase 1 plan](../../plan/2026-09-25-mcp-operator-phase1-plan.md). Phase 2a (Operate) is
-implemented on master (#209, #210, #211, 2026-10-06; see the
-[Phase 2a plan](../../plan/2026-10-06-mcp-operator-phase2a-plan.md)). Its stale-state and
-UI-vs-agent race tests pass; its delegated pilot in Azure waits for a release that contains it.
+complete. It shipped in v4.5.0 (2026-10-06), its stale-state and UI-vs-agent race tests pass, and
+its delegated pilot in a nonproduction Azure environment passed on 2026-10-06; see the
+[Phase 2a plan](../../plan/2026-10-06-mcp-operator-phase2a-plan.md).
 Phases 2b and 3 have not started. Design: rev 2, 2026-09-25.
 
 The interactive design is in [design.html](design.html). It covers the architecture, the 21-tool

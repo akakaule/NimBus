@@ -11,10 +11,12 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Results = Microsoft.AspNetCore.Http.Results;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -267,9 +269,17 @@ public class McpAccessSettingsTests
         var client = host.GetTestClient();
 
         using var get = await client.GetAsync("/api/admin/mcp/settings");
-        using var put = await client.PutAsJsonAsync("/api/admin/mcp/settings", new { settings = new { enabled = false } });
-
         Assert.AreEqual(HttpStatusCode.Forbidden, get.StatusCode);
+
+        // Without a token the antiforgery filter refuses before the Owner check: nothing to audit.
+        using (var unsigned = await client.PutAsJsonAsync("/api/admin/mcp/settings", new { settings = new { enabled = false } }))
+            Assert.AreEqual(HttpStatusCode.BadRequest, unsigned.StatusCode);
+        Assert.AreEqual(0, audit.Rows.Count);
+
+        // A non-Owner with a valid token reaches the Owner check, which refuses and audits.
+        var token = await GetStateAsync(client, TokenRoute);
+        using var put = await SendAsync(client, HttpMethod.Put, "/api/admin/mcp/settings", token,
+            new JsonObject { ["settings"] = new JsonObject { ["enabled"] = false } });
         Assert.AreEqual(HttpStatusCode.Forbidden, put.StatusCode);
         Assert.IsTrue(audit.Rows.Single() is { Type: MessageAuditType.UpdateMcpSettings, Denied: true });
     }
@@ -292,12 +302,10 @@ public class McpAccessSettingsTests
         settings["endpoints"]!["visibility"] = "allExcept";
         settings["endpoints"]!["hidden"] = new JsonArray("payrollendpoint");
 
-        // No antiforgery header.
+        // No antiforgery header: refused by [AutoValidateAntiforgeryToken], nothing saved.
         using (var missing = await client.PutAsJsonAsync("/api/admin/mcp/settings", new { revision = (string?)null, settings, confirmWidening = false }))
-        {
             Assert.AreEqual(HttpStatusCode.BadRequest, missing.StatusCode);
-            StringAssert.Contains(await missing.Content.ReadAsStringAsync(), "InvalidAntiforgeryToken");
-        }
+        Assert.IsNull((await store.GetMcpAccessSettings()).Revision);
 
         using var saved = await SendAsync(client, HttpMethod.Put, "/api/admin/mcp/settings", state,
             new JsonObject { ["revision"] = null, ["settings"] = settings, ["confirmWidening"] = false });
@@ -383,6 +391,8 @@ public class McpAccessSettingsTests
         Data = data,
     };
 
+    private const string TokenRoute = "/test/csrf-token";
+
     private static (McpAccessSettingsService Service, InMemoryMessageStore Store, McpAccessPolicyProvider Provider) CreateService(Action<McpAccessSettings>? seed = null)
     {
         var store = new InMemoryMessageStore();
@@ -398,9 +408,9 @@ public class McpAccessSettingsTests
         return (new McpAccessSettingsService(store, new TestCatalog(), options, TimeProvider.System, [provider]), store, provider);
     }
 
-    private static async Task<JsonNode> GetStateAsync(HttpClient client)
+    private static async Task<JsonNode> GetStateAsync(HttpClient client, string url = "/api/admin/mcp/settings")
     {
-        using var response = await client.GetAsync("/api/admin/mcp/settings");
+        using var response = await client.GetAsync(url);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
 
         // The test client keeps no cookies; the antiforgery token is bound to its cookie.
@@ -442,7 +452,8 @@ public class McpAccessSettingsTests
             services.AddScoped<McpAccessSettingsService>();
             services.AddScoped<McpActivityService>();
             services.AddTransient<NimBus.WebApp.ManagementApi.IMcpAccessApiController, McpAccessImplementation>();
-            services.AddControllers()
+            // As in production (Startup.Security): view features provide the antiforgery filters.
+            services.AddControllersWithViews()
                 .AddApplicationPart(typeof(McpAccessImplementation).Assembly)
                 .AddJsonOptions(opts =>
                 {
@@ -458,7 +469,13 @@ public class McpAccessSettingsTests
             });
             app.UseRouting();
             app.UseAuthorization();
-            app.UseEndpoints(e => e.MapControllers());
+            app.UseEndpoints(e =>
+            {
+                e.MapControllers();
+                // Test-only: lets a non-Owner obtain a token the Owner-only GET would not issue.
+                e.MapGet(TokenRoute, (HttpContext http, IAntiforgery antiforgery) =>
+                    Results.Json(new { csrfToken = antiforgery.GetAndStoreTokens(http).RequestToken }));
+            });
         }));
         return await builder.StartAsync();
     }

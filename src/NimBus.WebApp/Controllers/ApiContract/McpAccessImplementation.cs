@@ -15,7 +15,8 @@ namespace NimBus.WebApp.Controllers.ApiContract;
 
 /// <summary>
 /// Admin → MCP access API (Spec 037). Site Owner only, like every other <c>/api/admin/*</c>
-/// operation. Writes need the <c>X-NimBus-CSRF</c> antiforgery header and are always audited.
+/// operation. Writes are always audited; their <c>X-NimBus-CSRF</c> antiforgery token is checked
+/// by <c>[AutoValidateAntiforgeryToken]</c> on the generated controller before they get here.
 /// </summary>
 public class McpAccessImplementation : Api.IMcpAccessApiController
 {
@@ -80,8 +81,6 @@ public class McpAccessImplementation : Api.IMcpAccessApiController
             return new ForbidResult();
         }
 
-        if (await RejectAntiforgeryAsync() is { } rejected)
-            return rejected;
         if (body?.Settings is null)
             return Problem(400, "Invalid", ["A settings body is required."]);
 
@@ -110,8 +109,6 @@ public class McpAccessImplementation : Api.IMcpAccessApiController
             return new ForbidResult();
         }
 
-        if (await RejectAntiforgeryAsync() is { } rejected)
-            return rejected;
 
         var result = await _settings.TurnOffAsync(_authorization.GetCurrentUserName());
         if (result.Status != McpAccessSaveStatus.Saved)
@@ -182,19 +179,6 @@ public class McpAccessImplementation : Api.IMcpAccessApiController
             turnOff,
             changes = result.Changes.Select(c => new { text = c.Text, widens = c.Widens }),
         }));
-
-    private async Task<ActionResult?> RejectAntiforgeryAsync()
-    {
-        try
-        {
-            await _antiforgery.ValidateRequestAsync(_context);
-            return null;
-        }
-        catch (AntiforgeryValidationException)
-        {
-            return Problem(400, "InvalidAntiforgeryToken", ["Your security token expired. Reload the page and try again."]);
-        }
-    }
 
     private static ObjectResult Problem(int status, string code, IEnumerable<string> errors, IEnumerable<McpAccessChange>? changes = null)
         => new(new Api.McpAccessProblem

@@ -96,6 +96,17 @@ describe("MCP access settings", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/Another administrator changed these settings/);
   });
 
+  it("explains an expired security token", async () => {
+    mockFetch(Response.json(state()), Response.json(activity), new Response(null, { status: 400 }));
+    render(<McpAccessSettings />);
+
+    await userEvent.click(await screen.findByRole("switch", { name: "Mark reported" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review changes" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/security token expired/);
+  });
+
   it("turns MCP access off from the confirmation dialog", async () => {
     const off = { ...settings(), enabled: false };
     const fetchMock = mockFetch(Response.json(state()), Response.json(activity), Response.json(state({ saved: off, effective: off })));

@@ -275,6 +275,51 @@ public class OperatorActionToolsTests
         Assert.AreEqual("Transient", result.GetProperty("classification").GetProperty("category").GetString());
     }
 
+    [TestMethod]
+    public async Task Classify_rejects_an_attempt_from_another_endpoint_before_analysis()
+    {
+        var classifications = new FakeClassifications();
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true },
+            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
+        await SeedFailureAsync(host);
+        await host.Get<InMemoryMessageStore>().StoreMessage(new MessageEntity
+        {
+            EventId = EventId,
+            MessageId = "err-other",
+            EndpointId = "ErpEndpoint",
+            SessionId = Session,
+            MessageType = MessageType.ErrorResponse,
+        });
+        await using var client = await host.CreateClientAsync();
+
+        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
+        {
+            ["endpointId"] = Endpoint, ["eventId"] = EventId,
+            ["messageId"] = "err-other", ["idempotencyKey"] = Guid.NewGuid().ToString(),
+        });
+
+        AssertError(result, "MessageNotFound");
+        Assert.IsNull(classifications.LastAnalyze);
+    }
+
+    [TestMethod]
+    public async Task Classify_rejects_a_revoked_contributor_before_analysis()
+    {
+        var classifications = new FakeClassifications();
+        await using var host = await StartAsync(new McpTestHost.StubAccess { Contributor = true, ContributorFresh = false },
+            extra: services => services.AddSingleton<IOperatorClassificationSource>(classifications));
+        await SeedFailureAsync(host);
+        await using var client = await host.CreateClientAsync();
+
+        var result = await client.CallToolAsync("nimbus_classify_failure", new Dictionary<string, object?>
+        {
+            ["endpointId"] = Endpoint, ["eventId"] = EventId, ["idempotencyKey"] = Guid.NewGuid().ToString(),
+        });
+
+        AssertError(result, "PermissionDenied");
+        Assert.IsNull(classifications.LastAnalyze);
+    }
+
     private static Task<McpTestHost> StartLocalAsync(bool contributor)
         => StartAsync(new McpTestHost.StubAccess { Contributor = contributor });
 
@@ -320,6 +365,7 @@ public class OperatorActionToolsTests
         {
             EventId = EventId,
             MessageId = Attempt,
+            EndpointId = Endpoint,
             SessionId = Session,
             MessageType = MessageType.ErrorResponse,
             EnqueuedTimeUtc = DateTime.UtcNow,

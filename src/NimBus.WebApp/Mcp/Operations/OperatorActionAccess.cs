@@ -155,6 +155,14 @@ public sealed class OperatorActionAccess
         => HasScope(action) && MayChangeOn(endpointId)
            && await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
 
+    /// <summary>
+    /// Checks the action scope, the policy's change scope and Contributor against the current
+    /// endpoint ACL.
+    /// </summary>
+    public async Task<bool> MayFreshAsync(OperatorAction action, string endpointId)
+        => HasScope(action) && MayChangeOn(endpointId)
+           && await _authorization.HasRoleFreshAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
+
     private bool PolicyAllows(OperatorAction action)
     {
         var policy = _policies.Current;

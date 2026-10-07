@@ -3,6 +3,7 @@ import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
+import AuditsList from "./audits-list";
 
 // A subscription-admin row records which operation ran in `data`; the Audit Log
 // has to surface it, otherwise every operator action reads as a bare
@@ -49,7 +50,6 @@ async function renderAudits(audits: api.AuditEntry[]) {
     audits,
     continuationToken: undefined,
   });
-  const { default: AuditsList } = await import("./audits-list");
   render(
     <MemoryRouter>
       <AuditsList />

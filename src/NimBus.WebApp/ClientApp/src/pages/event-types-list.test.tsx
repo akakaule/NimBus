@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "api-client";
+import EventTypesList from "./event-types-list";
 
 const mocks = vi.hoisted(() => ({
   getEventTypes: vi.fn(),
@@ -60,8 +61,6 @@ afterEach(() => {
 
 describe("EventTypesList", () => {
   it("always renders the table with endpoint names and no view switcher", async () => {
-    const { default: EventTypesList } = await import("./event-types-list");
-
     render(
       <MemoryRouter initialEntries={["/EventTypes?viewMode=cards"]}>
         <EventTypesList />
@@ -82,8 +81,6 @@ describe("EventTypesList", () => {
   });
 
   it("names the platform catalog package in the subtitle once the status has loaded", async () => {
-    const { default: EventTypesList } = await import("./event-types-list");
-
     render(
       <MemoryRouter initialEntries={["/EventTypes"]}>
         <EventTypesList />

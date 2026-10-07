@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import * as api from "api-client";
+import EventTypeDetails from "./event-type-details";
 
 const mocks = vi.hoisted(() => ({
   getEventTypeDetails: vi.fn(),
@@ -58,8 +59,6 @@ afterEach(() => {
 
 describe("EventTypeDetails", () => {
   it("does not show the source repository link", async () => {
-    const { default: EventTypeDetails } = await import("./event-type-details");
-
     render(
       <MemoryRouter initialEntries={["/EventTypes/Details/orders.placed"]}>
         <Routes>

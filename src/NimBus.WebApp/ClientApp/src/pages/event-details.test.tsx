@@ -3,6 +3,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
+import EventDetails, { enrichBlockedItems } from "./event-details";
 
 // Spec 005 (FR-042): histories must flow from EventDetails state into the
 // MessageListing `messages` prop. The captured-props mock asserts the
@@ -104,7 +105,6 @@ describe("enrichBlockedItems", () => {
   }
 
   it("fetches every blocked item concurrently instead of one at a time", async () => {
-    const { enrichBlockedItems } = await import("./event-details");
     const items = [
       blocked("e0", "Failed"),
       blocked("e1", "Deadlettered"),
@@ -129,7 +129,6 @@ describe("enrichBlockedItems", () => {
   });
 
   it("preserves page order and pairs each message with its status", async () => {
-    const { enrichBlockedItems } = await import("./event-details");
     const items = [
       blocked("e0", "Failed"),
       blocked("e1", "Deadlettered"),
@@ -164,7 +163,6 @@ describe("enrichBlockedItems", () => {
   });
 
   it("drops items whose detail fetch resolved to nothing, keeping the rest in order", async () => {
-    const { enrichBlockedItems } = await import("./event-details");
     const items = [
       blocked("keep-0", "Failed"),
       blocked("drop", "Failed"),
@@ -189,10 +187,6 @@ describe("enrichBlockedItems", () => {
 
 describe("EventDetails -> MessageListing wiring (spec 005)", () => {
   it("forwards the fetched history into the MessageListing messages prop", async () => {
-    // Import after mocks are wired so EventDetails picks up the stubbed
-    // api-client and MessageListing.
-    const { default: EventDetails } = await import("./event-details");
-
     render(
       <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>
         <Routes>
@@ -225,8 +219,6 @@ describe("EventDetails independent-request parallelization", () => {
         resolveEvent = resolve;
       }),
     );
-
-    const { default: EventDetails } = await import("./event-details");
 
     render(
       <MemoryRouter initialEntries={["/Message/Index/ep-1/evt-1/0"]}>

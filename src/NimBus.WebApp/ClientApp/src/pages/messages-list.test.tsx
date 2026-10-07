@@ -3,6 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import * as api from "api-client";
 import type { ITableRow } from "components/data-table";
+import MessagesList from "./messages-list";
 
 // A manually-controlled queue of pending searches. Every postMessagesSearch call
 // parks a deferred whose promise the test resolves by hand, so we can make an
@@ -92,8 +93,6 @@ afterEach(() => {
 
 describe("MessagesList out-of-order response guard", () => {
   it("keeps the newer response when a slower earlier request resolves last", async () => {
-    const { default: MessagesList } = await import("./messages-list");
-
     render(
       <MemoryRouter initialEntries={["/messages"]}>
         <MessagesList />
@@ -138,7 +137,6 @@ describe("MessagesList type column", () => {
   };
 
   const renderWith = async (messageType: string) => {
-    const { default: MessagesList } = await import("./messages-list");
     render(
       <MemoryRouter initialEntries={["/messages"]}>
         <MessagesList />

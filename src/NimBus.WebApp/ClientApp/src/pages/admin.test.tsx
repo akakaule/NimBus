@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import Admin from "./admin";
 
 const { storageProviderMock } = vi.hoisted(() => ({
   storageProviderMock: vi.fn(),
@@ -32,7 +33,6 @@ afterEach(() => {
 describe("Admin storage tab", () => {
   it("is available for Cosmos DB storage", async () => {
     storageProviderMock.mockReturnValue("Cosmos DB");
-    const { default: Admin } = await import("./admin");
 
     render(<Admin />);
 
@@ -44,7 +44,6 @@ describe("Admin storage tab", () => {
 
   it("is not available for SQL Server storage", async () => {
     storageProviderMock.mockReturnValue("SQL Server");
-    const { default: Admin } = await import("./admin");
 
     render(<Admin />);
 

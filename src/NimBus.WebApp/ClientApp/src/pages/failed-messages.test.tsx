@@ -13,6 +13,9 @@ import moment from "moment";
 import * as api from "api-client";
 import type { ITableRow } from "components/data-table";
 import { ToastProvider } from "components/ui";
+// Imported once with the file (the mocks are hoisted above it), so no test's timeout pays for
+// transforming the page's module graph.
+import FailedMessages from "./failed-messages";
 
 const mocks = vi.hoisted(() => ({
   histogram: vi.fn(),
@@ -22,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   sessions: vi.fn(),
   resubmit: vi.fn(),
   skip: vi.fn(),
+  // When the panel first shows this text, it presses Next from a layout effect.
+  nextOnShow: undefined as string | undefined,
 }));
 
 const captured: { rows?: ITableRow[] } = {};
@@ -72,51 +77,64 @@ vi.mock("components/failed-messages/failed-histogram", () => ({
 }));
 
 // The panel's own loading is covered by its tests; here it only shows what it was opened on.
-vi.mock("components/failed-messages/failure-detail-panel", () => ({
-  default: (props: {
-    endpointId: string;
-    eventId: string;
-    position?: { index: number; total: number };
-    onNext?: () => void;
-    onPrevious?: () => void;
-    onClose: () => void;
-    onAct: (action: "Resubmit" | "Skip", e: api.Event) => void;
-  }) => (
-    <div data-testid="panel">
-      <span>
-        panel {props.endpointId}/{props.eventId}{" "}
-        {props.position
+vi.mock("components/failed-messages/failure-detail-panel", async () => {
+  const { useLayoutEffect } =
+    await vi.importActual<typeof import("react")>("react");
+  return {
+    default: function PanelStub(props: {
+      endpointId: string;
+      eventId: string;
+      position?: { index: number; total: number };
+      onNext?: () => void;
+      onPrevious?: () => void;
+      onClose: () => void;
+      onAct: (action: "Resubmit" | "Skip", e: api.Event) => void;
+    }) {
+      const text = `panel ${props.endpointId}/${props.eventId} ${
+        props.position
           ? `${props.position.index} of ${props.position.total}`
-          : "not listed"}
-      </span>
-      <button type="button" disabled={!props.onNext} onClick={props.onNext}>
-        panel-next
-      </button>
-      <button
-        type="button"
-        disabled={!props.onPrevious}
-        onClick={props.onPrevious}
-      >
-        panel-previous
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          props.onAct(
-            "Resubmit",
-            new api.Event({
-              eventId: props.eventId,
-              endpointId: props.endpointId,
-              lastMessageId: `m-${props.eventId}`,
-            }),
-          )
-        }
-      >
-        panel-resubmit
-      </button>
-    </div>
-  ),
-}));
+          : "not listed"
+      }`;
+      // A layout effect runs after a commit but before that commit's passive effects: where a
+      // real click lands when the page commits outside act on a busy machine.
+      useLayoutEffect(() => {
+        if (text !== mocks.nextOnShow) return;
+        mocks.nextOnShow = undefined;
+        props.onNext?.();
+      });
+      return (
+        <div data-testid="panel">
+          <span>{text}</span>
+          <button type="button" disabled={!props.onNext} onClick={props.onNext}>
+            panel-next
+          </button>
+          <button
+            type="button"
+            disabled={!props.onPrevious}
+            onClick={props.onPrevious}
+          >
+            panel-previous
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              props.onAct(
+                "Resubmit",
+                new api.Event({
+                  eventId: props.eventId,
+                  endpointId: props.endpointId,
+                  lastMessageId: `m-${props.eventId}`,
+                }),
+              )
+            }
+          >
+            panel-resubmit
+          </button>
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock("api-client", async () => {
   const actual =
@@ -181,8 +199,7 @@ const listItems = () =>
     "listitem",
   );
 
-const renderPage = async (url = "/Failed") => {
-  const { default: FailedMessages } = await import("./failed-messages");
+const renderPage = (url = "/Failed") =>
   render(
     <ToastProvider>
       <MemoryRouter initialEntries={[url]}>
@@ -190,7 +207,6 @@ const renderPage = async (url = "/Failed") => {
       </MemoryRouter>
     </ToastProvider>,
   );
-};
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -215,12 +231,13 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   captured.rows = undefined;
+  mocks.nextOnShow = undefined;
   vi.clearAllMocks();
 });
 
 describe("Failed messages page", () => {
   it("loads the chart for the range and the list within it", async () => {
-    await renderPage();
+    renderPage();
 
     await waitFor(() => expect(listItems()).toHaveLength(3));
     const histogramRequest = mocks.histogram.mock
@@ -235,7 +252,7 @@ describe("Failed messages page", () => {
   });
 
   it("shows the table when View as is Table", async () => {
-    await renderPage("/Failed?display=table");
+    renderPage("/Failed?display=table");
 
     await waitFor(() => expect(captured.rows?.length).toBe(3));
     expect(captured.rows?.[0].route).toBe("/Message/Index/Crm/e1/0");
@@ -243,7 +260,7 @@ describe("Failed messages page", () => {
   });
 
   it("switches between items and table through the View as pill without reloading", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(listItems()).toHaveLength(3));
 
     fireEvent.click(screen.getByRole("button", { name: "View as" }));
@@ -260,7 +277,7 @@ describe("Failed messages page", () => {
   });
 
   it("clears a brushed window when the current time preset is selected again", async () => {
-    await renderPage(
+    renderPage(
       "/Failed?windowStart=2026-09-25T06:00:00.000Z&windowEnd=2026-09-25T07:00:00.000Z",
     );
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
@@ -279,7 +296,7 @@ describe("Failed messages page", () => {
   });
 
   it("refreshes an unchanged search", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
 
     fireEvent.keyDown(screen.getByLabelText("Search failures"), {
@@ -300,7 +317,7 @@ describe("Failed messages page", () => {
       .mockResolvedValue(
         new api.SearchResponse({ events: [event("e2", "Erp", "s2")] }),
       );
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(listItems()).toHaveLength(2));
 
     fireEvent.click(
@@ -313,7 +330,7 @@ describe("Failed messages page", () => {
   });
 
   it("narrows the list, but not the chart, to a selected bar", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText("select-bar"));
@@ -331,7 +348,7 @@ describe("Failed messages page", () => {
   });
 
   it("narrows the list to a brushed range, and clears it again", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText("brush-range"));
@@ -356,7 +373,7 @@ describe("Failed messages page", () => {
   });
 
   it("reads a legacy bar link as the list window", async () => {
-    await renderPage("/Failed?period=7d&bucket=2026-09-25T06:00:00.000Z");
+    renderPage("/Failed?period=7d&bucket=2026-09-25T06:00:00.000Z");
 
     await waitFor(() => expect(mocks.search).toHaveBeenCalled());
     const request = mocks.search.mock.calls[0][0] as api.FailedSearchRequest;
@@ -369,7 +386,7 @@ describe("Failed messages page", () => {
   });
 
   it("charts a custom range and lists the failures in its whole buckets", async () => {
-    await renderPage(
+    renderPage(
       "/Failed?rangeStart=2026-09-20T08:10:00.000Z&rangeEnd=2026-09-21T08:10:00.000Z",
     );
 
@@ -392,7 +409,7 @@ describe("Failed messages page", () => {
   });
 
   it("searches IDs and error text from the one search box", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
 
     const box = screen.getByLabelText("Search failures");
@@ -411,7 +428,7 @@ describe("Failed messages page", () => {
   });
 
   it("filters by status from a legend tile", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(mocks.search).toHaveBeenCalledTimes(1));
 
     const totals = screen.getByLabelText("Totals");
@@ -428,7 +445,7 @@ describe("Failed messages page", () => {
   });
 
   it("asks each endpoint once for the sessions its failures block", async () => {
-    await renderPage();
+    renderPage();
 
     await waitFor(() => expect(mocks.sessions).toHaveBeenCalledTimes(2));
     const calls = Object.fromEntries(
@@ -439,7 +456,7 @@ describe("Failed messages page", () => {
   });
 
   it("groups failures by error in the By error view", async () => {
-    await renderPage("/Failed?view=error");
+    renderPage("/Failed?view=error");
 
     await waitFor(() => expect(mocks.errorGroups).toHaveBeenCalledTimes(1));
     expect(mocks.search).not.toHaveBeenCalled();
@@ -447,7 +464,7 @@ describe("Failed messages page", () => {
   });
 
   it("drills from the By endpoint view into one endpoint's failures", async () => {
-    await renderPage("/Failed?view=endpoint");
+    renderPage("/Failed?view=endpoint");
     await waitFor(() => expect(screen.getByText("Crm")).toBeTruthy());
 
     fireEvent.click(
@@ -462,7 +479,7 @@ describe("Failed messages page", () => {
   });
 
   it("opens a failure in the details panel and closes it with Escape", async () => {
-    await renderPage();
+    renderPage();
     await waitFor(() => expect(listItems()).toHaveLength(3));
 
     fireEvent.click(
@@ -480,7 +497,7 @@ describe("Failed messages page", () => {
   });
 
   it("opens the panel from a deep link and steps through the list", async () => {
-    await renderPage("/Failed?open=Crm/e3");
+    renderPage("/Failed?open=Crm/e3");
 
     expect(await screen.findByText("panel Crm/e3 3 of 3")).toBeTruthy();
     expect(
@@ -503,7 +520,7 @@ describe("Failed messages page", () => {
       .mockResolvedValueOnce(
         new api.SearchResponse({ events: [event("e3", "Crm", "s3")] }),
       );
-    await renderPage("/Failed?open=Erp/e2");
+    renderPage("/Failed?open=Erp/e2");
     expect(await screen.findByText("panel Erp/e2 2 of 2")).toBeTruthy();
 
     fireEvent.click(screen.getByText("panel-next"));
@@ -511,6 +528,25 @@ describe("Failed messages page", () => {
     expect(await screen.findByText("panel Crm/e3 3 of 3")).toBeTruthy();
     const request = mocks.search.mock.calls[1][0] as api.FailedSearchRequest;
     expect(request.continuationToken).toBe("page-2");
+  });
+
+  it("loads the next page when Next lands before the page's effects have run", async () => {
+    mocks.search
+      .mockResolvedValueOnce(
+        new api.SearchResponse({
+          events: [event("e1", "Crm", "s1"), event("e2", "Erp", "s2")],
+          continuationToken: "page-2",
+        }),
+      )
+      .mockResolvedValueOnce(
+        new api.SearchResponse({ events: [event("e3", "Crm", "s3")] }),
+      );
+    mocks.nextOnShow = "panel Erp/e2 2 of 2";
+
+    renderPage("/Failed?open=Erp/e2");
+
+    expect(await screen.findByText("panel Crm/e3 3 of 3")).toBeTruthy();
+    expect(mocks.search).toHaveBeenCalledTimes(2);
   });
 
   it.each(["close", "previous"])(
@@ -528,7 +564,7 @@ describe("Failed messages page", () => {
           }),
         )
         .mockReturnValueOnce(nextPage);
-      await renderPage("/Failed?open=Erp/e2");
+      renderPage("/Failed?open=Erp/e2");
       expect(await screen.findByText("panel Erp/e2 2 of 2")).toBeTruthy();
 
       fireEvent.click(screen.getByText("panel-next"));
@@ -555,7 +591,7 @@ describe("Failed messages page", () => {
   );
 
   it("resubmits from the panel and moves on to the next failure", async () => {
-    await renderPage("/Failed?open=Crm/e1");
+    renderPage("/Failed?open=Crm/e1");
     expect(await screen.findByText("panel Crm/e1 1 of 3")).toBeTruthy();
 
     fireEvent.click(screen.getByText("panel-resubmit"));
@@ -581,7 +617,7 @@ describe("Failed messages page", () => {
           events: [event("e2", "Erp", "s2"), event("e3", "Crm", "s3")],
         }),
       );
-    await renderPage("/Failed?display=table");
+    renderPage("/Failed?display=table");
     await waitFor(() => expect(captured.rows?.length).toBe(3));
 
     const resubmit = captured.rows![0].bodyActions!.find(

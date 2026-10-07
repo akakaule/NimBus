@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Redesign Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F2EA; --fg:#1A1814; --card:#FAF8F2; --muted:#ECE7DA; --muted-fg:#4A463D; --faint:#8A8475;
+  --border:#E5DFCE; --border-strong:#C9C1AB;
+  --primary:#E8743C; --primary-tint:#FCEEDD; --primary-ink:#A94B1D;
+  --ok:#2E8F5E; --ok-50:#DCEFE4; --ok-ink:#1F6B45;
+  --warn:#C98A1B; --warn-50:#F6E7C7; --warn-ink:#8A5E0F;
+  --bad:#C2412E; --bad-50:#F4D9D3; --bad-ink:#8E2C1F;
+  --side:#14120F; --side-fg:#D9D3C4; --side-dim:#7D776A; --side-active:#2A1B12;
+  --sans:Manrope,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F0E0B; --fg:#F4F2EA; --card:#1A1814; --muted:#2A2620; --muted-fg:#A8A293; --faint:#7D776A;
+    --border:#2A2620; --border-strong:#3D3830; --primary-tint:#3A2216; --primary-ink:#F3C597;
+    --ok-50:#16301F; --ok-ink:#9FD8B5; --warn-50:#33260C; --warn-ink:#F0CF8A; --bad-50:#3A1712; --bad-ink:#F2B2A6;
+    --side:#0A0907;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F0E0B; --fg:#F4F2EA; --card:#1A1814; --muted:#2A2620; --muted-fg:#A8A293; --faint:#7D776A;
+  --border:#2A2620; --border-strong:#3D3830; --primary-tint:#3A2216; --primary-ink:#F3C597;
+  --ok-50:#16301F; --ok-ink:#9FD8B5; --warn-50:#33260C; --warn-ink:#F0CF8A; --bad-50:#3A1712; --bad-ink:#F2B2A6;
+  --side:#0A0907;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.mono{font-family:var(--mono)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.appnav{background:var(--side);color:var(--side-fg);padding:20px 12px;display:flex;flex-direction:column;gap:4px}
+.brand{font-weight:700;font-size:22px;color:#fff;padding:0 10px 18px;border-bottom:1px solid #26221C;margin-bottom:10px}
+.brand b{color:var(--primary)}
+.appnav .grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--side-dim);padding:14px 10px 6px}
+.appnav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--side-fg);text-decoration:none;font-size:14.5px}
+.appnav a.on{background:var(--side-active);color:var(--primary)}
+.appnav .pill{margin-left:auto;font-family:var(--mono);font-size:10px;background:#3A1D12;color:#F0A27C;border-radius:999px;padding:1px 7px}
+.appnav .count{margin-left:auto;font-size:11px;background:var(--bad);color:#fff;border-radius:999px;padding:0 7px;font-weight:600}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.topbar{height:60px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 28px}
+.crumbs{font-family:var(--mono);font-size:13px;color:var(--muted-fg)}
+.crumbs b{color:var(--fg);font-weight:500}
+.search{margin-left:auto;border:1px solid var(--border);background:var(--card);border-radius:10px;padding:7px 12px;color:var(--faint);min-width:300px;font-size:13px}
+.theme-btn{border:1px solid var(--border);background:var(--card);border-radius:10px;width:36px;height:36px;cursor:pointer}
+
+/* ---------- admin layout ---------- */
+.admin{display:grid;grid-template-columns:260px 1fr;gap:0;flex:1;min-height:0}
+.subnav{border-right:1px solid var(--border);padding:22px 14px;position:sticky;top:0;align-self:start;height:calc(100vh - 60px);overflow:auto}
+.subnav h1{font-size:22px;margin:0 8px 2px;font-weight:700}
+.subnav .sub{font-size:12.5px;color:var(--muted-fg);margin:0 8px 16px}
+.subnav .grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--faint);padding:14px 8px 6px}
+.subnav button{display:flex;align-items:center;gap:8px;width:100%;white-space:nowrap;text-align:left;border:0;background:none;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--fg)}
+.subnav button:hover{background:var(--muted)}
+.subnav button.on{background:var(--primary-tint);color:var(--primary-ink);font-weight:600;box-shadow:inset 2px 0 0 var(--primary)}
+.subnav .state{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--border-strong)}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+.subnav .danger{color:var(--bad)}
+.subnav hr{border:0;border-top:1px solid var(--border);margin:12px 6px}
+
+.content{padding:28px 36px 60px;min-width:0;max-width:1240px}
+.phead{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px}
+.phead h2{font-size:24px;margin:0;font-weight:700}
+.phead p{margin:4px 0 0;color:var(--muted-fg);max-width:720px}
+.phead .actions{margin-left:auto;display:flex;gap:8px;flex-shrink:0}
+.btn{border:1px solid var(--border-strong);background:var(--card);border-radius:9px;padding:7px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+.badge.ok{background:var(--ok-50);color:var(--ok-ink)}
+.badge.warn{background:var(--warn-50);color:var(--warn-ink)}
+.badge.bad{background:var(--bad-50);color:var(--bad-ink)}
+.badge.off{background:var(--muted);color:var(--muted-fg)}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px}
+.card .hd{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.card .hd h3{margin:0;font-size:16px;font-weight:600}
+.card .bd{padding:16px 18px}
+
+/* overview */
+.attn{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:26px}
+.attn .card{padding:14px 16px;display:flex;flex-direction:column;gap:4px;border-left:3px solid var(--border-strong)}
+.attn .card.warn{border-left-color:var(--warn)} .attn .card.bad{border-left-color:var(--bad)} .attn .card.ok{border-left-color:var(--ok)}
+.attn .big{font-size:22px;font-weight:700}
+.attn a{color:var(--primary-ink);font-size:13px;text-decoration:none;font-weight:600;margin-top:auto;cursor:pointer}
+.section-title{display:flex;align-items:baseline;gap:10px;margin:22px 0 10px}
+.section-title h3{margin:0;font-size:15px;font-weight:600}
+.section-title span{color:var(--faint);font-size:12.5px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;display:flex;flex-direction:column;gap:6px;text-align:left;transition:border-color .12s,transform .12s}
+.tile:hover{border-color:var(--primary);transform:translateY(-1px)}
+.tile .row{display:flex;align-items:center;gap:8px}
+.tile h4{margin:0;font-size:15px;font-weight:600}
+.tile p{margin:0;color:var(--muted-fg);font-size:13px}
+.tile .meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px}
+.tile .row .badge{margin-left:auto}
+
+/* section detail */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
+.kpi .v{font-size:20px;font-weight:700;margin-top:2px}
+.kpi .s{font-size:12.5px;color:var(--muted-fg)}
+.split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.anchors{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;position:sticky;top:0;background:var(--bg);z-index:2;padding-top:4px}
+.anchors button{border:0;background:none;padding:8px 12px;cursor:pointer;color:var(--muted-fg);border-bottom:2px solid transparent;font-size:13.5px}
+.anchors button.on{color:var(--fg);border-bottom-color:var(--primary);font-weight:600}
+.setting{display:flex;gap:16px;padding:12px 0;border-bottom:1px dashed var(--border)}
+.setting:last-child{border-bottom:0}
+.setting .lbl{flex:1}
+.setting .lbl b{font-weight:600;display:block}
+.setting .lbl span{color:var(--muted-fg);font-size:13px}
+.toggle{width:38px;height:22px;border-radius:999px;background:var(--ok);position:relative;flex-shrink:0;margin-top:2px}
+.toggle::after{content:"";position:absolute;top:3px;right:3px;width:16px;height:16px;border-radius:50%;background:#fff}
+.toggle.off{background:var(--border-strong)} .toggle.off::after{right:auto;left:3px}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 12px;font-size:13px;margin-top:8px}
+.kv dt{color:var(--muted-fg)} .kv dd{margin:0;font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.access li{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+.access li:last-child{border-bottom:0}
+.access ul{list-style:none;margin:0;padding:0}
+.access .t{font-family:var(--mono);font-size:12.5px}
+.access .why{margin-left:auto;color:var(--faint);font-size:12px;white-space:nowrap}
+.yes{color:var(--ok)} .no{color:var(--bad)}
+.seg{display:flex;background:var(--muted);border-radius:9px;padding:3px;gap:2px;margin-bottom:10px;flex-wrap:wrap}
+.seg button{border:0;background:none;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--muted-fg)}
+.seg button.on{background:var(--card);color:var(--fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+/* ops */
+.rail{border-left:3px solid var(--border-strong);padding-left:14px;margin-bottom:22px}
+.rail.ok{border-color:var(--ok)} .rail.warn{border-color:var(--warn)} .rail.bad{border-color:var(--bad)} .rail.info{border-color:#3A6FB0}
+.rail h3{margin:0 0 2px;font-size:16px;display:flex;align-items:center;gap:10px}
+.rail p{margin:0 0 10px;color:var(--muted-fg);font-size:13px}
+.oplist{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.op{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.op b{font-weight:600}
+.op span{color:var(--muted-fg);font-size:12.5px}
+.op .go{margin-top:6px;align-self:flex-start;font-size:12.5px;padding:4px 10px}
+
+/* notes */
+.note{display:none;background:#FFF6CC;color:#4A3B00;border:1px solid #E6CF5C;border-radius:8px;font-size:12px;padding:6px 9px;margin:6px 0;line-height:1.4}
+body.notes .note{display:block}
+:root[data-theme="dark"] .note{background:#2E2706;color:#F4E7A6;border-color:#6B5A10}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .note{background:#2E2706;color:#F4E7A6;border-color:#6B5A10}}
+.notes-btn{border:1px solid var(--border);background:var(--card);border-radius:10px;padding:7px 12px;cursor:pointer;font-size:12.5px}
+body.notes .notes-btn{background:#FFF6CC;color:#4A3B00;border-color:#E6CF5C}
+
+/* ---------- responsive ---------- */
+@media (max-width:1100px){.split{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}.appnav{display:none}
+  .admin{grid-template-columns:1fr}
+  .subnav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border);padding:14px 16px;display:flex;gap:6px;overflow-x:auto;white-space:nowrap}
+  .subnav h1,.subnav .sub,.subnav .grp,.subnav hr{display:none}
+  .subnav button{width:auto;flex-shrink:0;border:1px solid var(--border)}
+  .content{padding:20px 16px 48px}
+  .attn{grid-template-columns:1fr}
+  .search{display:none}
+  .topbar{padding:0 16px}
+  .phead{flex-wrap:wrap}.phead .actions{margin-left:0}
+}
+</style>
+</head>
+<body class="notes">
+<div class="shell">
+  <!-- app sidebar (unchanged) -->
+  <nav class="appnav" aria-label="App">
+    <div class="brand">☁ NimBus<b>.</b></div>
+    <div class="grp">OBSERVE</div>
+    <a>▤ Endpoints</a><a>≡ Event Types</a><a>✉ Messages</a><a>⚠ Failed <span class="count">29</span></a>
+    <a>▥ Metrics</a><a>↯ Flow <span class="pill">LIVE</span></a><a>∿ Heartbeat</a><a>▭ Monitor <span class="pill">WALL</span></a>
+    <div class="grp">DIAGNOSE</div>
+    <a>◷ Insights</a><a>▦ Audit Log</a>
+    <div class="grp">MANAGE</div>
+    <a class="on">✺ Admin</a><a>⊡ Access Control</a>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs" id="crumbs"><b>Admin</b></div>
+      <div class="search">⌕ Jump to endpoint, event, session or admin setting…  <span class="mono">Ctrl K</span></div>
+      <button class="notes-btn" id="notesBtn" title="Show or hide design notes">Design notes</button>
+      <button class="theme-btn" id="themeBtn" title="Toggle theme">◐</button>
+    </header>
+
+    <div class="admin">
+      <!-- NEW: grouped, URL-addressable sub-navigation replaces the 9-tab strip -->
+      <aside class="subnav" aria-label="Admin sections">
+        <h1>Admin</h1>
+        <p class="sub">Site Owner settings &amp; operations</p>
+        <button data-view="overview" class="on">⌂ Overview</button>
+
+        <div class="grp">OPERATE</div>
+        <button data-view="ops">↻ Message operations</button>
+        <button data-view="endpoints">⏻ Endpoint controls <span class="state"><span class="dot warn"></span>1 off</span></button>
+        <button data-view="health">♡ Health <span class="state"><span class="dot ok"></span></span></button>
+
+        <div class="grp">TOPOLOGY</div>
+        <button data-view="servicebus">◇ Service Bus</button>
+        <button data-view="storage">▣ Storage</button>
+
+        <div class="grp">FEATURES</div>
+        <button data-view="mcp">⌘ MCP access <span class="state"><span class="dot ok"></span>on</span></button>
+        <button data-view="fi">✧ Failure intelligence <span class="state"><span class="dot"></span>off</span></button>
+        <button data-view="sim">▷ Simulation <span class="state"><span class="dot"></span>off</span></button>
+        <button data-view="audit">▦ Audit logging <span class="state"><span class="dot ok"></span>on</span></button>
+
+        <hr>
+        <button data-view="danger" class="danger">⚠ Danger zone</button>
+        <div class="note" style="margin-top:14px">Grouped by intent: <b>Operate</b> (day-2 actions), <b>Topology</b> (infra), <b>Features</b> (opt-in capabilities with on/off state). Each item is a route — <span class="mono">/Admin/mcp</span> — so it is deep-linkable and survives a refresh.</div>
+      </aside>
+
+      <main class="content" id="content"></main>
+    </div>
+  </div>
+</div>
+
+<template id="v-overview">
+  <div class="phead">
+    <div><h2>Overview</h2><p>What needs attention, and the state of every opt-in feature. Pick a card to manage it.</p></div>
+  </div>
+  <div class="note">New landing page. Replaces "Topology" as the default tab — an owner opening Admin usually wants status first, not an AsyncAPI export.</div>
+
+  <div class="eyebrow" style="margin-bottom:8px">Needs attention</div>
+  <div class="attn">
+    <div class="card bad"><span class="eyebrow">Failed messages</span><span class="big">29</span><span style="color:var(--muted-fg);font-size:13px">across 3 endpoints · oldest 2 h</span><a data-go="ops">Open message operations →</a></div>
+    <div class="card warn"><span class="eyebrow">Endpoint controls</span><span class="big">1 endpoint receiving off</span><span style="color:var(--muted-fg);font-size:13px">erp-adapter · disabled 40 min ago</span><a data-go="endpoints">Review →</a></div>
+    <div class="card ok"><span class="eyebrow">Health</span><span class="big">All services up</span><span style="color:var(--muted-fg);font-size:13px">Resolver heartbeat 12 s ago</span><a data-go="health">Details →</a></div>
+  </div>
+
+  <div class="section-title"><h3>Features</h3><span>Opt-in capabilities — status at a glance</span></div>
+  <div class="tiles">
+    <button class="tile" data-go="mcp"><div class="row"><h4>MCP access</h4><span class="badge ok">● Serving</span></div><p>AI agents read health and recover failures via <span class="mono">/mcp</span>.</p><div class="meta">2 agent actions · 0 refused · 24 h</div></button>
+    <button class="tile" data-go="fi"><div class="row"><h4>Failure intelligence</h4><span class="badge off">○ Off</span></div><p>On-demand advisory analysis of failed messages.</p><div class="meta">No provider configured</div></button>
+    <button class="tile" data-go="sim"><div class="row"><h4>Simulation</h4><span class="badge off">○ Off</span></div><p>Publish synthetic traffic from the Simulate page.</p><div class="meta">Allowed in this environment</div></button>
+    <button class="tile" data-go="audit"><div class="row"><h4>Audit logging</h4><span class="badge ok">● On</span></div><p>Which admin and operator actions are recorded.</p><div class="meta">14 of 16 categories · 90-day retention</div></button>
+  </div>
+
+  <div class="section-title"><h3>Topology</h3><span>Service Bus &amp; storage</span></div>
+  <div class="tiles">
+    <button class="tile" data-go="servicebus"><div class="row"><h4>Service Bus</h4><span class="badge warn">2 drift</span></div><p>Subscriptions, catalog audit and AsyncAPI export.</p><div class="meta">12 endpoints · 41 subscriptions</div></button>
+    <button class="tile" data-go="storage"><div class="row"><h4>Storage</h4><span class="badge ok">Cosmos DB</span></div><p>Containers and throughput. Hidden on SQL Server.</p><div class="meta">12 containers</div></button>
+  </div>
+</template>
+
+<template id="v-mcp">
+  <div class="phead">
+    <div><div style="display:flex;align-items:center;gap:10px"><h2>MCP access</h2><span class="badge ok">● Serving</span></div>
+    <p>Let AI agents check endpoint health, investigate failed messages and — for signed-in Contributors — recover them through <span class="mono">/mcp</span>. Settings can only narrow what Entra scopes and NimBus roles allow.</p></div>
+    <div class="actions"><button class="btn danger">Turn off now</button></div>
+  </div>
+  <div class="note">Status moves into the header next to the title; the big "Serve the MCP endpoint" card collapses into the first settings row. The KPI strip stays, but compact.</div>
+  <div class="kpis">
+    <div class="kpi"><div class="eyebrow">Endpoint</div><div class="v">Serving</div><div class="s">nimbus-operator 4.6.0</div></div>
+    <div class="kpi"><div class="eyebrow">Sign-in</div><div class="v">Entra ID</div><div class="s mono" style="font-size:11.5px">0d3aa8f9…d9352</div></div>
+    <div class="kpi"><div class="eyebrow">Agent actions · 24 h</div><div class="v">2</div><div class="s">1 reportEvent · 1 resubmit</div></div>
+    <div class="kpi"><div class="eyebrow">Refused · 24 h</div><div class="v">0</div><div class="s">—</div></div>
+  </div>
+
+  <div class="anchors">
+    <button class="on">Activation</button><button>Permissions</button><button>Who &amp; where</button><button>Limits</button><button>Connect</button><button>Activity</button>
+  </div>
+  <div class="note">In-page anchor bar replaces the numbered "01 · 02 · 03 · 04" cards scrolling off-screen — one click to any section, sticky while scrolling.</div>
+
+  <div class="split">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="card"><div class="hd"><h3>Activation</h3></div><div class="bd">
+        <div class="setting"><div class="lbl"><b>Serve the MCP endpoint</b><span>When off, every call gets 503 [Disabled] within 30 s on all instances. Settings below are kept.</span></div><div class="toggle"></div></div>
+        <dl class="kv"><dt>Endpoint</dt><dd>https://webapp-nbdemo-dev-management.azurewebsites.net/mcp</dd><dt>Server</dt><dd>nimbus-operator 4.6.0 · Streamable HTTP, stateless</dd></dl>
+        <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--muted-fg);font-size:13px">Resource metadata &amp; sign-in <span class="eyebrow">managed by deployment</span></summary>
+          <dl class="kv"><dt>Metadata</dt><dd>/.well-known/oauth-protected-resource/mcp</dd></dl></details>
+      </div></div>
+      <div class="card"><div class="hd"><h3>What agents may do</h3><span class="badge ok" style="margin-left:auto">no unsaved changes</span></div><div class="bd">
+        <div class="setting"><div class="lbl"><b>Read tools</b><span>11 tools · endpoint health, messages, sessions, metrics</span></div><div class="toggle"></div></div>
+        <div class="setting"><div class="lbl"><b>Recovery actions</b><span>resubmit, skip, classify, set reported</span></div><div class="toggle"></div></div>
+        <div class="setting"><div class="lbl"><b>Include payloads</b><span>Requires PiiReader as well</span></div><div class="toggle off"></div></div>
+      </div></div>
+    </div>
+    <div class="card access"><div class="hd" style="flex-direction:column;align-items:flex-start;gap:2px"><h3>Effective access</h3><span style="font-size:12px;color:var(--faint)">Saved settings · the server is authoritative</span></div><div class="bd">
+      <div class="seg"><button>Reader</button><button class="on">Contributor</button><button>+ PiiReader</button><button>Workload</button></div>
+      <ul>
+        <li><span class="yes">✓</span><span class="t">11 read tools</span><span class="why">nimbus.observe</span></li>
+        <li><span class="no">✕</span><span class="t">payloads</span><span class="why">needs PiiReader</span></li>
+        <li><span class="yes">✓</span><span class="t">set_message_reported</span><span class="why">scope + Contributor</span></li>
+        <li><span class="yes">✓</span><span class="t">classify_failure</span><span class="why">scope + Contributor</span></li>
+        <li><span class="yes">✓</span><span class="t">resubmit_message</span><span class="why">scope + Contributor</span></li>
+        <li><span class="yes">✓</span><span class="t">skip_message</span><span class="why">scope + Contributor</span></li>
+      </ul>
+      <p style="margin:10px 0 0;font-size:12.5px"><b>tools/list</b> returns 16 of 16 tools.</p>
+    </div></div>
+  </div>
+</template>
+
+<template id="v-ops">
+  <div class="phead"><div><h2>Message operations</h2><p>Bulk actions on stored messages, grouped by blast radius. Each opens a preview before anything changes.</p></div></div>
+  <div class="note">Same blast-radius grouping as today, but each operation is a compact row that opens its form in a side drawer — instead of 10 always-expanded forms stacked in accordions. "Endpoint kill switch" moves to its own nav item; "Danger zone" is pinned at the bottom of the nav.</div>
+  <div class="rail ok"><h3>Recovery <span class="badge ok">safe · reversible</span></h3><p>Resubmit, skip or reprocess. Idempotent handlers absorb safely.</p>
+    <div class="oplist">
+      <div class="op"><b>Bulk resubmit failed</b><span>Re-send failed messages for an endpoint</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Skip messages</b><span>Mark matching events as Skipped</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Session purge</b><span>Unblock a stuck session</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Reconcile stale pending</b><span>Fix rows a redelivered copy left Pending</span><button class="btn go">Open…</button></div>
+    </div></div>
+  <div class="rail warn"><h3>Cleanup <span class="badge warn">changes state · not replayed</span></h3><p>Remove resolved, dead-lettered or specific messages without reprocessing.</p>
+    <div class="oplist">
+      <div class="op"><b>Delete dead-lettered</b><span>Per endpoint, with preview</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Delete by status</b><span>Completed, Skipped, …</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Delete by To field</b><span>Messages addressed to a value</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Delete single event</b><span>By event ID</span><button class="btn go">Open…</button></div>
+    </div></div>
+  <div class="rail info"><h3>Data movement <span class="badge off">cross-environment</span></h3><p>Copy endpoint data, purge subscription messages.</p>
+    <div class="oplist">
+      <div class="op"><b>Purge subscription</b><span>Drain a Service Bus subscription</span><button class="btn go">Open…</button></div>
+      <div class="op"><b>Copy endpoint data</b><span>To another instance</span><button class="btn go">Open…</button></div>
+    </div></div>
+</template>
+
+<template id="v-servicebus">
+  <div class="phead"><div><h2>Service Bus</h2><p>Live subscriptions compared against the declared catalog.</p></div><div class="actions"><button class="btn">⇩ Export AsyncAPI</button></div></div>
+  <div class="note">Merges today's <b>Topology</b> and <b>Subscriptions</b> tabs — both are views of the same namespace. Catalog export becomes a header action instead of a whole accordion.</div>
+  <div class="seg" style="display:inline-flex"><button class="on">Subscriptions</button><button>Catalog drift <span class="badge warn" style="margin-left:4px">2</span></button></div>
+  <div class="card"><div class="bd" style="color:var(--muted-fg)">Subscription manager (existing component) …</div></div>
+</template>
+
+<template id="v-generic">
+  <div class="phead"><div><h2 data-title></h2><p data-desc></p></div></div>
+  <div class="note" data-note></div>
+  <div class="card"><div class="bd" style="color:var(--muted-fg)">Existing component renders here unchanged.</div></div>
+</template>
+
+<script>
+const GENERIC = {
+  endpoints:{t:"Endpoint controls",d:"Enable or disable each endpoint's receive and send independently.",n:"Promoted out of Operations: it is a reversible toggle, not a bulk operation, and the most-used item in an incident. The nav shows how many endpoints are off."},
+  health:{t:"Health",d:"Platform services and adapter heartbeat.",n:"Unchanged content. Candidate to fold into the Heartbeat page later (Observe), since operators look there first."},
+  storage:{t:"Storage",d:"Cosmos DB containers.",n:"Only listed when the provider is Cosmos DB, exactly as today."},
+  fi:{t:"Failure intelligence",d:"On-demand advisory analysis. You control provider, evidence and endpoint scope.",n:"Same 01-02-03 layout as MCP access; gets the same header status + anchor bar."},
+  sim:{t:"Simulation",d:"Simulate mode and consuming endpoints.",n:"Also reachable from a ⚙ link on the Simulate page, so the setting lives next to the feature."},
+  audit:{t:"Audit logging",d:"Which actions are recorded and for how long.",n:"Also linked from the Audit Log page header (⚙ Configure)."},
+  danger:{t:"Danger zone",d:"Delete all events for an endpoint. Irreversible and audit-logged.",n:"Isolated at the bottom of the nav, red — never adjacent to a safe action."}
+};
+const LABELS = {overview:"Overview",ops:"Message operations",servicebus:"Service Bus",mcp:"MCP access"};
+const content = document.getElementById('content');
+const crumbs = document.getElementById('crumbs');
+
+function show(view){
+  document.querySelectorAll('.subnav button').forEach(b=>b.classList.toggle('on',b.dataset.view===view));
+  content.innerHTML='';
+  const tpl=document.getElementById('v-'+view);
+  if(tpl){content.appendChild(tpl.content.cloneNode(true));}
+  else{
+    const g=GENERIC[view]; const node=document.getElementById('v-generic').content.cloneNode(true);
+    node.querySelector('[data-title]').textContent=g.t; node.querySelector('[data-desc]').textContent=g.d; node.querySelector('[data-note]').textContent=g.n;
+    content.appendChild(node);
+  }
+  const label = LABELS[view] || GENERIC[view].t;
+  crumbs.innerHTML = view==='overview' ? '<b>Admin</b>' : 'Admin / <b>'+label+'</b> <span style="color:var(--faint)">· /Admin/'+view+'</span>';
+  content.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>show(el.dataset.go)));
+  content.querySelectorAll('.anchors button,.seg button').forEach(b=>b.addEventListener('click',()=>{b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}));
+  try{history.replaceState(null,'','#'+view);}catch(e){}
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('.subnav button').forEach(b=>b.addEventListener('click',()=>show(b.dataset.view)));
+document.getElementById('notesBtn').addEventListener('click',()=>document.body.classList.toggle('notes'));
+document.getElementById('themeBtn').addEventListener('click',()=>{
+  const r=document.documentElement; const dark = r.dataset.theme ? r.dataset.theme==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  r.dataset.theme = dark ? 'light' : 'dark';
+});
+const start=(location.hash||'').slice(1);
+show(document.getElementById('v-'+start)||GENERIC[start]?start:'overview');
+</script>
+</body>
+</html>

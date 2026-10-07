@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manage Pages Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F2EA; --fg:#1A1814; --card:#FAF8F2; --muted:#ECE7DA; --muted-fg:#4A463D; --faint:#8A8475;
+  --border:#E5DFCE; --border-strong:#C9C1AB;
+  --primary:#E8743C; --primary-tint:#FCEEDD; --primary-ink:#A94B1D;
+  --ok:#2E8F5E; --ok-50:#DCEFE4; --ok-ink:#1F6B45;
+  --warn:#C98A1B; --warn-50:#F6E7C7; --warn-ink:#8A5E0F;
+  --bad:#C2412E; --bad-50:#F4D9D3; --bad-ink:#8E2C1F;
+  --info:#3A6FB0; --info-50:#DCE7F5; --info-ink:#234A7A;
+  --purple:#6B4FA0; --purple-50:#E9E2F5;
+  --side:#14120F; --side-fg:#D9D3C4; --side-dim:#7D776A; --side-active:#2A1B12;
+  --scrim:rgba(26,24,20,.38); --code-bg:#1A1814; --code-fg:#F3D9A4;
+  --note-bg:#FFF6CC; --note-fg:#4A3B00; --note-border:#E6CF5C;
+  --sans:Manrope,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F0E0B; --fg:#F4F2EA; --card:#1A1814; --muted:#2A2620; --muted-fg:#A8A293; --faint:#7D776A;
+    --border:#2A2620; --border-strong:#3D3830; --primary-tint:#3A2216; --primary-ink:#F3C597;
+    --ok-50:#16301F; --ok-ink:#9FD8B5; --warn-50:#33260C; --warn-ink:#F0CF8A; --bad-50:#3A1712; --bad-ink:#F2B2A6;
+    --info-50:#16243A; --info-ink:#A9C6EC; --purple-50:#271F38;
+    --side:#0A0907; --scrim:rgba(0,0,0,.6); --code-bg:#0A0907;
+    --note-bg:#2E2706; --note-fg:#F4E7A6; --note-border:#6B5A10;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F0E0B; --fg:#F4F2EA; --card:#1A1814; --muted:#2A2620; --muted-fg:#A8A293; --faint:#7D776A;
+  --border:#2A2620; --border-strong:#3D3830; --primary-tint:#3A2216; --primary-ink:#F3C597;
+  --ok-50:#16301F; --ok-ink:#9FD8B5; --warn-50:#33260C; --warn-ink:#F0CF8A; --bad-50:#3A1712; --bad-ink:#F2B2A6;
+  --info-50:#16243A; --info-ink:#A9C6EC; --purple-50:#271F38;
+  --side:#0A0907; --scrim:rgba(0,0,0,.6); --code-bg:#0A0907;
+  --note-bg:#2E2706; --note-fg:#F4E7A6; --note-border:#6B5A10;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--primary-ink)}
+.mono{font-family:var(--mono)}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.muted{color:var(--muted-fg)} .faint{color:var(--faint)} .small{font-size:12.5px}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.appnav{background:var(--side);color:var(--side-fg);padding:20px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{font-weight:700;font-size:22px;color:#fff;padding:0 10px 18px;border-bottom:1px solid #26221C;margin-bottom:10px}
+.brand b{color:var(--primary)}
+.appnav .grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--side-dim);padding:14px 10px 6px}
+.appnav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;color:var(--side-fg);text-decoration:none;font-size:14.5px}
+.appnav a:not([href]){opacity:.75}
+.appnav a[href]:hover{background:#1E1B16}
+.appnav a.on{background:var(--side-active);color:var(--primary)}
+.appnav .pill{margin-left:auto;font-family:var(--mono);font-size:10px;background:#3A1D12;color:#F0A27C;border-radius:999px;padding:1px 7px}
+.appnav .count{margin-left:auto;font-size:11px;background:var(--bad);color:#fff;border-radius:999px;padding:0 7px;font-weight:600}
+.appnav .wcount{margin-left:auto;font-family:var(--mono);font-size:10px;background:#3A2C0C;color:#F0CF8A;border-radius:999px;padding:1px 7px}
+
+.main{min-width:0}
+.topbar{height:60px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 28px;position:sticky;top:0;background:var(--bg);z-index:5}
+.crumbs{font-family:var(--mono);font-size:13px;color:var(--muted-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumbs b{color:var(--fg);font-weight:500}
+.search{margin-left:auto;border:1px solid var(--border);background:var(--card);border-radius:10px;padding:7px 12px;color:var(--faint);min-width:280px;font-size:13px;cursor:pointer;text-align:left}
+.tbtn{border:1px solid var(--border);background:var(--card);border-radius:10px;padding:7px 12px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.menu-btn{display:none}
+body.notes #notesBtn{background:var(--note-bg);color:var(--note-fg);border-color:var(--note-border)}
+
+.content{padding:28px 36px 90px;max-width:1280px}
+.phead{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px}
+.phead h1{font-size:30px;margin:0;font-weight:700;letter-spacing:-.01em}
+.phead p{margin:4px 0 0;color:var(--muted-fg);max-width:720px}
+.phead .actions{margin-left:auto;display:flex;gap:8px;flex-shrink:0;align-items:center}
+.btn{border:1px solid var(--border-strong);background:var(--card);border-radius:9px;padding:7px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--fg)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:#D45F25}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.btn.danger.solid{background:var(--bad);color:#fff}
+.btn.ghost{border-color:transparent;background:none}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:999px;white-space:nowrap;font-weight:500}
+.badge.ok{background:var(--ok-50);color:var(--ok-ink)}
+.badge.warn{background:var(--warn-50);color:var(--warn-ink)}
+.badge.bad{background:var(--bad-50);color:var(--bad-ink)}
+.badge.info{background:var(--info-50);color:var(--info-ink)}
+.badge.off{background:var(--muted);color:var(--muted-fg)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px}
+.card-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.card-h h2,.card-h h3{margin:0;font-size:15.5px;font-weight:600}
+.card-b{padding:14px 16px}
+
+.toggle{width:38px;height:22px;border-radius:999px;background:var(--ok);position:relative;flex-shrink:0;border:0;cursor:pointer;padding:0}
+.toggle::after{content:"";position:absolute;top:3px;left:19px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.toggle.off{background:var(--border-strong)} .toggle.off::after{left:3px}
+.toggle[disabled]{opacity:.45;cursor:not-allowed}
+input.in,select.in,textarea.in{border:1px solid var(--border-strong);background:var(--bg);border-radius:9px;padding:7px 10px;width:100%}
+input.in:focus,select.in:focus,textarea.in:focus{outline:2px solid var(--primary);outline-offset:-1px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted-fg);font-weight:500}
+label.f .hint{font-weight:400;color:var(--faint);font-size:11.5px}
+
+/* notes */
+.note{display:none;background:var(--note-bg);color:var(--note-fg);border:1px solid var(--note-border);border-radius:8px;font-size:12px;padding:6px 9px;margin:0 0 14px;line-height:1.45}
+.note b{font-weight:700}
+body.notes .note{display:block}
+
+/* stat strip */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;border-left:3px solid var(--border-strong);text-align:left;cursor:pointer}
+.stat:hover{border-color:var(--border-strong)}
+.stat.bad{border-left-color:var(--bad)} .stat.warn{border-left-color:var(--warn)} .stat.ok{border-left-color:var(--ok)}
+.stat .v{font-size:24px;font-weight:700;line-height:1.2;margin-top:2px}
+.stat .s{font-size:12.5px;color:var(--muted-fg)}
+
+/* tables */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;font-weight:500;padding:8px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tr.attn td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+.tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl .t{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.scrollx{overflow-x:auto}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input.in{max-width:260px}
+.card-h .toolbar{flex-wrap:nowrap}
+.card-h .toolbar input.in{width:200px}
+.chip{border:1px solid var(--border);background:var(--card);border-radius:999px;padding:4px 11px;cursor:pointer;font-size:12.5px;color:var(--muted-fg);white-space:nowrap}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+/* ops master/detail */
+.ops{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start;margin-top:18px}
+.oplist{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;position:sticky;top:76px}
+.oplist .g{padding:11px 14px 4px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
+.oplist .g:first-child{border-top:0}
+.oplist .g i{width:8px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0}
+.oplist .g .cap{margin-left:auto;font-size:11px;color:var(--faint)}
+.oplist button{display:block;width:100%;text-align:left;border:0;background:none;padding:6px 14px 6px 30px;cursor:pointer;font-size:13.5px}
+.oplist button:hover{background:var(--muted)}
+.oplist button.on{background:var(--primary-tint);color:var(--primary-ink);font-weight:600;box-shadow:inset 3px 0 0 var(--primary)}
+.oplist button.dz{color:var(--bad)}
+.opselect{display:none}
+.detail h2{margin:0;font-size:19px}
+.fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px;max-width:640px}
+.preview{margin-top:16px;border:1px dashed var(--border-strong);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.preview .n{font-size:20px;font-weight:700}
+.progress{height:8px;border-radius:999px;background:var(--muted);overflow:hidden;margin-top:12px;display:none}
+.progress i{display:block;height:100%;width:0;background:var(--ok);transition:width 1.4s ease}
+.result{margin-top:10px;font-size:13px;display:none}
+
+/* topology */
+.seg{display:inline-flex;background:var(--muted);border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{border:0;background:none;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--muted-fg);white-space:nowrap}
+.seg button.on{background:var(--card);color:var(--fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.topic{border-top:1px solid var(--border)}
+.topic:first-child{border-top:0}
+.topic summary{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;list-style:none}
+.topic summary::-webkit-details-marker{display:none}
+.topic summary::before{content:"▸";color:var(--faint);width:10px}
+.topic[open] summary::before{content:"▾"}
+.topic summary .mono{font-weight:500}
+.topic summary .r{margin-left:auto;display:flex;gap:6px}
+.topic .tbl{background:var(--bg)}
+.menu{position:relative;display:inline-block}
+
+/* settings rows */
+.sgroup{margin-bottom:20px}
+.sgroup>.eyebrow{margin:0 0 8px 2px;display:block}
+.rows{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.srow{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,240px) auto auto;gap:14px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
+.srow:last-child{border-bottom:0}
+.srow:hover{background:color-mix(in srgb,var(--muted) 40%,transparent)}
+.ico{width:36px;height:36px;border-radius:10px;background:var(--muted);display:grid;place-items:center;font-size:17px}
+.srow h3{margin:0;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.srow p{margin:2px 0 0;color:var(--muted-fg);font-size:13px}
+.srow .sum{font-family:var(--mono);font-size:11.5px;color:var(--faint);text-align:right}
+.cfg{border:0;background:none;color:var(--primary-ink);font-weight:600;cursor:pointer;padding:6px 4px;white-space:nowrap}
+.empty{padding:28px;text-align:center;color:var(--muted-fg)}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(880px,100vw);background:var(--bg);border-left:1px solid var(--border);box-shadow:-24px 0 48px rgba(0,0,0,.14);transform:translateX(100%);transition:transform .22s ease;z-index:21;display:flex;flex-direction:column}
+body.dopen .scrim{opacity:1;pointer-events:auto}
+body.dopen .drawer{transform:none}
+.dhead{padding:18px 24px 0;border-bottom:1px solid var(--border);background:var(--bg)}
+.dhead .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dhead h2{margin:0;font-size:21px}
+.dhead .x{border:1px solid var(--border);background:var(--card);border-radius:9px;width:34px;height:34px;cursor:pointer;flex-shrink:0}
+.dhead .rev{margin:4px 0 0;color:var(--faint);font-size:12px;font-family:var(--mono)}
+.dhead .lead{margin:6px 0 10px;color:var(--muted-fg);font-size:13.5px;max-width:680px}
+.dtabs{display:flex;gap:2px;overflow-x:auto}
+.dtabs button{border:0;background:none;padding:9px 12px;cursor:pointer;color:var(--muted-fg);border-bottom:2px solid transparent;font-size:13.5px;white-space:nowrap}
+.dtabs button.on{color:var(--fg);border-bottom-color:var(--primary);font-weight:600}
+.dtabs button .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--primary);margin-left:6px;vertical-align:middle}
+.dbody{flex:1;overflow:auto;padding:20px 24px}
+.dfoot{border-top:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:10px;background:var(--card);flex-wrap:wrap}
+.dfoot .sum{color:var(--muted-fg);font-size:13px;margin-right:auto}
+.banner{border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;border:1px solid}
+.banner.warn{background:var(--warn-50);color:var(--warn-ink);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.banner.bad{background:var(--bad-50);color:var(--bad-ink);border-color:color-mix(in srgb,var(--bad) 40%,transparent)}
+.banner.info{background:var(--info-50);color:var(--info-ink);border-color:color-mix(in srgb,var(--info) 40%,transparent)}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.kpi .v{font-size:18px;font-weight:700}
+.kpi .s{font-size:12px;color:var(--muted-fg)}
+.setting{display:flex;gap:16px;padding:12px 0;border-bottom:1px dashed var(--border);align-items:flex-start}
+.setting:last-child{border-bottom:0}
+.setting .lbl{flex:1;min-width:0}
+.setting .lbl b{font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.setting .lbl span.d{color:var(--muted-fg);font-size:13px;display:block}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.tags span{font-family:var(--mono);font-size:11px;border-radius:4px;padding:0 6px;background:var(--muted)}
+.tags .sc{background:var(--info-50);color:var(--info-ink)}
+.tags .rl{background:var(--purple-50);color:var(--purple)}
+.risk{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-radius:4px;padding:0 6px}
+.risk.low{background:var(--ok-50);color:var(--ok-ink)} .risk.medium{background:var(--warn-50);color:var(--warn-ink)} .risk.high,.risk.data{background:var(--bad-50);color:var(--bad-ink)}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:13px;margin:10px 0 0}
+.kv dt{color:var(--muted-fg)} .kv dd{margin:0;font-family:var(--mono);font-size:12px;word-break:break-all}
+.two{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+.access{list-style:none;margin:0;padding:0}
+.access li{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.access li:last-child{border-bottom:0}
+.access .t{font-family:var(--mono);font-size:12px}
+.access .why{margin-left:auto;color:var(--faint);font-size:11.5px;text-align:right}
+.yes{color:var(--ok)} .no{color:var(--bad)}
+pre.code{background:var(--code-bg);color:var(--code-fg);border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0}
+.review li{display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.review ul{list-style:none;margin:0 0 14px;padding:0}
+.kind{font-family:var(--mono);font-size:10px;text-transform:uppercase;font-weight:700;border-radius:4px;padding:1px 6px;width:74px;text-align:center;flex-shrink:0}
+.kind.widens{background:var(--warn-50);color:var(--warn-ink)} .kind.narrows{background:var(--ok-50);color:var(--ok-ink)} .kind.changes{background:var(--info-50);color:var(--info-ink)}
+.checkrow{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:8px 0}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.list li:last-child{border-bottom:0}
+
+/* modal, toast, palette, mockbar */
+.modal-wrap{position:fixed;inset:0;background:var(--scrim);display:none;align-items:center;justify-content:center;z-index:40;padding:16px}
+.modal-wrap.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:480px;width:100%;padding:20px;box-shadow:0 24px 64px rgba(0,0,0,.25)}
+.modal h3{margin:0 0 6px;font-size:17px}
+.modal p{margin:0 0 12px;color:var(--muted-fg);font-size:13.5px}
+.modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.toasts{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:var(--fg);color:var(--bg);border-radius:10px;padding:10px 14px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.2);max-width:360px}
+.palette-wrap{position:fixed;inset:0;background:var(--scrim);display:none;justify-content:center;align-items:flex-start;padding:12vh 16px 16px;z-index:45}
+.palette-wrap.open{display:flex}
+.palette{width:100%;max-width:600px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.25)}
+.palette input{width:100%;border:0;border-bottom:1px solid var(--border);background:none;padding:14px 16px;font-size:15px;outline:none}
+.palette ul{list-style:none;margin:0;padding:6px;max-height:50vh;overflow:auto}
+.palette li{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13.5px}
+.palette li.sel,.palette li:hover{background:var(--primary-tint)}
+.palette li .k{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.08em}
+.palette .hd{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);padding:8px 10px 2px;text-transform:uppercase}
+.mockbar{position:fixed;left:256px;bottom:14px;background:var(--card);border:1px solid var(--border-strong);border-radius:12px;padding:6px 8px;display:flex;align-items:center;gap:6px;z-index:15;box-shadow:0 8px 24px rgba(0,0,0,.12);flex-wrap:wrap;max-width:calc(100vw - 280px)}
+.mockbar .chip{font-size:12px;padding:3px 9px}
+
+@media (max-width:1100px){.stats,.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:1fr}.srow{grid-template-columns:40px minmax(0,1fr) auto auto}.srow .sum{display:none}}
+@media (max-width:900px){.ops{grid-template-columns:1fr}.oplist{display:none}.opselect{display:block;margin-bottom:10px}}
+@media (max-width:820px){
+  .shell{grid-template-columns:1fr}
+  .appnav{position:fixed;left:0;top:0;bottom:0;width:250px;z-index:30;transform:translateX(-100%);transition:transform .2s}
+  body.navopen .appnav{transform:none}
+  .menu-btn{display:inline-block}
+  .content{padding:20px 16px 110px}.topbar{padding:0 12px}.search{display:none}
+  #notesBtn{display:none}
+  .srow{grid-template-columns:36px minmax(0,1fr) auto}.srow .q{grid-column:2/-1}.srow .cfg{grid-column:3;grid-row:1}
+  .phead{flex-wrap:wrap}.phead .actions{margin-left:0}
+  .phead h1{font-size:25px}
+  .dhead,.dbody,.dfoot{padding-left:16px;padding-right:16px}
+  .fgrid{grid-template-columns:1fr}
+  .kv{grid-template-columns:1fr}
+  .mockbar{left:12px;right:12px;max-width:none}
+}
+</style>
+</head>
+<body class="notes">
+<div class="shell">
+  <nav class="appnav" aria-label="App">
+    <div class="brand">☁ NimBus<b>.</b></div>
+    <div class="grp">OBSERVE</div>
+    <a>▤ Endpoints</a><a>≡ Event Types</a><a>✉ Messages</a><a>⚠ Failed <span class="count">29</span></a>
+    <a>▥ Metrics</a><a>↯ Flow <span class="pill">LIVE</span></a>
+    <a href="#/Heartbeat" data-nav="Heartbeat">∿ Heartbeat</a>
+    <a>▭ Monitor <span class="pill">WALL</span></a>
+    <div class="grp">DIAGNOSE</div>
+    <a>◷ Insights</a><a href="#/Audits" data-nav="Audits">▦ Audit Log</a>
+    <div class="grp">MANAGE</div>
+    <a href="#/Operations" data-nav="Operations">↻ Operations <span class="wcount" id="opsBadge">1 paused</span></a>
+    <a href="#/Topology" data-nav="Topology">◇ Topology</a>
+    <a href="#/Settings" data-nav="Settings">⚙ Settings</a>
+    <a>⊡ Access Control</a>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="tbtn menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+      <div class="crumbs" id="crumbs"></div>
+      <button class="search" id="searchBtn">⌕ Jump to endpoint, event, operation or setting…  <span class="mono">Ctrl K</span></button>
+      <button class="tbtn" id="notesBtn">Design notes</button>
+      <button class="tbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    </header>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Configure"></aside>
+<div class="modal-wrap" id="modal"><div class="modal" id="modalBox"></div></div>
+<div class="palette-wrap" id="palette"><div class="palette"><input id="pq" placeholder="Search operations, settings, endpoints…" autocomplete="off"><ul id="pres"></ul></div></div>
+<div class="toasts" id="toasts"></div>
+<div class="mockbar" id="mockbar"><span class="eyebrow" style="padding:0 4px">Mock state</span></div>
+
+<script>
+/* ======================================================================
+   helpers
+   ====================================================================== */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const note=(html)=>`<div class="note">${html}</div>`;
+function toast(msg){const t=document.createElement('div');t.className='toast';t.innerHTML=msg;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),3800);}
+function modal(html,wire){$('#modalBox').innerHTML=html;$('#modal').classList.add('open');wire&&wire($('#modalBox'));}
+function closeModal(){$('#modal').classList.remove('open');}
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
+
+/* ======================================================================
+   mock data
+   ====================================================================== */
+const MOCKS={normal:'Normal',mcpOff:'MCP not deployed',fiRestart:'FI restart pending',prod:'Production env'};
+let mock='normal';
+const ENDPOINTS=[
+  {id:'crm-adapter',recv:true,send:true,failed:4,dlq:0,pending:12},
+  {id:'erp-adapter',recv:false,since:'40 min',send:true,failed:23,dlq:31,pending:0},
+  {id:'billing',recv:true,send:true,failed:2,dlq:0,pending:3},
+  {id:'warehouse',recv:true,send:true,failed:0,dlq:0,pending:0},
+  {id:'pricing',recv:true,send:true,failed:0,dlq:0,pending:41},
+  {id:'notifications',recv:true,send:true,failed:0,dlq:0,pending:0},
+];
+const GROUPS={
+  recovery:{label:'Recovery',tone:'ok',color:'var(--ok)',cap:'safe · reversible'},
+  cleanup:{label:'Cleanup',tone:'warn',color:'var(--warn)',cap:'not replayed'},
+  movement:{label:'Data movement',tone:'info',color:'var(--info)',cap:'cross-env'},
+  danger:{label:'Irreversible',tone:'bad',color:'var(--bad)',cap:'audit-logged'},
+};
+// fields: ep = endpoint, status, window, type, session, to, eventId, target, sub
+const OPS=[
+  {id:'resubmit',g:'recovery',name:'Bulk resubmit failed',desc:'Re-send Failed and Dead-lettered messages for an endpoint. Idempotent handlers absorb repeats.',fields:['ep','status','window','type'],count:e=>e.failed+e.dlq,unit:'messages to resubmit',verb:'Resubmit'},
+  {id:'skip',g:'recovery',name:'Skip messages',desc:'Mark matching events as Skipped so their sessions continue.',fields:['ep','status','window'],count:e=>e.failed,unit:'events to skip',verb:'Skip'},
+  {id:'session',g:'recovery',name:'Session purge',desc:'Unblock one stuck session by clearing its deferred and blocked messages.',fields:['ep','session'],count:()=>6,unit:'messages in the session',verb:'Purge session'},
+  {id:'stale',g:'recovery',name:'Reconcile stale pending',desc:'Fix rows a redelivered copy left Pending after the original completed.',fields:['ep','window'],count:e=>Math.round(e.pending/6),unit:'stale rows',verb:'Reconcile'},
+  {id:'dlq',g:'cleanup',name:'Delete dead-lettered',desc:'Remove dead-lettered messages without reprocessing them.',fields:['ep','window'],count:e=>e.dlq,unit:'dead-lettered messages',verb:'Delete'},
+  {id:'status',g:'cleanup',name:'Delete by status',desc:'Delete stored events in the chosen states.',fields:['ep','status','window'],count:e=>e.failed*3,unit:'events',verb:'Delete'},
+  {id:'to',g:'cleanup',name:'Delete by To field',desc:'Delete messages addressed to one value, across endpoints.',fields:['to'],count:()=>9,unit:'messages',verb:'Delete'},
+  {id:'single',g:'cleanup',name:'Delete single event',desc:'Delete one event by its ID.',fields:['ep','eventId'],count:()=>1,unit:'event',verb:'Delete'},
+  {id:'purge',g:'movement',name:'Purge subscription',desc:'Drain an endpoint\'s Service Bus subscription. Messages are gone, not dead-lettered.',fields:['ep'],count:e=>e.pending+118,unit:'active messages',verb:'Purge'},
+  {id:'copy',g:'movement',name:'Copy endpoint data',desc:'Copy an endpoint\'s stored events to another NimBus instance.',fields:['ep','target'],count:e=>e.failed*40+212,unit:'events to copy',verb:'Copy'},
+  {id:'all',g:'danger',name:'Delete all events',desc:'Permanently delete every stored event for an endpoint. The storage container is removed. Cannot be undone.',fields:['ep'],count:e=>e.failed*50+1840,unit:'events will be destroyed',verb:'Delete all'},
+];
+const SUBS=[
+  {topic:'crm-adapter',inPlatform:true,subs:[{n:'CustomerChanged',rules:1,fwd:'erp-adapter',status:'Active',active:0,dlq:0,transit:0},{n:'ContactMerged',rules:1,fwd:'billing',status:'Active',active:2,dlq:0,transit:0}]},
+  {topic:'erp-adapter',inPlatform:true,subs:[{n:'erp-adapter',rules:3,fwd:'—',status:'ReceiveDisabled',active:118,dlq:31,transit:0},{n:'OrderPlaced',rules:2,fwd:'warehouse',status:'Active',active:0,dlq:0,transit:4}]},
+  {topic:'billing',inPlatform:true,subs:[{n:'InvoiceIssued',rules:1,fwd:'notifications',status:'Active',active:0,dlq:0,transit:0}]},
+  {topic:'legacy-pricing',inPlatform:false,subs:[{n:'PriceUpdated',rules:1,fwd:'—',status:'Active',active:0,dlq:7,transit:0}]},
+];
+const DRIFT=[
+  {item:'erp-adapter / OrderPlaced · rule "legacy-filter"',live:'present',declared:'absent',kind:'Extra rule'},
+  {item:'legacy-pricing / PriceUpdated',live:'present',declared:'deprecated',kind:'Deprecated subscription'},
+];
+
+/* ======================================================================
+   router
+   ====================================================================== */
+// The route lives in memory and is mirrored to the URL hash when the browser allows it
+// (a data: URL preview does not), so the mockup works from disk and in an embedded preview.
+let ROUTE=(location.hash||'').slice(1)||'/Operations';
+function parse(){const [p,qs]=ROUTE.split('?');return {parts:p.split('/').filter(Boolean),q:new URLSearchParams(qs||'')};}
+function go(h){ROUTE=h;try{if(location.hash.slice(1)!==h)history.pushState(null,'','#'+h);}catch(e){}render();}
+function setRoute(h){ROUTE=h;try{history.replaceState(null,'','#'+h);}catch(e){}crumbs();}
+window.addEventListener('popstate',()=>{ROUTE=(location.hash||'').slice(1)||'/Operations';render();});
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#/"]');if(!a)return;e.preventDefault();go(a.getAttribute('href').slice(1));});
+function crumbs(){const {parts}=parse();$('#crumbs').innerHTML='<b>'+esc(parts[0]||'Operations')+'</b>'+(parts[1]?' / '+esc(parts[1]):'')+' <span class="faint">· '+esc(ROUTE)+'</span>';}
+
+let D=null; // open drawer state {id, tab, draft, init, reviewing}
+function render(){
+  const {parts,q}=parse(); let page=parts[0]||'Operations';
+  if(page==='Admin'){toast('<b>/Admin</b> redirected to <b>/Operations</b> (§12)');go('/Operations');return;}
+  // unsaved-changes guard when navigation would close an open drawer
+  if(D && dirty().length && !(page==='Settings' && parts[1]===D.id)){
+    const back='/Settings/'+D.id+'?tab='+D.tab;
+    confirmDiscard(()=>{D=null;closeDrawerUI();render();},()=>{setRoute(back);});
+    return;
+  }
+  document.body.classList.remove('navopen');
+  $$('.appnav a[data-nav]').forEach(a=>a.classList.toggle('on',a.dataset.nav===page));
+  crumbs();
+  const c=$('#content');
+  if(page==='Operations') c.innerHTML=opsPage(parts[1]||'resubmit',q);
+  else if(page==='Topology') c.innerHTML=topoPage(parts[1]||'subscriptions');
+  else if(page==='Settings') c.innerHTML=settingsPage();
+  else if(page==='Heartbeat') c.innerHTML=heartbeatPage();
+  else if(page==='Audits') c.innerHTML=auditsPage();
+  else c.innerHTML='<div class="empty">Not part of this mockup.</div>';
+  wirePage(page,parts,q);
+  if(page==='Settings' && parts[1]) openDrawer(parts[1],q.get('tab'));
+  else if(D){D=null;closeDrawerUI();}
+  else closeDrawerUI();
+  $('#opsBadge').style.display=ENDPOINTS.some(e=>!e.recv)?'':'none';
+  $('#opsBadge').textContent=ENDPOINTS.filter(e=>!e.recv).length+' paused';
+}
+
+/* ======================================================================
+   OPERATIONS
+   ====================================================================== */
+let epFilter='', epAttention=false;
+function opsPage(opId,q){
+  const failed=ENDPOINTS.reduce((a,e)=>a+e.failed,0), dlq=ENDPOINTS.reduce((a,e)=>a+e.dlq,0);
+  const paused=ENDPOINTS.filter(e=>!e.recv||!e.send);
+  return `
+  <div class="phead"><div><h1>Operations</h1><p>Act on endpoints and stored messages. Every bulk action previews what it will touch before anything changes, and every run is audit-logged.</p></div></div>
+  ${note('<b>§5 Operations.</b> Replaces Admin → Operations <i>and</i> the kill switch. The sidebar badge (“1 paused”) comes free from <span class="mono">getEndpointStatusCountAll</span>, which the sidebar already polls and which carries <span class="mono">subscriptionStatus</span>.')}
+  <div class="stats">
+    <button class="stat bad" data-jump="resubmit"><div class="eyebrow">Failed</div><div class="v">${failed}</div><div class="s">across ${ENDPOINTS.filter(e=>e.failed).length} endpoints → resubmit</div></button>
+    <button class="stat ${dlq?'warn':'ok'}" data-jump="dlq"><div class="eyebrow">Dead-lettered</div><div class="v">${dlq}</div><div class="s">${dlq?'erp-adapter · oldest 2 h':'none'}</div></button>
+    <button class="stat ${paused.length?'warn':'ok'}" data-attn="1"><div class="eyebrow">Endpoints paused</div><div class="v">${paused.length}</div><div class="s">${paused.length?paused.map(e=>e.id).join(', '):'all receiving and sending'}</div></button>
+    <button class="stat ok" data-jump="stale"><div class="eyebrow">Pending</div><div class="v">${ENDPOINTS.reduce((a,e)=>a+e.pending,0)}</div><div class="s">reconcile if stuck →</div></button>
+  </div>
+
+  <section class="card" style="overflow:hidden">
+    <div class="card-h"><h2>Endpoints</h2>
+      <span class="small faint">Receive and send apply through Service Bus entity status · reversible</span>
+      <div class="toolbar" style="margin-left:auto"><input class="in" id="epq" placeholder="Filter endpoints" value="${esc(epFilter)}"><button class="chip ${epAttention?'on':''}" id="epattn">Needs attention</button></div>
+    </div>
+    <div class="scrollx"><table class="tbl" id="eptable">
+      <thead><tr><th>Endpoint</th><th>Receive</th><th>Send</th><th class="num">Failed</th><th class="num">Dead-letter</th><th class="num">Pending</th><th></th></tr></thead>
+      <tbody>${epRows()}</tbody></table></div>
+  </section>
+  ${note('<b>§5.2</b> The kill switch is no longer buried in an accordion: it is the first table on the page. Turning <i>send</i> off shows the existing quarantine warning. Row actions pre-fill the operation form below with that endpoint.')}
+
+  <div class="ops">
+    <nav class="oplist" aria-label="Operations">${Object.entries(GROUPS).map(([g,m])=>`
+      <div class="g"><i style="background:${m.color}"></i><span class="eyebrow">${m.label}</span><span class="cap">${m.cap}</span></div>
+      ${OPS.filter(o=>o.g===g).map(o=>`<button data-op="${o.id}" class="${o.id===opId?'on':''} ${g==='danger'?'dz':''}">${esc(o.name)}</button>`).join('')}`).join('')}
+    </nav>
+    <div>
+      <select class="in opselect" id="opselect">${OPS.map(o=>`<option value="${o.id}" ${o.id===opId?'selected':''}>${GROUPS[o.g].label} · ${esc(o.name)}</option>`).join('')}</select>
+      <section class="card card-b detail" id="opdetail">${opDetail(opId,q.get('endpoint'))}</section>
+      ${note('<b>§5.3</b> One form at a time (master/detail) instead of ten forms in four accordions. Every run keeps today’s typed confirmation. Each operation has a URL — <span class="mono">/Operations/resubmit?endpoint=erp-adapter</span> — so a runbook or a Failed-page link can open it pre-filled. The forms themselves are today’s card components, moved.')}
+    </div>
+  </div>`;
+}
+function epRows(){
+  const rows=ENDPOINTS.filter(e=>(!epFilter||e.id.includes(epFilter.toLowerCase()))&&(!epAttention||!e.recv||!e.send||e.failed||e.dlq));
+  if(!rows.length) return `<tr><td colspan="7" class="empty">No endpoints match.</td></tr>`;
+  return rows.map(e=>{const attn=!e.recv||!e.send||e.failed||e.dlq;return `<tr class="${attn?'attn':''}">
+    <td><span class="mono">${e.id}</span></td>
+    <td><span class="t"><button class="toggle ${e.recv?'':'off'}" data-ks="recv" data-ep="${e.id}" aria-label="Receive ${e.id}"></button>${e.recv?'<span class="small muted">on</span>':`<span class="small" style="color:var(--warn-ink)">paused · ${e.since||'now'}</span>`}</span></td>
+    <td><span class="t"><button class="toggle ${e.send?'':'off'}" data-ks="send" data-ep="${e.id}" aria-label="Send ${e.id}"></button>${e.send?'<span class="small muted">on</span>':'<span class="small" style="color:var(--bad-ink)">quarantined</span>'}</span></td>
+    <td class="num">${e.failed?`<b style="color:var(--bad)">${e.failed}</b>`:'<span class="faint">0</span>'}</td>
+    <td class="num">${e.dlq?`<b style="color:var(--warn-ink)">${e.dlq}</b>`:'<span class="faint">0</span>'}</td>
+    <td class="num">${e.pending||'<span class="faint">0</span>'}</td>
+    <td style="text-align:right;white-space:nowrap">${e.failed||e.dlq?`<button class="btn sm" data-pre="resubmit" data-ep="${e.id}">Resubmit…</button> `:''}<button class="btn sm ghost" data-pre="skip" data-ep="${e.id}" title="More operations">⋯</button></td></tr>`;}).join('');
+}
+function field(f,ep){
+  const epSel=`<label class="f">Endpoint<select class="in" data-f="ep">${ENDPOINTS.map(e=>`<option ${e.id===ep?'selected':''}>${e.id}</option>`).join('')}</select></label>`;
+  return {ep:epSel,
+    status:`<label class="f">Status<select class="in"><option>Failed + Dead-lettered</option><option>Failed</option><option>Dead-lettered</option><option>Unsupported</option></select></label>`,
+    window:`<label class="f">Time window<select class="in"><option>Last 24 hours</option><option>Last 7 days</option><option>Everything</option></select></label>`,
+    type:`<label class="f">Event type <span class="hint">optional</span><input class="in" placeholder="Any event type"></label>`,
+    session:`<label class="f">Session ID<input class="in" value="order-10442"></label>`,
+    to:`<label class="f">To field<input class="in" placeholder="e.g. erp-legacy"></label>`,
+    eventId:`<label class="f">Event ID<input class="in" placeholder="Event ID"></label>`,
+    target:`<label class="f">Target instance<select class="in"><option>nbdemo-test</option><option>nbdemo-uat</option></select></label>`}[f];
+}
+function opDetail(opId,ep){
+  const o=OPS.find(x=>x.id===opId)||OPS[0]; const g=GROUPS[o.g]; const e=ENDPOINTS.find(x=>x.id===ep)||ENDPOINTS[1];
+  const n=o.count(e);
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(o.name)}</h2><span class="badge ${g.tone}">${g.label} · ${g.cap}</span></div>
+    <p class="muted" style="margin:6px 0 0;max-width:640px">${esc(o.desc)}</p>
+    <div class="fgrid">${o.fields.map(f=>field(f,e.id)).join('')}</div>
+    <div class="preview"><div><div class="eyebrow">Preview</div><div class="n" id="pvn">${n} ${esc(o.unit)}</div><div class="small faint">on <span class="mono" id="pvep">${e.id}</span> · refreshed just now</div></div>
+      <button class="btn ${o.g==='danger'?'danger solid':o.g==='recovery'?'primary':'danger'}" id="runop" style="margin-left:auto" ${!n?'disabled':''}>${esc(o.verb)}${n?` ${n}`:''}…</button></div>
+    <div class="progress" id="prog"><i></i></div><div class="result" id="res"></div>`;
+}
+function wireOps(){
+  $$('[data-jump]').forEach(b=>b.onclick=()=>go('/Operations/'+b.dataset.jump));
+  $$('[data-attn]').forEach(b=>b.onclick=()=>{epAttention=true;render();});
+  $('#epq').oninput=e=>{epFilter=e.target.value;$('#eptable tbody').innerHTML=epRows();wireEpRows();};
+  $('#epattn').onclick=()=>{epAttention=!epAttention;$('#epattn').classList.toggle('on',epAttention);$('#eptable tbody').innerHTML=epRows();wireEpRows();};
+  wireEpRows();
+  $$('.oplist [data-op]').forEach(b=>b.onclick=()=>go('/Operations/'+b.dataset.op));
+  $('#opselect').onchange=e=>go('/Operations/'+e.target.value);
+  wireOpDetail();
+}
+function wireEpRows(){
+  $$('[data-ks]').forEach(t=>t.onclick=()=>{
+    const e=ENDPOINTS.find(x=>x.id===t.dataset.ep), ch=t.dataset.ks, on=ch==='recv'?e.recv:e.send;
+    const title=(on?'Pause ':'Resume ')+(ch==='recv'?'receive':'send')+' on '+e.id+'?';
+    const body=ch==='send'&&on?'Disabling send quarantines this endpoint’s topic. While it is off, events forwarded in from other endpoints dead-letter at the source.'
+      : ch==='recv'&&on?'The subscription stops delivering. Messages wait in Service Bus and nothing is lost.':'The endpoint starts '+(ch==='recv'?'processing':'publishing')+' again immediately.';
+    modal(`<h3>${title}</h3><p>${body}</p><div class="acts"><button class="btn" data-x>Cancel</button><button class="btn ${on?'danger solid':'primary'}" data-ok>${on?'Pause':'Resume'}</button></div>`,m=>{
+      $('[data-x]',m).onclick=closeModal;
+      $('[data-ok]',m).onclick=()=>{if(ch==='recv'){e.recv=!e.recv;e.since=e.recv?null:'now';}else e.send=!e.send;closeModal();toast(`${ch==='recv'?'Receive':'Send'} ${on?'paused':'resumed'} on <b>${e.id}</b> · audit-logged`);render();};
+    });
+  });
+  $$('[data-pre]').forEach(b=>b.onclick=()=>{go('/Operations/'+b.dataset.pre+'?endpoint='+b.dataset.ep);setTimeout(()=>$('#opdetail')?.scrollIntoView({behavior:'smooth',block:'start'}),50);});
+}
+function wireOpDetail(){
+  const {parts}=parse(); const o=OPS.find(x=>x.id===(parts[1]||'resubmit'))||OPS[0];
+  const sel=$('#opdetail [data-f="ep"]');
+  if(sel) sel.onchange=()=>{setRoute('/Operations/'+o.id+'?endpoint='+sel.value);$('#opdetail').innerHTML=opDetail(o.id,sel.value);wireOpDetail();};
+  const run=$('#runop');
+  run.onclick=()=>{
+    const go2=()=>{run.disabled=true;const p=$('#prog');p.style.display='block';requestAnimationFrame(()=>$('i',p).style.width='100%');
+      setTimeout(()=>{const r=$('#res');r.style.display='block';r.innerHTML=`<span class="badge ok">done</span> ${esc($('#pvn').textContent)} processed on <span class="mono">${esc($('#pvep').textContent)}</span> · recorded in the <a href="#/Audits">Audit Log</a>`;toast(`<b>${esc(o.name)}</b> finished`);},1500);};
+    // Every operation keeps today's typed confirmation (ConfirmDestructiveAction).
+    const expect=o.id==='to'?'erp-legacy':$('#pvep').textContent;
+    const consequence={recovery:'Handlers process these messages again.',cleanup:'Messages are not replayed.',movement:'Service Bus or the target instance changes.',danger:'This cannot be undone.'}[o.g];
+    modal(`<h3>${esc(o.name)}?</h3><p>${esc($('#pvn').textContent)} on <span class="mono">${esc($('#pvep').textContent)}</span>. ${consequence}</p><label class="f">Type <span class="mono">${esc(expect)}</span> to confirm<input class="in" id="typed" autocomplete="off"></label><div class="acts"><button class="btn" data-x>Cancel</button><button class="btn ${o.g==='recovery'?'primary':'danger solid'}" data-ok disabled>${esc(o.verb)}</button></div>`,m=>{
+      const ok=$('[data-ok]',m);$('#typed').oninput=ev=>ok.disabled=ev.target.value!==expect;setTimeout(()=>$('#typed')?.focus(),20);
+      $('[data-x]',m).onclick=closeModal;ok.onclick=()=>{closeModal();go2();};});
+  };
+}
+
+/* ======================================================================
+   TOPOLOGY
+   ====================================================================== */
+let topicFilter='all';
+function topoPage(tab){
+  const cosmos=true;
+  return `<div class="phead"><div><h1>Topology</h1><p>The live Service Bus namespace and storage, compared with the declared catalog.</p></div>
+    <div class="actions"><div class="menu"><button class="btn" id="exportBtn">⇩ Export AsyncAPI ▾</button></div></div></div>
+  ${note('<b>§6 Topology.</b> Merges Admin → Topology, Subscriptions and Storage. Catalog export (an accordion with one button today) becomes a header action. Each view has a URL: <span class="mono">/Topology/subscriptions · /drift · /storage</span>.')}
+  <div class="seg" style="margin-bottom:14px" id="toposeg">
+    <button data-t="subscriptions" class="${tab==='subscriptions'?'on':''}">Subscriptions</button>
+    <button data-t="drift" class="${tab==='drift'?'on':''}">Catalog drift <span class="badge warn" style="margin-left:4px">${DRIFT.length}</span></button>
+    ${cosmos?`<button data-t="storage" class="${tab==='storage'?'on':''}">Storage</button>`:''}
+  </div>
+  ${tab==='drift'?driftView():tab==='storage'?storageView():subsView()}`;
+}
+function subsView(){
+  const topics=SUBS.filter(t=>topicFilter==='all'||(topicFilter==='platform')===t.inPlatform);
+  return `<section class="card" style="overflow:hidden">
+    <div class="card-h"><div class="toolbar"><select class="in" id="topicf" style="width:auto"><option value="all" ${topicFilter==='all'?'selected':''}>All topics</option><option value="platform" ${topicFilter==='platform'?'selected':''}>In platform</option><option value="external" ${topicFilter==='external'?'selected':''}>Not in platform</option></select><input class="in" placeholder="Filter subscriptions"></div>
+      <span class="small faint" style="margin-left:auto">${SUBS.length} topics · ${SUBS.reduce((a,t)=>a+t.subs.length,0)} subscriptions</span></div>
+    ${topics.map((t,i)=>`<details class="topic" ${i<2?'open':''}><summary><span class="mono">${t.topic}</span>${t.inPlatform?'':'<span class="badge off">not in platform</span>'}<span class="r">${t.subs.some(s=>s.dlq)?`<span class="badge warn">${t.subs.reduce((a,s)=>a+s.dlq,0)} DLQ</span>`:''}<span class="badge off">${t.subs.length} subs</span></span></summary>
+      <div class="scrollx"><table class="tbl"><thead><tr><th>Subscription</th><th>Rules</th><th>Forwards to</th><th>Status</th><th class="num">Active</th><th class="num">Dead-letter</th><th class="num">In transit</th><th></th></tr></thead><tbody>
+      ${t.subs.map(s=>`<tr><td class="mono">${s.n}</td><td>${s.rules}</td><td class="mono">${s.fwd}</td><td>${s.status==='Active'?'<span class="badge ok">Active</span>':'<span class="badge warn">Receive disabled</span>'}</td><td class="num">${s.active}</td><td class="num">${s.dlq?`<b style="color:var(--warn-ink)">${s.dlq}</b>`:0}</td><td class="num">${s.transit}</td><td style="text-align:right;white-space:nowrap"><button class="btn sm">${s.status==='Active'?'Pause':'Resume'}</button> <button class="btn sm ghost">⋯</button></td></tr>`).join('')}
+      </tbody></table></div></details>`).join('')}
+  </section>`;
+}
+function driftView(){
+  return `<section class="card" style="overflow:hidden">
+    <div class="card-h"><div class="toolbar"><select class="in" style="width:auto"><option>All endpoints</option>${ENDPOINTS.map(e=>`<option>${e.id}</option>`).join('')}</select><button class="btn sm">Compare again</button></div><span class="small faint" style="margin-left:auto">Compared 3 min ago · read-only until you remove something</span></div>
+    <div class="scrollx"><table class="tbl"><thead><tr><th>Item</th><th>Live</th><th>Catalog</th><th>Finding</th><th></th></tr></thead><tbody>
+    ${DRIFT.map(d=>`<tr><td class="mono small">${d.item}</td><td>${d.live}</td><td>${d.declared}</td><td><span class="badge warn">${d.kind}</span></td><td style="text-align:right"><button class="btn sm danger" data-remove="${esc(d.item)}">Remove…</button></td></tr>`).join('')}
+    </tbody></table></div></section>
+    ${note('<b>§6.2</b> Today’s Topology Audit. Removal keeps its typed confirmation; it changes the namespace.')}`;
+}
+function storageView(){
+  return `<section class="card" style="overflow:hidden">
+    <div class="card-h"><h3>Cosmos DB containers</h3><span class="small faint">Shown only when the storage provider is Cosmos DB</span><button class="btn sm" style="margin-left:auto">Refresh</button></div>
+    <div class="scrollx"><table class="tbl"><thead><tr><th>Container</th><th>Endpoint</th><th class="num">Items</th><th></th></tr></thead><tbody>
+    ${['messages','audits','endpoint-metadata','crm-adapter','erp-adapter','billing'].map((c,i)=>`<tr><td class="mono">${c}</td><td>${i>2?c:'<span class="faint">platform</span>'}</td><td class="num">${[48211,9310,14,3120,11840,904][i].toLocaleString()}</td><td style="text-align:right">${i>2?'<button class="btn sm danger">Delete…</button>':''}</td></tr>`).join('')}
+    </tbody></table></div></section>`;
+}
+function wireTopo(){
+  $$('#toposeg [data-t]').forEach(b=>b.onclick=()=>go('/Topology/'+b.dataset.t));
+  const tf=$('#topicf'); if(tf) tf.onchange=()=>{topicFilter=tf.value;render();};
+  $('#exportBtn').onclick=()=>modal(`<h3>Export AsyncAPI 3.0</h3><p>Channels, operations and Service Bus routing extensions for the whole platform.</p><div class="acts"><button class="btn" data-x>Cancel</button><button class="btn" data-ok>JSON</button><button class="btn primary" data-ok>YAML</button></div>`,m=>{$('[data-x]',m).onclick=closeModal;$$('[data-ok]',m).forEach(b=>b.onclick=()=>{closeModal();toast('nimbus-asyncapi.'+b.textContent.toLowerCase()+' downloaded');});});
+  $$('[data-remove]').forEach(b=>b.onclick=()=>modal(`<h3>Remove from the namespace?</h3><p class="mono small">${b.dataset.remove}</p><label class="f">Type <span class="mono">remove</span> to confirm<input class="in" id="rmc"></label><div class="acts"><button class="btn" data-x>Cancel</button><button class="btn danger solid" data-ok disabled>Remove</button></div>`,m=>{$('[data-x]',m).onclick=closeModal;const ok=$('[data-ok]',m);$('#rmc').oninput=e=>ok.disabled=e.target.value!=='remove';ok.onclick=()=>{closeModal();toast('Removed · audit-logged');};}));
+}
+
+/* ======================================================================
+   SETTINGS — feature catalogue
+   ====================================================================== */
+const MCP_CAPS=[
+  {key:'report',label:'Mark reported',risk:'low',tools:['nimbus_set_message_reported'],scope:'nimbus.annotate',role:'Contributor'},
+  {key:'classify',label:'Classify failures',risk:'low',riskText:'low · cost',tools:['nimbus_classify_failure'],scope:'nimbus.classify',role:'Contributor'},
+  {key:'resubmit',label:'Resubmit messages',risk:'medium',tools:['nimbus_prepare_action','nimbus_resubmit_message'],scope:'nimbus.resubmit',role:'Contributor'},
+  {key:'skip',label:'Skip messages',risk:'high',tools:['nimbus_prepare_action','nimbus_skip_message'],scope:'nimbus.skip',role:'Contributor'},
+  {key:'payloads',label:'Raw payloads',risk:'data',tools:['nimbus_get_message · includePayload'],scope:'nimbus.payload.read',role:'PiiReader'},
+];
+function features(){
+  const fiRestart=mock==='fiRestart', prod=mock==='prod', mcpOff=mock==='mcpOff';
+  return [
+    {id:'mcp',group:'AI & agents',icon:'⌘',name:'MCP access',desc:'AI agents check health and recover failures through /mcp.',
+      kw:'mcp agents claude code tools entra scope payload resubmit skip classify workload rate limit clients people',
+      status:mcpOff?['off','Not deployed']:FS.mcp.enabled?['ok','● Serving']:['off','○ Off'],
+      sum:mcpOff?'Needs NimBus__Mcp__Enabled + app registration':'2 actions · 0 refused · 24 h',
+      quick:mcpOff?null:FS.mcp.enabled?{label:'Turn off now',cls:'danger',act:'mcpOff'}:{label:'Turn on…',open:'overview'},
+      on:FS.mcp.enabled&&!mcpOff},
+    {id:'fi',group:'AI & agents',icon:'✧',name:'Failure intelligence',desc:'On-demand advisory analysis of failed messages.',
+      kw:'failure intelligence ai classification provider model api key payload redaction evidence history scope timeout',
+      status:fiRestart?['warn','Restart required']:FS.fi.enabled?['ok','● On']:['off','○ Off'],
+      sum:fiRestart?'Saved settings differ from this instance':'No API key configured',
+      quick:fiRestart?null:{label:'Set up…',open:'provider'},on:FS.fi.enabled,attn:fiRestart},
+    {id:'heartbeat',group:'Monitoring',icon:'∿',name:'Heartbeat probing',desc:'Which endpoints are probed, and how often.',
+      kw:'heartbeat probe interval timeout endpoints latency sdk version send now',
+      status:['ok','● On'],sum:'8 of 12 endpoints · every 5 min',quick:{label:'Send now',act:'hbSend'},on:true},
+    {id:'sim',group:'Testing',icon:'▷',name:'Simulation',desc:'Publish synthetic traffic from the Simulate page.',
+      kw:'simulation simulate synthetic traffic auto-stop rate ceiling endpoints ownership production environment',
+      status:prod?['bad','Blocked in production']:FS.sim.enabled?['ok','● On']:['off','○ Off'],
+      sum:prod?'Environment “prod” is on the production list':'Allowed in dev · auto-stop 30 min',
+      quick:prod?null:FS.sim.enabled?{label:'Open Simulate',act:'openSim'}:{label:'Enable…',open:'mode'},on:FS.sim.enabled&&!prod},
+    {id:'audit',group:'Compliance',icon:'▦',name:'Audit logging',desc:'Which operator actions are written to the audit log.',
+      kw:'audit logging categories record retention application insights operator actions',
+      status:['ok',auditCount()+' of 16 recorded'],sum:'Access-denied + settings changes always recorded',quick:null,on:true},
+  ];
+}
+// saved state per feature (what “init” is when a drawer opens)
+const FS={
+  mcp:{enabled:true,report:true,classify:true,resubmit:true,skip:true,payloads:false,workloads:false,people:'all',peopleList:'',clients:'any',endpoints:'all',limitReq:'',limitMut:''},
+  fi:{enabled:false,model:'jev-1',apiKey:'',payload:false,history:true,historyItems:3,redacted:'',scope:'all',endpointIds:'',timeout:10},
+  heartbeat:{interval:300,timeout:60,'inc_crm-adapter':true,'inc_erp-adapter':true,inc_billing:true,inc_warehouse:false,inc_pricing:true,inc_notifications:false},
+  sim:{enabled:false,autoStop:30,rate:120,'own_crm-adapter':false,'own_erp-adapter':false,own_billing:true},
+  audit:{a_resubmit:true,a_skip:true,a_delete:true,a_purge:true,a_killswitch:true,a_topology:true,a_copy:true,a_session:true,a_simulation:false,a_heartbeat:false,a_export:true,a_mcp:true,a_fi:true,a_reconcile:true},
+};
+function auditCount(){return Object.values(FS.audit).filter(Boolean).length+2;}
+
+let sFilter='', sMode='all';
+function settingsPage(){
+  const all=features();
+  const shown=all.filter(f=>(sMode==='all'||(sMode==='on'?f.on:sMode==='off'?!f.on:f.attn||f.status[0]==='warn'||f.status[0]==='bad'))&&(!sFilter||(f.name+' '+f.desc+' '+f.kw).toLowerCase().includes(sFilter.toLowerCase())));
+  const groups=[...new Set(all.map(f=>f.group))];
+  return `<div class="phead"><div><h1>Settings</h1><p>Opt-in capabilities for this deployment. See each feature’s state at a glance; configure it in the side panel.</p></div></div>
+  ${note('<b>§7 Settings.</b> Replaces Admin → Failure intelligence, Simulation, Audit, MCP access and the Heartbeat half of Health. Rows render from a feature registry, so a new feature adds a row, not a tab.')}
+  <div class="toolbar" style="margin-bottom:16px">
+    <input class="in" id="sfilter" style="max-width:420px;flex:1" placeholder="Filter — try “payload”, “rate”, “production”" value="${esc(sFilter)}">
+    ${['all','on','off','attention'].map(m=>`<button class="chip ${sMode===m?'on':''}" data-sm="${m}">${m==='attention'?'Needs attention':m[0].toUpperCase()+m.slice(1)}</button>`).join('')}
+  </div>
+  ${note('<b>§7.4</b> The filter matches setting <i>contents</i> (a keyword index per feature), not just titles: “payload” finds MCP access and Failure intelligence.')}
+  ${groups.map(g=>{const fs=shown.filter(f=>f.group===g);if(!fs.length)return '';return `<div class="sgroup"><span class="eyebrow">${g}</span><div class="rows">${fs.map(f=>`
+    <div class="srow">
+      <div class="ico">${f.icon}</div>
+      <div><h3>${esc(f.name)} <span class="badge ${f.status[0]}">${esc(f.status[1])}</span></h3><p>${esc(f.desc)}</p></div>
+      <div class="sum">${esc(f.sum)}</div>
+      <div class="q">${f.quick?`<button class="btn sm ${f.quick.cls||''}" data-quick="${f.id}">${esc(f.quick.label)}</button>`:''}</div>
+      <button class="cfg" data-open="${f.id}">Configure ›</button>
+    </div>`).join('')}</div></div>`;}).join('')||'<div class="card empty">No settings match.</div>'}
+  ${note('<b>§7.2 Quick-action rule.</b> A row acts inline only when the action <i>narrows</i> access and applies at once without consent (<b>Turn off now</b>, <b>Send now</b>). Anything that widens, needs a key, consent or a restart (“Turn on…”, “Set up…”, “Enable…”) opens the panel instead, so today’s review-and-confirm flows survive. Use the <b>Mock state</b> bar to see unavailable, restart-pending and production states.')}`;
+}
+function wireSettings(){
+  const sf=$('#sfilter'); sf.oninput=()=>{sFilter=sf.value;const pos=sf.selectionStart;render();const n=$('#sfilter');n.focus();n.setSelectionRange(pos,pos);};
+  $$('[data-sm]').forEach(b=>b.onclick=()=>{sMode=b.dataset.sm;render();});
+  $$('[data-open]').forEach(b=>b.onclick=()=>go('/Settings/'+b.dataset.open));
+  $$('[data-quick]').forEach(b=>b.onclick=()=>{
+    const f=features().find(x=>x.id===b.dataset.quick), q=f.quick;
+    if(q.open) return go('/Settings/'+f.id+'?tab='+q.open);
+    if(q.act==='mcpOff') modal(`<h3>Turn off MCP access now?</h3><p>Every agent call gets <span class="mono">503 [Disabled]</span> within 30 seconds on all instances. Your other MCP settings are kept, and turning it back on is reviewed as a widening change.</p><div class="acts"><button class="btn" data-x>Cancel</button><button class="btn danger solid" data-ok>Turn off now</button></div>`,m=>{$('[data-x]',m).onclick=closeModal;$('[data-ok]',m).onclick=()=>{FS.mcp.enabled=false;closeModal();toast('MCP access turned off · applies within 30 s');render();};});
+    if(q.act==='hbSend') toast('Heartbeat sent to 8 endpoint(s)');
+    if(q.act==='openSim') toast('Would open /Simulate');
+  });
+}
+
+/* ======================================================================
+   SETTINGS — drawer framework
+   ====================================================================== */
+const DRAWERS={
+  mcp:{title:'MCP access',tabs:{overview:'Overview',permissions:'Permissions',who:'Who & where',limits:'Limits',connect:'Connect',activity:'Activity'},
+    lead:'Let AI agents such as Claude Code check endpoint health, investigate failed messages and, for signed-in Contributors, recover them. Settings here can only narrow what Entra scopes and NimBus roles allow.',
+    rev:'Revision a1b2c3d4 · saved by Alvin Kaule 2 h ago · applies to every instance within 30 s, no restart',
+    apply:'Applies within 30 s'},
+  fi:{title:'Failure intelligence',tabs:{provider:'Activation & provider',evidence:'Evidence',scope:'Scope & guardrails',classification:'How failures are classified'},
+    lead:'On-demand advisory analysis. You control the provider, the evidence sent and the endpoint scope. Nothing runs automatically.',
+    rev:'Active on this instance: disabled · saving creates a shared revision · restart every instance to apply',apply:'Restart required after saving'},
+  heartbeat:{title:'Heartbeat probing',tabs:{probing:'Probing',endpoints:'Endpoints'},
+    lead:'Choose which endpoints are probed and how often. Live status, uptime and gaps are on the Heartbeat page.',
+    rev:'Saved 3 days ago by Alvin Kaule · applies on the next probe',apply:'Applies on the next probe'},
+  sim:{title:'Simulation',tabs:{mode:'Simulate mode',endpoints:'Consuming endpoints',policy:'Environment policy'},
+    lead:'Drive synthetic traffic through the real platform from this WebApp. Never available in production.',
+    rev:'State is kept in this WebApp instance and resets on restart',apply:'Applies immediately on this instance'},
+  audit:{title:'Audit logging',tabs:{categories:'Action types'},
+    lead:'Choose which operator actions are written to the audit log and Application Insights. Access-denied attempts and changes to this setting are always recorded.',
+    rev:'Saved 12 days ago by Alvin Kaule',apply:'Applies immediately'},
+};
+// change metadata: label, and how to classify a change (widens / narrows / changes)
+const META={
+  mcp:{enabled:['Serve the MCP endpoint',v=>v?'widens':'narrows'],report:['Mark reported',v=>v?'widens':'narrows'],classify:['Classify failures',v=>v?'widens':'narrows'],resubmit:['Resubmit messages',v=>v?'widens':'narrows'],skip:['Skip messages',v=>v?'widens':'narrows'],payloads:['Raw payloads',v=>v?'widens':'narrows'],workloads:['Unattended workloads',v=>v?'widens':'narrows'],people:['People',v=>v==='all'?'widens':'narrows'],clients:['Client applications',v=>v==='any'?'widens':'narrows'],endpoints:['Endpoints agents can change',v=>v==='all'?'widens':'narrows'],limitReq:['Tool-call limit',()=>'changes'],limitMut:['Message-change limit',()=>'changes']},
+  fi:{enabled:['Enable failure intelligence',()=>'changes'],model:['Model',()=>'changes'],apiKey:['API key',()=>'changes'],payload:['Include redacted event payload',v=>v?'widens':'narrows',true],history:['Include recent failure history',v=>v?'widens':'narrows'],historyItems:['Maximum history items',()=>'changes'],redacted:['Additional redacted keys',()=>'narrows'],scope:['Allow analysis on',v=>v==='all'?'widens':'narrows'],endpointIds:['Endpoint IDs',()=>'changes'],timeout:['Provider timeout',()=>'changes']},
+  heartbeat:{interval:['Probe interval',()=>'changes'],timeout:['Probe timeout',()=>'changes']},
+  sim:{enabled:['Enable simulate mode',()=>'changes'],autoStop:['Auto-stop',()=>'changes'],rate:['Rate ceiling',()=>'changes']},
+  audit:{},
+};
+function metaFor(id,k){
+  if(META[id][k]) return META[id][k];
+  if(k.startsWith('inc_')) return ['Probe '+k.slice(4),()=>'changes'];
+  if(k.startsWith('own_')) return ['Simulator owns '+k.slice(4),()=>'changes'];
+  if(k.startsWith('a_')) return ['Record '+k.slice(2),v=>v?'changes':'narrows'];
+  return [k,()=>'changes'];
+}
+function dirty(){ if(!D) return []; return Object.keys(D.draft).filter(k=>String(D.draft[k])!==String(D.init[k])).map(k=>{const [label,kind,consent]=metaFor(D.id,k);const v=D.draft[k];return {k,label,kind:kind(v),consent,text:`${label}: ${fmt(D.init[k])} → ${fmt(v)}`};}); }
+function fmt(v){return v===true?'on':v===false?'off':v===''?'(deployment default)':String(v);}
+
+function openDrawer(id,tab){
+  const def=DRAWERS[id]; if(!def){go('/Settings');return;}
+  const firstTab=Object.keys(def.tabs)[0];
+  tab=def.tabs[tab]?tab:firstTab;
+  if(!D||D.id!==id){D={id,tab,init:{...FS[id]},draft:{...FS[id]},reviewing:false};}
+  D.tab=tab;
+  drawDrawer();
+  document.body.classList.add('dopen');
+}
+function closeDrawerUI(){document.body.classList.remove('dopen');}
+function requestClose(){ if(dirty().length) confirmDiscard(()=>{D=null;go('/Settings');}); else {D=null;go('/Settings');} }
+function confirmDiscard(onDiscard,onKeep){
+  const n=dirty().length;
+  modal(`<h3>Discard ${n} unsaved change${n>1?'s':''}?</h3><p>${dirty().map(c=>esc(c.text)).join('<br>')}</p><div class="acts"><button class="btn" data-x>Keep editing</button><button class="btn danger solid" data-ok>Discard</button></div>`,m=>{$('[data-x]',m).onclick=()=>{closeModal();onKeep&&onKeep();};$('[data-ok]',m).onclick=()=>{closeModal();onDiscard();};});
+}
+function drawDrawer(){
+  const def=DRAWERS[D.id], f=features().find(x=>x.id===D.id), ch=dirty();
+  const tabDirty=t=>ch.some(c=>(TABKEYS[D.id][t]||[]).some(p=>c.k===p||c.k.startsWith(p)));
+  const quick=D.id==='mcp'&&FS.mcp.enabled&&mock!=='mcpOff'?`<button class="btn sm danger" id="dquick">Turn off now</button>`:D.id==='sim'&&FS.sim.enabled?`<button class="btn sm" id="dsim">Open Simulate →</button>`:'';
+  $('#drawer').innerHTML=`
+  <div class="dhead">
+    <div class="top"><h2>${def.title}</h2><span class="badge ${f.status[0]}">${esc(f.status[1])}</span><span style="margin-left:auto"></span>${quick}<button class="x" id="dclose" aria-label="Close">✕</button></div>
+    <div class="rev">${esc(def.rev)}</div>
+    <p class="lead">${esc(def.lead)}</p>
+    ${D.reviewing?'':`<div class="dtabs" role="tablist">${Object.entries(def.tabs).map(([k,l])=>`<button role="tab" data-tab="${k}" class="${k===D.tab?'on':''}">${l}${tabDirty(k)?'<span class="dot" title="Unsaved changes"></span>':''}</button>`).join('')}</div>`}
+  </div>
+  <div class="dbody" id="dbody">${D.reviewing?reviewBody(ch):banner()+TAB[D.id][D.tab]()}</div>
+  <div class="dfoot">${D.reviewing
+    ?`<span class="sum">${esc(def.apply)}</span><button class="btn" id="dback">Back to editing</button><button class="btn primary" id="dsave">Save ${ch.length} change${ch.length>1?'s':''}</button>`
+    :`<span class="sum">${ch.length?`<b>${ch.length} unsaved change${ch.length>1?'s':''}</b>${ch.some(c=>c.kind==='widens')?` · <span style="color:var(--warn-ink)">${ch.filter(c=>c.kind==='widens').length} widen${ch.filter(c=>c.kind==='widens').length>1?'':'s'} access</span>`:''}`:'No unsaved changes · '+esc(def.apply)}</span>
+      <button class="btn" id="ddiscard" ${ch.length?'':'disabled'}>Discard</button><button class="btn primary" id="dreview" ${ch.length?'':'disabled'}>Review &amp; save</button>`}
+  </div>`;
+  wireDrawer();
+}
+const TABKEYS={
+  mcp:{overview:['enabled'],permissions:['report','classify','resubmit','skip','payloads','workloads'],who:['people','peopleList','clients','endpoints'],limits:['limitReq','limitMut']},
+  fi:{provider:['enabled','model','apiKey'],evidence:['payload','history','historyItems','redacted'],scope:['scope','endpointIds','timeout']},
+  heartbeat:{probing:['interval','timeout'],endpoints:['inc_']},
+  sim:{mode:['enabled','autoStop','rate'],endpoints:['own_']},
+  audit:{categories:['a_']},
+};
+function banner(){
+  if(D.id==='mcp'&&mock==='mcpOff') return `<div class="banner info">MCP is not set up in this deployment. Set <span class="mono">NimBus__Mcp__Enabled</span> and the MCP app registration; anything you save now applies once the endpoint exists.</div>`;
+  if(D.id==='fi'&&mock==='fiRestart') return `<div class="banner warn">Saved settings differ from this instance. Restart all WebApp instances to apply.</div>`;
+  if(D.id==='fi'&&!D.draft.apiKey) return `<div class="banner info">Provider key is missing. Save one on <b>Activation &amp; provider</b>, or configure it through deployment, before enabling analysis.</div>`;
+  if(D.id==='sim'&&mock==='prod') return `<div class="banner bad">Simulation is blocked: environment <span class="mono">prod</span> is on the production list. These settings are read-only here.</div>`;
+  return '';
+}
+// --- controls bound to D.draft ---
+const tg=(k,label,desc,extra='',dis=false)=>`<div class="setting"><div class="lbl"><b>${label}${extra}</b>${desc?`<span class="d">${desc}</span>`:''}</div><button class="toggle ${D.draft[k]?'':'off'}" data-k="${k}" aria-label="${esc(label)}" ${dis?'disabled':''}></button></div>`;
+const num=(k,label,hint,min,max)=>`<label class="f">${label}<input class="in" type="number" data-k="${k}" min="${min}" max="${max}" value="${esc(D.draft[k])}">${hint?`<span class="hint">${hint}</span>`:''}</label>`;
+const txt=(k,label,hint,ph='',type='text')=>`<label class="f">${label}<input class="in" type="${type}" data-k="${k}" placeholder="${esc(ph)}" value="${esc(D.draft[k])}">${hint?`<span class="hint">${hint}</span>`:''}</label>`;
+const sel=(k,label,opts,hint)=>`<label class="f">${label}<select class="in" data-k="${k}">${opts.map(([v,l])=>`<option value="${v}" ${String(D.draft[k])===v?'selected':''}>${l}</option>`).join('')}</select>${hint?`<span class="hint">${hint}</span>`:''}</label>`;
+const card=(title,body,sub='')=>`<section class="card" style="margin-bottom:14px"><div class="card-h"><h3>${title}</h3>${sub?`<span class="small faint">${sub}</span>`:''}</div><div class="card-b">${body}</div></section>`;
+
+const TAB={
+  mcp:{
+    overview:()=>`<div class="kpis">
+        <div class="kpi"><div class="eyebrow">Endpoint</div><div class="v">${mock==='mcpOff'?'—':D.init.enabled?'Serving':'Off'}</div><div class="s">nimbus-operator 4.6.0</div></div>
+        <div class="kpi"><div class="eyebrow">Sign-in</div><div class="v">Entra ID</div><div class="s mono" style="font-size:11px">0d3aa8f9…d9352</div></div>
+        <div class="kpi"><div class="eyebrow">Actions · 24 h</div><div class="v">2</div><div class="s">1 report · 1 resubmit</div></div>
+        <div class="kpi"><div class="eyebrow">Refused · 24 h</div><div class="v">0</div><div class="s">—</div></div></div>
+      ${card('Activation',tg('enabled','Serve the MCP endpoint','When off, every call gets 503 [Disabled] within 30 s on all instances. The settings in the other tabs are kept.','',mock==='mcpOff')+
+        `<dl class="kv"><dt>Endpoint</dt><dd>https://webapp-nbdemo-dev-management.azurewebsites.net/mcp</dd><dt>Resource metadata</dt><dd>/.well-known/oauth-protected-resource/mcp</dd><dt>Server</dt><dd>nimbus-operator 4.6.0 · Streamable HTTP, stateless</dd></dl>
+        <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13px">Sign-in <span class="eyebrow">managed by deployment</span></summary><dl class="kv"><dt>Tenant</dt><dd>7f3c…e21a</dd><dt>MCP app (client) ID</dt><dd>0d3aa8f9-8168-4bc2-bda1-c3972e6d9352</dd><dt>Browser origins</dt><dd>none (desktop and CLI clients only)</dd></dl></details>`)}
+      ${note('<b>§8.2</b> The four KPI tiles and the activation card from today’s tab, unchanged. They now sit on the first drawer tab instead of above six stacked cards.')}`,
+    permissions:()=>`<div class="two"><div>
+      <p class="small muted" style="margin:0 0 10px">A tool runs only when <b>this switch</b> AND the Entra scope AND the NimBus role on the endpoint AND the message state allow it.</p>
+      ${card('What agents may do',`<div class="setting"><div class="lbl"><b>Observe <span class="risk low">read</span></b><span class="d">Endpoint health, messages, history, sessions, metrics and stored classifications: 11 read tools. Never stack traces.</span></div><span class="badge off">Always on</span></div>`+
+        MCP_CAPS.map(c=>tg(c.key,c.label,'',` <span class="risk ${c.risk}">${c.riskText||c.risk}</span>`).replace('</b>',`</b><div class="tags">${c.tools.map(t=>`<span>${t}</span>`).join('')}<span class="sc">${c.scope}</span><span class="rl">${c.role}</span></div>`)).join('')+
+        tg('workloads','Unattended workloads (app-only tokens)','Callers with the Nimbus.Observe app role may use the read tools. Workloads can’t change messages or read payloads.'))}
+      </div>${previewCard()}</div>
+      ${note('<b>§8.2</b> “Effective access” stays beside the switches it explains and previews the <i>draft</i>, so an Owner sees the effect before reviewing.')}`,
+    who:()=>card('People',sel('people','Who may use agents',[['all','Everyone with a NimBus role'],['listed','Only these people and groups']])+(D.draft.people==='listed'?`<div style="margin-top:10px">${txt('peopleList','Email or object id','','ops-oncall@contoso.example')}</div>`:''))+
+      card('Client applications',sel('clients','Which agent clients may connect',[['any','Any client the Entra registration allows'],['listed','Only these client IDs']]))+
+      card('Endpoints',sel('endpoints','Agents can change messages on',[['all','Every endpoint the caller may change'],['listed','Only selected endpoints']])+(D.draft.endpoints==='listed'?`<div class="tags" style="margin-top:10px">${ENDPOINTS.slice(0,3).map(e=>`<span>${e.id} ✕</span>`).join('')}<span>+ add</span></div>`:'')+`<p class="small faint" style="margin:10px 0 0">Agents can see every endpoint the caller can see. Hide an endpoint to remove it from agent results entirely.</p>`),
+    limits:()=>card('Limits',`<div class="fgrid">${num('limitReq','Tool calls per window','Every MCP request, per user and client. Deployment maximum 120 per 60 s. Empty = deployment value.',1,120)}${num('limitMut','Message changes per window','Resubmit, skip, report and classify. Deployment maximum 10 per 60 s.',1,10)}</div><p class="small faint" style="margin:12px 0 0">Raise the ceiling in <span class="mono">RateLimiting:Mcp</span> and <span class="mono">RateLimiting:McpMutations</span>.</p>`),
+    connect:()=>card('Connect an agent',`<p class="small muted" style="margin:0 0 8px">Claude Code</p><pre class="code">claude mcp add --transport http nimbus \\
+  https://webapp-nbdemo-dev-management.azurewebsites.net/mcp</pre><p class="small muted" style="margin:12px 0 8px">Any MCP client (JSON)</p><pre class="code">{ "mcpServers": { "nimbus": { "type": "http",
+  "url": "https://webapp-nbdemo-dev-management.azurewebsites.net/mcp" } } }</pre><p class="small faint" style="margin:10px 0 0">The agent signs in as the person using it. Their NimBus role decides what they can change.</p>`),
+    activity:()=>card('Recent agent activity',`<ul class="list">
+      <li><span class="mono small faint">14:02</span><span class="badge ok">resubmit</span><span>Alvin Kaule via Claude Code · <span class="mono small">erp-adapter / 7f2c…</span></span></li>
+      <li><span class="mono small faint">13:58</span><span class="badge info">report</span><span>Alvin Kaule via Claude Code · <span class="mono small">erp-adapter / 7f2c…</span></span></li>
+      <li><span class="mono small faint">09:12</span><span class="badge off">settings</span><span>Alvin Kaule saved revision a1b2c3d4 (narrows: Skip messages off)</span></li></ul>`,'From the audit log · read-only calls are not audited')+`<a href="#/Audits" class="small">Open the full Audit Log →</a>`,
+  },
+  fi:{
+    provider:()=>card('Activation & provider',tg('enabled','Enable failure intelligence','Contributors can request analysis. Nothing runs automatically.')+
+      `<div class="fgrid"><label class="f">Provider<input class="in" value="TypeSafe" readonly></label>${txt('model','Model','')}</div><div style="margin-top:12px">${txt('apiKey','API key','Stored encrypted in shared settings and never shown again. A saved key overrides the deployment key after restart.','Paste the TypeSafe API key','password')}</div>`),
+    evidence:()=>`<div class="two"><div>${card('Evidence sent to Jev',tg('payload','Include redacted event payload','Business context from this failure occurrence.')+
+      (D.draft.payload?`<div class="banner warn" style="margin:8px 0">Event data will leave NimBus. PII annotations and secret-key rules are applied first, but unmarked business data may remain.</div>`:'')+
+      tg('history','Include recent failure history','Earlier failures for the same event, endpoint and session.')+`<div class="fgrid">${num('historyItems','Maximum history items','',0,5)}${txt('redacted','Additional redacted keys','Comma-separated field names.','TaxId, AccountId')}</div>`)}</div>
+      <section class="card"><div class="card-h"><h3>What leaves NimBus</h3></div><div class="card-b"><pre class="code">${esc(JSON.stringify({failure:{eventType:'CrmAccountCreated',endpoint:'ErpEndpoint',status:'Failed',exception:{type:'InvalidOperationException',message:'ERP is in error mode.'}},recentHistory:D.draft.history?[{attempt:1,outcome:'ErrorResponse'}]:[],eventPayload:D.draft.payload?{AccountId:'[redacted]',LegalName:'Example Company',TaxId:'[redacted]'}:null},null,2))}</pre><p class="small faint" style="margin:8px 0 0">Illustrative failure. Updates as you edit.</p></div></section></div>`,
+    scope:()=>card('Scope & guardrails',sel('scope','Allow new analysis on',[['all','All authorized endpoints'],['selected','Selected endpoints']])+(D.draft.scope==='selected'?`<div style="margin-top:10px">${txt('endpointIds','Endpoint IDs','','ErpEndpoint, CrmEndpoint')}</div>`:'')+`<div class="fgrid">${num('timeout','Provider timeout (seconds)','',1,20)}</div><p class="small faint" style="margin:10px 0 0">Existing permissions still apply. Contributors analyze; Readers view saved results.</p>`),
+    classification:()=>card('How failures are classified','<p class="muted small" style="margin:0">Today’s <span class="mono">FailureClassificationExplainer</span>, unchanged: thresholds and the four fixed questions.</p>'),
+  },
+  heartbeat:{
+    probing:()=>card('Probing',`<div class="fgrid">${num('interval','Interval (seconds)','Default 300',30,3600)}${num('timeout','Timeout (seconds)','Default 60',5,600)}</div><div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button class="btn" id="hbsend">Send now</button><span class="small faint">Probes every included endpoint once.</span></div>`),
+    endpoints:()=>card('Endpoints probed',`<ul class="list">${ENDPOINTS.map(e=>`<li><span class="mono" style="flex:1">${e.id}</span><span class="small faint">${D.draft['inc_'+e.id]?'last reply 41 s ago · 18 ms':'excluded'}</span><button class="toggle ${D.draft['inc_'+e.id]?'':'off'}" data-k="inc_${e.id}" aria-label="Probe ${e.id}"></button></li>`).join('')}</ul>`,'Live status lives on the Heartbeat page'),
+  },
+  sim:{
+    mode:()=>card('Simulate mode',tg('enabled','Enable simulate mode','Adds the Simulate page. Disabling stops a running simulation.','',mock==='prod')+`<div class="fgrid">${num('autoStop','Auto-stop (minutes)','',5,240)}${num('rate','Rate ceiling (per minute)','Shared by every publisher. Max 600.',1,600)}</div><div style="margin-top:12px"><label class="f">Session prefix<input class="in" value="sim-" readonly><span class="hint">Marks simulated sessions and correlations.</span></label></div>`,'Resets when this instance restarts'),
+    endpoints:()=>card('Consuming endpoints',`<ul class="list">${['crm-adapter','erp-adapter','billing'].map(id=>`<li><div style="flex:1"><div class="mono">${id}</div><div class="small faint">Consumes ${id==='billing'?'OrderPlaced':'CustomerChanged, OrderPlaced'}</div></div><span class="badge ${D.draft['own_'+id]?'ok':'off'}">${D.draft['own_'+id]?'Simulated':'External'}</span><button class="toggle ${D.draft['own_'+id]?'':'off'}" data-k="own_${id}" aria-label="Simulator owns ${id}" ${mock==='prod'?'disabled':''}></button></li>`).join('')}</ul>`,'Only endpoints the simulator owns get a simulated handler'),
+    policy:()=>card('Environment policy',`<dl class="kv"><dt>Current environment</dt><dd>${mock==='prod'?'prod':'dev'}</dd><dt>Production names</dt><dd>prod, production, prd</dd><dt>Allowed environments</dt><dd>dev, test</dd></dl><p class="small faint" style="margin:10px 0 0">Set by deployment (<span class="mono">NimBus__Simulation__*</span>). Read-only here.</p>`),
+  },
+  audit:{
+    categories:()=>{const groups={'Message operations':['resubmit','skip','delete','purge','session','reconcile','copy'],'Endpoints & topology':['killswitch','topology','export'],'Features':['mcp','fi','simulation','heartbeat']};
+      return Object.entries(groups).map(([g,ks])=>card(g,`<ul class="list">${ks.map(k=>`<li><span style="flex:1">${k}</span><button class="toggle ${D.draft['a_'+k]?'':'off'}" data-k="a_${k}" aria-label="Record ${k}"></button></li>`).join('')}</ul>`,`${ks.filter(k=>D.draft['a_'+k]).length} of ${ks.length} recorded`)).join('')+
+      card('Always recorded','<p class="small muted" style="margin:0">Access-denied attempts · changes to audit settings</p>');},
+  },
+};
+function previewCard(){
+  const roles={reader:'Reader',contributor:'Contributor',pii:'+ PiiReader',workload:'Workload'};
+  const r=D.role||'contributor';
+  const dr=D.draft, isW=r==='workload';
+  const rows=[['11 read tools',isW?dr.workloads:true,isW?(dr.workloads?'app role':'workloads off'):'nimbus.observe']].concat(
+    MCP_CAPS.map(c=>{let ok=dr[c.key]&&!isW&&r!=='reader';let why=!dr[c.key]?'switched off':isW?'workloads can’t':r==='reader'?'needs '+c.role:'scope + '+c.role;
+      if(c.key==='payloads'){ok=dr.payloads&&r==='pii';why=!dr.payloads?'switched off':r==='pii'?'scope + PiiReader':'needs PiiReader';}
+      return [c.tools[c.tools.length-1].replace('nimbus_',''),ok,why];}));
+  return `<section class="card" style="position:sticky;top:0"><div class="card-h" style="flex-direction:column;align-items:flex-start;gap:2px"><h3>Effective access</h3><span class="small faint">${dirty().length?'Previewing your unsaved edits':'Saved settings'} · the server is authoritative</span></div><div class="card-b">
+    <div class="seg" style="margin-bottom:8px" id="roleSeg">${Object.entries(roles).map(([k,l])=>`<button data-role="${k}" class="${k===r?'on':''}">${l}</button>`).join('')}</div>
+    <ul class="access">${rows.map(([t,ok,why])=>`<li><span class="${ok?'yes':'no'}">${ok?'✓':'✕'}</span><span class="t">${t}</span><span class="why">${why}</span></li>`).join('')}</ul></div></section>`;
+}
+function reviewBody(ch){
+  const widens=ch.filter(c=>c.kind==='widens'), consent=ch.find(c=>c.consent&&D.draft.payload);
+  return `<h3 style="margin:0 0 10px">Review changes</h3><div class="review"><ul>${ch.map(c=>`<li><span class="kind ${c.kind}">${c.kind}</span>${esc(c.text)}</li>`).join('')}</ul></div>
+    ${widens.length?`<label class="checkrow"><input type="checkbox" class="req"> I understand ${widens.length} change${widens.length>1?'s':''} give${widens.length>1?'':'s'} agents or providers more access than before.</label>`:''}
+    ${consent?`<label class="checkrow"><input type="checkbox" class="req"> I authorize sending redacted event payloads to TypeSafe; unmarked business data may remain.</label>`:''}
+    <p class="small faint">${esc(DRAWERS[D.id].apply)}. The save is audit-logged with a diff.</p>
+    ${note('<b>§8.3</b> Each feature keeps its own review semantics — MCP’s widens/narrows confirmation, Failure intelligence’s payload consent and restart notice — but they now share one footer and one review screen.')}`;
+}
+function wireDrawer(){
+  $('#dclose').onclick=requestClose;
+  const dq=$('#dquick'); if(dq) dq.onclick=()=>{$$('[data-quick="mcp"]')[0]?.click();};
+  $$('#drawer [data-tab]').forEach(b=>b.onclick=()=>{D.tab=b.dataset.tab;setRoute('/Settings/'+D.id+'?tab='+D.tab);drawDrawer();});
+  $$('#drawer .toggle[data-k]').forEach(t=>t.onclick=()=>{D.draft[t.dataset.k]=!D.draft[t.dataset.k];drawDrawer();});
+  $$('#drawer input[data-k],#drawer select[data-k]').forEach(i=>{
+    const ev=i.tagName==='SELECT'?'change':'input';
+    i.addEventListener(ev,()=>{const k=i.dataset.k;D.draft[k]=i.type==='number'?(i.value===''?'':Number(i.value)):i.value;
+      if(i.tagName==='SELECT'){drawDrawer();return;}
+      refreshFoot();});
+  });
+  $$('#roleSeg [data-role]').forEach(b=>b.onclick=()=>{D.role=b.dataset.role;drawDrawer();});
+  const ds=$('#dsim'); if(ds) ds.onclick=()=>toast('Would open /Simulate');
+  const hb=$('#hbsend'); if(hb) hb.onclick=()=>toast('Heartbeat sent to 8 endpoint(s)');
+  const rv=$('#dreview'); if(rv) rv.onclick=()=>{D.reviewing=true;drawDrawer();};
+  const dd=$('#ddiscard'); if(dd) dd.onclick=()=>{D.draft={...D.init};drawDrawer();};
+  const bk=$('#dback'); if(bk) bk.onclick=()=>{D.reviewing=false;drawDrawer();};
+  const sv=$('#dsave'); if(sv){const reqs=$$('#drawer .req');const upd=()=>sv.disabled=reqs.some(r=>!r.checked);reqs.forEach(r=>r.onchange=upd);upd();
+    sv.onclick=()=>{const n=dirty().length;Object.assign(FS[D.id],D.draft);D.init={...D.draft};D.reviewing=false;
+      if(D.id==='mcp')DRAWERS.mcp.rev='Revision 9e41b07c · saved by Alvin Kaule just now · applies to every instance within 30 s, no restart';
+      toast(`<b>${DRAWERS[D.id].title}</b>: ${n} change${n>1?'s':''} saved · ${DRAWERS[D.id].apply.toLowerCase()}`);drawDrawer();refreshSettingsList();};}
+}
+function refreshFoot(){ // re-render footer + tab dots without losing input focus
+  const ch=dirty(), def=DRAWERS[D.id];
+  const foot=$('#drawer .dfoot'); if(!foot||D.reviewing) return;
+  foot.querySelector('.sum').innerHTML=ch.length?`<b>${ch.length} unsaved change${ch.length>1?'s':''}</b>`:'No unsaved changes · '+esc(def.apply);
+  $('#ddiscard').disabled=!ch.length; $('#dreview').disabled=!ch.length;
+}
+function refreshSettingsList(){ const {parts}=parse(); if(parts[0]==='Settings'){ $('#content').innerHTML=settingsPage(); wireSettings(); } }
+$('#scrim').onclick=requestClose;
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ if($('#palette').classList.contains('open')) return closePalette(); if($('#modal').classList.contains('open')) return closeModal(); if(D) requestClose(); }
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}
+});
+
+/* ======================================================================
+   HEARTBEAT + AUDIT LOG (cross-links)
+   ====================================================================== */
+function heartbeatPage(){
+  return `<div class="phead"><div><h1>Heartbeat</h1><p>Fleet reachability, observed uptime, and recent silent periods.</p></div><div class="actions"><a class="btn" href="#/Settings/heartbeat">⚙ Configure probing</a></div></div>
+  ${note('<b>§9.1</b> Admin → Health splits in two. <b>Platform services</b> (site Owners only — its API is Owner-gated) moves here, above the fleet. <b>Heartbeat probing</b> configuration becomes a Settings row, linked by the ⚙ button.')}
+  <section class="card" style="margin-bottom:16px"><div class="card-h"><h2>Platform services</h2><span class="badge ok">all up</span><span class="small faint" style="margin-left:auto">Site Owners · round-trip probe over Service Bus</span></div>
+   <div class="card-b" style="display:flex;gap:10px;flex-wrap:wrap">${[['Resolver','12 s ago'],['WebApp','live'],['Heartbeat publisher','41 s ago']].map(([n,t])=>`<div class="kpi" style="min-width:180px"><div class="eyebrow">${n}</div><div class="v" style="font-size:16px"><span class="yes">●</span> Running</div><div class="s">${t}</div></div>`).join('')}</div></section>
+  <section class="card" style="overflow:hidden"><div class="card-h"><h2>Fleet</h2><span class="small faint">Existing Heartbeat page, unchanged</span></div><div class="scrollx"><table class="tbl"><thead><tr><th>Endpoint</th><th>Status</th><th class="num">Uptime 7 d</th><th class="num">Latency</th></tr></thead><tbody>
+   ${ENDPOINTS.map((e,i)=>`<tr><td class="mono">${e.id}</td><td>${i===3||i===5?'<span class="badge off">not probed</span>':'<span class="badge ok">responding</span>'}</td><td class="num">${i===3||i===5?'—':(99.2+i/10).toFixed(1)+'%'}</td><td class="num">${i===3||i===5?'—':(14+i*3)+' ms'}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function auditsPage(){
+  return `<div class="phead"><div><h1>Audit Log</h1><p>Who did what, when.</p></div><div class="actions"><a class="btn" href="#/Settings/audit">⚙ Configure recording</a></div></div>
+  ${note('<b>§9.3</b> Feature pages link to their own settings. The Simulate page gets the same ⚙ link to <span class="mono">/Settings/simulation</span>.')}
+  <section class="card" style="overflow:hidden"><table class="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>
+  <tr><td class="mono small">14:02</td><td>Alvin Kaule (MCP)</td><td>resubmit</td><td class="mono small">erp-adapter</td></tr>
+  <tr><td class="mono small">13:20</td><td>Alvin Kaule</td><td>receive paused</td><td class="mono small">erp-adapter</td></tr>
+  <tr><td class="mono small">09:12</td><td>Alvin Kaule</td><td>MCP settings saved</td><td class="mono small">rev a1b2c3d4</td></tr></tbody></table></section>`;
+}
+
+/* ======================================================================
+   COMMAND PALETTE
+   ====================================================================== */
+function paletteIndex(){
+  const items=[];
+  [['Operations','/Operations','Page'],['Topology','/Topology','Page'],['Settings','/Settings','Page']].forEach(([n,r,k])=>items.push({n,r,k,kw:n}));
+  OPS.forEach(o=>items.push({n:o.name,r:'/Operations/'+o.id,k:'Operation',kw:o.name+' '+o.desc}));
+  features().forEach(f=>{items.push({n:f.name,r:'/Settings/'+f.id,k:'Setting',kw:f.name+' '+f.kw});
+    Object.entries(DRAWERS[f.id].tabs).forEach(([t,l])=>items.push({n:f.name+' › '+l,r:'/Settings/'+f.id+'?tab='+t,k:'Setting',kw:l+' '+(TABKW[f.id][t]||''),sub:true}));});
+  ENDPOINTS.forEach(e=>items.push({n:e.id+' — endpoint controls',r:'/Operations?endpoint='+e.id,k:'Endpoint',kw:e.id}));
+  [['Catalog drift','/Topology/drift'],['Subscriptions','/Topology/subscriptions'],['Cosmos containers','/Topology/storage']].forEach(([n,r])=>items.push({n,r,k:'Topology',kw:n}));
+  return items;
+}
+// Per-tab keywords, so a search lands on the tab that holds the setting.
+const TABKW={
+  mcp:{overview:'serve endpoint url sign-in entra tenant',permissions:'tools payload resubmit skip classify report workload scope role',who:'people groups clients endpoints hide',limits:'rate limit tool calls mutations',connect:'claude code connect url json',activity:'audit actions refused'},
+  fi:{provider:'enable provider model api key typesafe',evidence:'payload redaction history evidence',scope:'endpoints timeout guardrails',classification:'thresholds classify'},
+  heartbeat:{probing:'interval timeout send now',endpoints:'endpoints include exclude probe'},
+  sim:{mode:'enable auto-stop rate ceiling session prefix',endpoints:'ownership consuming endpoints',policy:'production environment'},
+  audit:{categories:'categories record retention'},
+};
+let pSel=0,pItems=[];
+function openPalette(){$('#palette').classList.add('open');$('#pq').value='';drawPalette();setTimeout(()=>$('#pq').focus(),10);}
+function closePalette(){$('#palette').classList.remove('open');}
+function drawPalette(){
+  const q=$('#pq').value.trim().toLowerCase();
+  pItems=paletteIndex().filter(i=>q?(i.n+' '+i.kw).toLowerCase().includes(q):!i.sub).slice(0,12); pSel=Math.min(pSel,Math.max(0,pItems.length-1));
+  $('#pres').innerHTML=(q?'':'<div class="hd">Jump to</div>')+pItems.map((i,ix)=>`<li data-ix="${ix}" class="${ix===pSel?'sel':''}"><span>${esc(i.n)}</span><span class="k">${i.k}</span></li>`).join('')||'<li>No results</li>';
+  $$('#pres li[data-ix]').forEach(li=>li.onclick=()=>{closePalette();go(pItems[+li.dataset.ix].r);});
+}
+$('#pq').addEventListener('input',()=>{pSel=0;drawPalette();});
+$('#pq').addEventListener('keydown',e=>{if(e.key==='ArrowDown'){pSel=Math.min(pSel+1,pItems.length-1);drawPalette();e.preventDefault();}if(e.key==='ArrowUp'){pSel=Math.max(pSel-1,0);drawPalette();e.preventDefault();}if(e.key==='Enter'&&pItems[pSel]){closePalette();go(pItems[pSel].r);}});
+$('#palette').addEventListener('click',e=>{if(e.target.id==='palette')closePalette();});
+$('#searchBtn').onclick=openPalette;
+
+/* ======================================================================
+   wiring
+   ====================================================================== */
+function wirePage(page){  if(page==='Operations')wireOps(); if(page==='Topology')wireTopo(); if(page==='Settings')wireSettings(); }
+$('#mockbar').insertAdjacentHTML('beforeend',Object.entries(MOCKS).map(([k,l])=>`<button class="chip ${k===mock?'on':''}" data-mock="${k}">${l}</button>`).join(''));
+$$('[data-mock]').forEach(b=>b.onclick=()=>{mock=b.dataset.mock;$$('[data-mock]').forEach(x=>x.classList.toggle('on',x===b));if(D)drawDrawer();refreshSettingsList();if(!ROUTE.startsWith('/Settings'))go('/Settings');});
+$('#notesBtn').onclick=()=>document.body.classList.toggle('notes');
+$('#menuBtn').onclick=()=>document.body.classList.toggle('navopen');
+$('#themeBtn').onclick=()=>{const r=document.documentElement;const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=dark?'light':'dark';};
+render();
+</script>
+</body>
+</html>

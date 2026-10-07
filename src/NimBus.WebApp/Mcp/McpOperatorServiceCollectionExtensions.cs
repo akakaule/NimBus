@@ -7,6 +7,8 @@ using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Authentication;
 using ModelContextProtocol.Protocol;
+using Microsoft.AspNetCore.Authorization;
+using NimBus.WebApp.Mcp.Access;
 using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.Mcp.Tools;
 using NimBus.WebApp.RateLimiting;
@@ -56,8 +58,14 @@ public static class McpOperatorServiceCollectionExtensions
 
             policy.AddAuthenticationSchemes(McpAuthenticationSchemes.Bearer)
                 .RequireAuthenticatedUser()
-                .RequireAssertion(context => McpOperatorPermissions.CanObserve(context.User));
+                .RequireAssertion(context => McpOperatorPermissions.CanObserve(context.User))
+                .AddRequirements(new McpAccessRequirement());
         }));
+
+        // Spec 037: the site Owner's access policy, read live from shared storage.
+        services.AddSingleton<IMcpAccessPolicyProvider, McpAccessPolicyProvider>();
+        services.AddSingleton<McpAccessRefusals>();
+        services.AddScoped<IAuthorizationHandler, McpAccessRequirementHandler>();
 
         services.AddMcpServer(server => server.ServerInfo = new Implementation
             {
@@ -69,7 +77,10 @@ public static class McpOperatorServiceCollectionExtensions
             .WithTools<OperatorDiscoveryTools>(ToolSerializerOptions)
             .WithTools<OperatorMessageTools>(ToolSerializerOptions)
             .WithTools<OperatorInsightTools>(ToolSerializerOptions)
-            .WithTools<OperatorActionTools>(ToolSerializerOptions);
+            .WithTools<OperatorActionTools>(ToolSerializerOptions)
+            .WithRequestFilters(filters => filters
+                .AddListToolsFilter(McpToolAccess.FilterList)
+                .AddCallToolFilter(McpToolAccess.FilterCall));
 
         services.AddScoped<OperatorEndpointCatalog>();
         services.AddScoped<OperatorQueries>();
@@ -122,7 +133,7 @@ public static class McpOperatorServiceCollectionExtensions
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     };
 
-    private static string ServerVersion()
+    internal static string ServerVersion()
     {
         var informational = typeof(McpOperatorServiceCollectionExtensions).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;

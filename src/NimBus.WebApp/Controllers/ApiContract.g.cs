@@ -2161,6 +2161,128 @@ namespace NimBus.WebApp.ManagementApi
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public interface IMcpAccessApiController
+    {
+
+        /// <summary>
+        /// Get the MCP access policy and the deployment's MCP configuration
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 037. Site Owner only. Returns the saved policy (revision null when nothing was saved), the policy this instance enforces, the deployment's read-only MCP settings and an antiforgery token for the write operations.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpAccessState>> GetAdminMcpSettingsAsync();
+
+        /// <summary>
+        /// Save the MCP access policy
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 037. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Saves when revision matches the stored revision (409 otherwise). A change that widens access needs confirmWidening (400 ConfirmationRequired otherwise). Applies to every instance within 30 seconds.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpAccessState>> PutAdminMcpSettingsAsync(McpAccessUpdate body);
+
+        /// <summary>
+        /// Turn MCP access off now
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 037. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Turns the endpoint off on the latest saved policy, whatever revision the caller last read, and keeps every other setting. Agents get 503 [Disabled] within 30 seconds.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpAccessState>> PostAdminMcpTurnOffAsync();
+
+        /// <summary>
+        /// Recent agent activity over MCP
+        /// </summary>
+
+        /// <remarks>
+        /// Spec 037. Site Owner only. Actions, refusals and settings changes from the audit log (channel Mcp) in the last `hours` (1-168, default 24). Read-only tool calls are not audited.
+        /// </remarks>
+
+        /// <returns>OK</returns>
+
+        System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpActivity>> GetAdminMcpActivityAsync(int hours);
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpAccessApiController : Microsoft.AspNetCore.Mvc.Controller
+    {
+        private IMcpAccessApiController _implementation;
+
+        public McpAccessApiController(IMcpAccessApiController implementation)
+        {
+            _implementation = implementation;
+        }
+
+        /// <summary>
+        /// Get the MCP access policy and the deployment's MCP configuration
+        /// </summary>
+        /// <remarks>
+        /// Spec 037. Site Owner only. Returns the saved policy (revision null when nothing was saved), the policy this instance enforces, the deployment's read-only MCP settings and an antiforgery token for the write operations.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/mcp/settings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpAccessState>> GetAdminMcpSettings()
+        {
+
+            return _implementation.GetAdminMcpSettingsAsync();
+        }
+
+        /// <summary>
+        /// Save the MCP access policy
+        /// </summary>
+        /// <remarks>
+        /// Spec 037. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Saves when revision matches the stored revision (409 otherwise). A change that widens access needs confirmWidening (400 ConfirmationRequired otherwise). Applies to every instance within 30 seconds.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPut, Microsoft.AspNetCore.Mvc.Route("api/admin/mcp/settings")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpAccessState>> PutAdminMcpSettings([Microsoft.AspNetCore.Mvc.FromBody] McpAccessUpdate body)
+        {
+
+            return _implementation.PutAdminMcpSettingsAsync(body);
+        }
+
+        /// <summary>
+        /// Turn MCP access off now
+        /// </summary>
+        /// <remarks>
+        /// Spec 037. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Turns the endpoint off on the latest saved policy, whatever revision the caller last read, and keeps every other setting. Agents get 503 [Disabled] within 30 seconds.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/mcp/turn-off")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpAccessState>> PostAdminMcpTurnOff()
+        {
+
+            return _implementation.PostAdminMcpTurnOffAsync();
+        }
+
+        /// <summary>
+        /// Recent agent activity over MCP
+        /// </summary>
+        /// <remarks>
+        /// Spec 037. Site Owner only. Actions, refusals and settings changes from the audit log (channel Mcp) in the last `hours` (1-168, default 24). Read-only tool calls are not audited.
+        /// </remarks>
+        /// <returns>OK</returns>
+        [Microsoft.AspNetCore.Mvc.HttpGet, Microsoft.AspNetCore.Mvc.Route("api/admin/mcp/activity")]
+        public System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.ActionResult<McpActivity>> GetAdminMcpActivity([Microsoft.AspNetCore.Mvc.FromQuery] int? hours)
+        {
+
+            return _implementation.GetAdminMcpActivityAsync(hours ?? 24);
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NSwag", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public interface IMessageApiController
     {
 
@@ -15959,6 +16081,1906 @@ namespace NimBus.WebApp.ManagementApi
         }
     }
 
+    /// <summary>
+    /// The site Owner's MCP access policy (Spec 037). It can only narrow what the deployment, Entra scopes and NimBus roles allow.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpAccessSettings : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _revision;
+        private string _updatedBy;
+        private System.DateTime? _updatedAtUtc;
+        private bool _enabled;
+        private McpCapabilities _capabilities;
+        private bool _allowWorkloads;
+        private McpPeople _people;
+        private McpClients _clients;
+        private McpEndpointRules _endpoints;
+        private McpLimits _limits;
+
+        /// <summary>
+        /// Read-only. Null when nothing was saved.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("revision", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Revision    {
+            get { return _revision; }
+            set
+            {
+                if (_revision != value)
+                {
+                    _revision = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Read-only.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("updatedBy", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string UpdatedBy    {
+            get { return _updatedBy; }
+            set
+            {
+                if (_updatedBy != value)
+                {
+                    _updatedBy = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Read-only.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("updatedAtUtc", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime? UpdatedAtUtc    {
+            get { return _updatedAtUtc; }
+            set
+            {
+                if (_updatedAtUtc != value)
+                {
+                    _updatedAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("enabled", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Enabled    {
+            get { return _enabled; }
+            set
+            {
+                if (_enabled != value)
+                {
+                    _enabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("capabilities", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpCapabilities Capabilities    {
+            get { return _capabilities; }
+            set
+            {
+                if (_capabilities != value)
+                {
+                    _capabilities = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("allowWorkloads", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool AllowWorkloads    {
+            get { return _allowWorkloads; }
+            set
+            {
+                if (_allowWorkloads != value)
+                {
+                    _allowWorkloads = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("people", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpPeople People    {
+            get { return _people; }
+            set
+            {
+                if (_people != value)
+                {
+                    _people = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("clients", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpClients Clients    {
+            get { return _clients; }
+            set
+            {
+                if (_clients != value)
+                {
+                    _clients = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpEndpointRules Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("limits", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpLimits Limits    {
+            get { return _limits; }
+            set
+            {
+                if (_limits != value)
+                {
+                    _limits = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpAccessSettings FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpAccessSettings>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpCapabilities : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _payloads;
+        private bool _report;
+        private bool _classify;
+        private bool _resubmit;
+        private bool _skip;
+
+        [Newtonsoft.Json.JsonProperty("payloads", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Payloads    {
+            get { return _payloads; }
+            set
+            {
+                if (_payloads != value)
+                {
+                    _payloads = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("report", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Report    {
+            get { return _report; }
+            set
+            {
+                if (_report != value)
+                {
+                    _report = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("classify", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Classify    {
+            get { return _classify; }
+            set
+            {
+                if (_classify != value)
+                {
+                    _classify = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("resubmit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Resubmit    {
+            get { return _resubmit; }
+            set
+            {
+                if (_resubmit != value)
+                {
+                    _resubmit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("skip", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Skip    {
+            get { return _skip; }
+            set
+            {
+                if (_skip != value)
+                {
+                    _skip = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpCapabilities FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpCapabilities>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum McpPeopleMode
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"all")]
+        All = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"listed")]
+        Listed = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpPeople : System.ComponentModel.INotifyPropertyChanged
+    {
+        private McpPeopleMode _mode;
+        private System.Collections.Generic.List<McpPrincipal> _principals;
+
+        [Newtonsoft.Json.JsonProperty("mode", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public McpPeopleMode Mode    {
+            get { return _mode; }
+            set
+            {
+                if (_mode != value)
+                {
+                    _mode = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("principals", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpPrincipal> Principals    {
+            get { return _principals; }
+            set
+            {
+                if (_principals != value)
+                {
+                    _principals = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpPeople FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpPeople>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpPrincipal : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _principal;
+        private string _label;
+
+        /// <summary>
+        /// An email address, a user object id or a group object id.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("principal", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Principal    {
+            get { return _principal; }
+            set
+            {
+                if (_principal != value)
+                {
+                    _principal = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("label", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Label    {
+            get { return _label; }
+            set
+            {
+                if (_label != value)
+                {
+                    _label = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpPrincipal FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpPrincipal>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum McpClientMode
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"any")]
+        Any = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"approved")]
+        Approved = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpClients : System.ComponentModel.INotifyPropertyChanged
+    {
+        private McpClientMode _mode;
+        private System.Collections.Generic.List<McpApprovedClient> _approved;
+
+        [Newtonsoft.Json.JsonProperty("mode", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public McpClientMode Mode    {
+            get { return _mode; }
+            set
+            {
+                if (_mode != value)
+                {
+                    _mode = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("approved", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpApprovedClient> Approved    {
+            get { return _approved; }
+            set
+            {
+                if (_approved != value)
+                {
+                    _approved = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpClients FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpClients>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpApprovedClient : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _clientId;
+        private string _name;
+        private bool _mayChange;
+
+        [Newtonsoft.Json.JsonProperty("clientId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ClientId    {
+            get { return _clientId; }
+            set
+            {
+                if (_clientId != value)
+                {
+                    _clientId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("mayChange", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool MayChange    {
+            get { return _mayChange; }
+            set
+            {
+                if (_mayChange != value)
+                {
+                    _mayChange = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpApprovedClient FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpApprovedClient>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum McpEndpointVisibility
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"all")]
+        All = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"allExcept")]
+        AllExcept = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum McpChangeScope
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"allVisible")]
+        AllVisible = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"listed")]
+        Listed = 1,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpEndpointRules : System.ComponentModel.INotifyPropertyChanged
+    {
+        private McpEndpointVisibility _visibility;
+        private System.Collections.Generic.List<string> _hidden;
+        private McpChangeScope _changes;
+        private System.Collections.Generic.List<string> _changeOn;
+
+        [Newtonsoft.Json.JsonProperty("visibility", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public McpEndpointVisibility Visibility    {
+            get { return _visibility; }
+            set
+            {
+                if (_visibility != value)
+                {
+                    _visibility = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("hidden", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Hidden    {
+            get { return _hidden; }
+            set
+            {
+                if (_hidden != value)
+                {
+                    _hidden = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("changes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public McpChangeScope Changes    {
+            get { return _changes; }
+            set
+            {
+                if (_changes != value)
+                {
+                    _changes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("changeOn", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> ChangeOn    {
+            get { return _changeOn; }
+            set
+            {
+                if (_changeOn != value)
+                {
+                    _changeOn = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpEndpointRules FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpEndpointRules>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpLimits : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int? _requestsPerWindow;
+        private int? _mutationsPerWindow;
+
+        /// <summary>
+        /// Null means the deployment's value.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("requestsPerWindow", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? RequestsPerWindow    {
+            get { return _requestsPerWindow; }
+            set
+            {
+                if (_requestsPerWindow != value)
+                {
+                    _requestsPerWindow = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Null means the deployment's value.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("mutationsPerWindow", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? MutationsPerWindow    {
+            get { return _mutationsPerWindow; }
+            set
+            {
+                if (_mutationsPerWindow != value)
+                {
+                    _mutationsPerWindow = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpLimits FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpLimits>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum McpDeploymentMode
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"disabled")]
+        Disabled = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"localDevelopment")]
+        LocalDevelopment = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"entra")]
+        Entra = 2,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpWindowLimit : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _permit;
+        private int _windowSeconds;
+
+        [Newtonsoft.Json.JsonProperty("permit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Permit    {
+            get { return _permit; }
+            set
+            {
+                if (_permit != value)
+                {
+                    _permit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("windowSeconds", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int WindowSeconds    {
+            get { return _windowSeconds; }
+            set
+            {
+                if (_windowSeconds != value)
+                {
+                    _windowSeconds = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpWindowLimit FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpWindowLimit>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// The deployment's MCP settings. Read-only; changed through app settings.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpDeployment : System.ComponentModel.INotifyPropertyChanged
+    {
+        private McpDeploymentMode _mode;
+        private string _endpointUrl;
+        private string _resourceMetadataUrl;
+        private string _serverVersion;
+        private string _tenantId;
+        private string _clientId;
+        private string _applicationIdUri;
+        private string _authority;
+        private System.Collections.Generic.List<string> _allowedOrigins;
+        private bool _rateLimitsEnabled;
+        private McpWindowLimit _requestLimit;
+        private McpWindowLimit _mutationLimit;
+        private System.Collections.Generic.List<string> _endpoints;
+
+        [Newtonsoft.Json.JsonProperty("mode", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public McpDeploymentMode Mode    {
+            get { return _mode; }
+            set
+            {
+                if (_mode != value)
+                {
+                    _mode = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpointUrl", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointUrl    {
+            get { return _endpointUrl; }
+            set
+            {
+                if (_endpointUrl != value)
+                {
+                    _endpointUrl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("resourceMetadataUrl", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ResourceMetadataUrl    {
+            get { return _resourceMetadataUrl; }
+            set
+            {
+                if (_resourceMetadataUrl != value)
+                {
+                    _resourceMetadataUrl = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("serverVersion", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ServerVersion    {
+            get { return _serverVersion; }
+            set
+            {
+                if (_serverVersion != value)
+                {
+                    _serverVersion = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("tenantId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string TenantId    {
+            get { return _tenantId; }
+            set
+            {
+                if (_tenantId != value)
+                {
+                    _tenantId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("clientId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ClientId    {
+            get { return _clientId; }
+            set
+            {
+                if (_clientId != value)
+                {
+                    _clientId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("applicationIdUri", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ApplicationIdUri    {
+            get { return _applicationIdUri; }
+            set
+            {
+                if (_applicationIdUri != value)
+                {
+                    _applicationIdUri = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("authority", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Authority    {
+            get { return _authority; }
+            set
+            {
+                if (_authority != value)
+                {
+                    _authority = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("allowedOrigins", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> AllowedOrigins    {
+            get { return _allowedOrigins; }
+            set
+            {
+                if (_allowedOrigins != value)
+                {
+                    _allowedOrigins = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("rateLimitsEnabled", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool RateLimitsEnabled    {
+            get { return _rateLimitsEnabled; }
+            set
+            {
+                if (_rateLimitsEnabled != value)
+                {
+                    _rateLimitsEnabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("requestLimit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpWindowLimit RequestLimit    {
+            get { return _requestLimit; }
+            set
+            {
+                if (_requestLimit != value)
+                {
+                    _requestLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("mutationLimit", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpWindowLimit MutationLimit    {
+            get { return _mutationLimit; }
+            set
+            {
+                if (_mutationLimit != value)
+                {
+                    _mutationLimit = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The catalog's endpoint ids, for the endpoint pickers.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("endpoints", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Endpoints    {
+            get { return _endpoints; }
+            set
+            {
+                if (_endpoints != value)
+                {
+                    _endpoints = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpDeployment FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpDeployment>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpAccessState : System.ComponentModel.INotifyPropertyChanged
+    {
+        private McpAccessSettings _saved;
+        private McpAccessSettings _effective;
+        private bool _policyLoaded;
+        private McpDeployment _deployment;
+        private bool _failureIntelligenceEnabled;
+        private string _csrfToken;
+
+        [Newtonsoft.Json.JsonProperty("saved", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpAccessSettings Saved    {
+            get { return _saved; }
+            set
+            {
+                if (_saved != value)
+                {
+                    _saved = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// What this instance enforces; null when the deployment does not serve MCP or the policy is not loaded.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("effective", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpAccessSettings Effective    {
+            get { return _effective; }
+            set
+            {
+                if (_effective != value)
+                {
+                    _effective = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// False when this instance could not load the policy; agents then get 503 [Unavailable].
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("policyLoaded", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool PolicyLoaded    {
+            get { return _policyLoaded; }
+            set
+            {
+                if (_policyLoaded != value)
+                {
+                    _policyLoaded = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("deployment", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpDeployment Deployment    {
+            get { return _deployment; }
+            set
+            {
+                if (_deployment != value)
+                {
+                    _deployment = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("failureIntelligenceEnabled", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool FailureIntelligenceEnabled    {
+            get { return _failureIntelligenceEnabled; }
+            set
+            {
+                if (_failureIntelligenceEnabled != value)
+                {
+                    _failureIntelligenceEnabled = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send as the X-NimBus-CSRF header on writes.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("csrfToken", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string CsrfToken    {
+            get { return _csrfToken; }
+            set
+            {
+                if (_csrfToken != value)
+                {
+                    _csrfToken = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpAccessState FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpAccessState>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpAccessUpdate : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _revision;
+        private McpAccessSettings _settings;
+        private bool _confirmWidening;
+
+        /// <summary>
+        /// The revision the editor read; null when nothing was saved.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("revision", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Revision    {
+            get { return _revision; }
+            set
+            {
+                if (_revision != value)
+                {
+                    _revision = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("settings", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public McpAccessSettings Settings    {
+            get { return _settings; }
+            set
+            {
+                if (_settings != value)
+                {
+                    _settings = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("confirmWidening", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool ConfirmWidening    {
+            get { return _confirmWidening; }
+            set
+            {
+                if (_confirmWidening != value)
+                {
+                    _confirmWidening = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpAccessUpdate FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpAccessUpdate>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpAccessChange : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _text;
+        private bool _widens;
+
+        [Newtonsoft.Json.JsonProperty("text", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Text    {
+            get { return _text; }
+            set
+            {
+                if (_text != value)
+                {
+                    _text = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("widens", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Widens    {
+            get { return _widens; }
+            set
+            {
+                if (_widens != value)
+                {
+                    _widens = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpAccessChange FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpAccessChange>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpAccessProblem : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _code;
+        private System.Collections.Generic.List<string> _errors;
+        private System.Collections.Generic.List<McpAccessChange> _changes;
+
+        /// <summary>
+        /// Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("code", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Code    {
+            get { return _code; }
+            set
+            {
+                if (_code != value)
+                {
+                    _code = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("errors", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<string> Errors    {
+            get { return _errors; }
+            set
+            {
+                if (_errors != value)
+                {
+                    _errors = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("changes", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpAccessChange> Changes    {
+            get { return _changes; }
+            set
+            {
+                if (_changes != value)
+                {
+                    _changes = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpAccessProblem FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpAccessProblem>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpActivityCount : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _name;
+        private int _count;
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name    {
+            get { return _name; }
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("count", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Count    {
+            get { return _count; }
+            set
+            {
+                if (_count != value)
+                {
+                    _count = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpActivityCount FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpActivityCount>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpActivityItem : System.ComponentModel.INotifyPropertyChanged
+    {
+        private System.DateTime _atUtc;
+        private string _kind;
+        private string _type;
+        private string _endpointId;
+        private string _eventId;
+        private string _auditor;
+        private string _clientId;
+        private string _reason;
+        private string _detail;
+
+        [Newtonsoft.Json.JsonProperty("atUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime AtUtc    {
+            get { return _atUtc; }
+            set
+            {
+                if (_atUtc != value)
+                {
+                    _atUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// action, refused or settings.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("kind", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Kind    {
+            get { return _kind; }
+            set
+            {
+                if (_kind != value)
+                {
+                    _kind = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The audit type, camelCase.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("type", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Type    {
+            get { return _type; }
+            set
+            {
+                if (_type != value)
+                {
+                    _type = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("endpointId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EndpointId    {
+            get { return _endpointId; }
+            set
+            {
+                if (_endpointId != value)
+                {
+                    _endpointId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("eventId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string EventId    {
+            get { return _eventId; }
+            set
+            {
+                if (_eventId != value)
+                {
+                    _eventId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("auditor", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Auditor    {
+            get { return _auditor; }
+            set
+            {
+                if (_auditor != value)
+                {
+                    _auditor = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("clientId", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ClientId    {
+            get { return _clientId; }
+            set
+            {
+                if (_clientId != value)
+                {
+                    _clientId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The operator's reason, or the refusal reason.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason    {
+            get { return _reason; }
+            set
+            {
+                if (_reason != value)
+                {
+                    _reason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("detail", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Detail    {
+            get { return _detail; }
+            set
+            {
+                if (_detail != value)
+                {
+                    _detail = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpActivityItem FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpActivityItem>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpRefusedClient : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _clientId;
+        private int _calls;
+        private string _lastAuditor;
+        private System.DateTime _lastAtUtc;
+
+        [Newtonsoft.Json.JsonProperty("clientId", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ClientId    {
+            get { return _clientId; }
+            set
+            {
+                if (_clientId != value)
+                {
+                    _clientId = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("calls", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Calls    {
+            get { return _calls; }
+            set
+            {
+                if (_calls != value)
+                {
+                    _calls = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastAuditor", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string LastAuditor    {
+            get { return _lastAuditor; }
+            set
+            {
+                if (_lastAuditor != value)
+                {
+                    _lastAuditor = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("lastAtUtc", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTime LastAtUtc    {
+            get { return _lastAtUtc; }
+            set
+            {
+                if (_lastAtUtc != value)
+                {
+                    _lastAtUtc = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpRefusedClient FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpRefusedClient>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class McpActivity : System.ComponentModel.INotifyPropertyChanged
+    {
+        private int _hours;
+        private int _actions;
+        private int _refused;
+        private bool _capped;
+        private System.Collections.Generic.List<McpActivityCount> _actionsByType;
+        private System.Collections.Generic.List<McpActivityCount> _refusedByReason;
+        private System.Collections.Generic.List<McpActivityItem> _items;
+        private System.Collections.Generic.List<McpRefusedClient> _refusedClients;
+
+        [Newtonsoft.Json.JsonProperty("hours", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Hours    {
+            get { return _hours; }
+            set
+            {
+                if (_hours != value)
+                {
+                    _hours = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("actions", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Actions    {
+            get { return _actions; }
+            set
+            {
+                if (_actions != value)
+                {
+                    _actions = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("refused", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int Refused    {
+            get { return _refused; }
+            set
+            {
+                if (_refused != value)
+                {
+                    _refused = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when a query hit its row cap, so the counts may be incomplete.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("capped", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Capped    {
+            get { return _capped; }
+            set
+            {
+                if (_capped != value)
+                {
+                    _capped = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("actionsByType", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpActivityCount> ActionsByType    {
+            get { return _actionsByType; }
+            set
+            {
+                if (_actionsByType != value)
+                {
+                    _actionsByType = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("refusedByReason", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpActivityCount> RefusedByReason    {
+            get { return _refusedByReason; }
+            set
+            {
+                if (_refusedByReason != value)
+                {
+                    _refusedByReason = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("items", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpActivityItem> Items    {
+            get { return _items; }
+            set
+            {
+                if (_items != value)
+                {
+                    _items = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        [Newtonsoft.Json.JsonProperty("refusedClients", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.List<McpRefusedClient> RefusedClients    {
+            get { return _refusedClients; }
+            set
+            {
+                if (_refusedClients != value)
+                {
+                    _refusedClients = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+        public string ToJson()
+        {
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(this, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public static McpActivity FromJson(string data)
+        {
+
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<McpActivity>(data, new Newtonsoft.Json.JsonSerializerSettings());
+
+        }
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            var handler = PropertyChanged;
+            if (handler != null)
+                handler(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+    }
+
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public partial class HeartbeatOverviewRow : System.ComponentModel.INotifyPropertyChanged
     {
@@ -18064,6 +20086,12 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"commandNotSent")]
         CommandNotSent = 34,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateMcpSettings")]
+        UpdateMcpSettings = 35,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"mcpAccessRefused")]
+        McpAccessRefused = 36,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -18355,6 +20383,12 @@ namespace NimBus.WebApp.ManagementApi
         [System.Runtime.Serialization.EnumMember(Value = @"commandNotSent")]
         CommandNotSent = 34,
 
+        [System.Runtime.Serialization.EnumMember(Value = @"updateMcpSettings")]
+        UpdateMcpSettings = 35,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"mcpAccessRefused")]
+        McpAccessRefused = 36,
+
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
@@ -18567,6 +20601,12 @@ namespace NimBus.WebApp.ManagementApi
 
         [System.Runtime.Serialization.EnumMember(Value = @"commandNotSent")]
         CommandNotSent = 34,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"updateMcpSettings")]
+        UpdateMcpSettings = 35,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"mcpAccessRefused")]
+        McpAccessRefused = 36,
 
     }
 

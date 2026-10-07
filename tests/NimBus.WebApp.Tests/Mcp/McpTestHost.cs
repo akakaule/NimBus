@@ -49,6 +49,9 @@ internal sealed class McpTestHost : IAsyncDisposable
     public const string ClientId = "11111111-1111-1111-1111-111111111111";
     public const string RemoteAddressHeader = "X-Test-Remote-Address";
 
+    /// <summary>The client application test tokens are issued to (<c>azp</c>).</summary>
+    public const string AgentClientId = "44444444-4444-4444-4444-444444444444";
+
     private static readonly SymmetricSecurityKey SigningKey =
         new(Encoding.UTF8.GetBytes("nimbus-mcp-test-signing-key-0123456789abcdef"));
 
@@ -121,6 +124,7 @@ internal sealed class McpTestHost : IAsyncDisposable
                     var store = new InMemoryMessageStore();
                     services.AddSingleton(store);
                     services.AddSingleton<IMessageTrackingStore>(store);
+                    services.AddSingleton<IEndpointMetadataStore>(store);
                     services.AddSingleton<RecordingManagerClient>();
                     services.AddSingleton<IManagerClient>(sp => sp.GetRequiredService<RecordingManagerClient>());
                     services.AddSingleton<RecordingAuditLog>();
@@ -216,13 +220,14 @@ internal sealed class McpTestHost : IAsyncDisposable
         string? scopes = "nimbus.observe",
         string? roles = null,
         string issuer = "",
-        string oid = "33333333-3333-3333-3333-333333333333")
+        string oid = "33333333-3333-3333-3333-333333333333",
+        string azp = AgentClientId)
     {
         var claims = new Dictionary<string, object>
         {
             ["oid"] = oid,
             ["tid"] = TenantId,
-            ["azp"] = "44444444-4444-4444-4444-444444444444",
+            ["azp"] = azp,
             ["name"] = "Agent Operator",
         };
         if (scopes is not null) claims["scp"] = scopes;

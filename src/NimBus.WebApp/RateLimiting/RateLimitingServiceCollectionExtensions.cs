@@ -82,9 +82,16 @@ public static class RateLimitingServiceCollectionExtensions
 
             // Tenant and client application are part of the key, so one agent client
             // cannot exhaust the same operator's budget in another client. Attached to
-            // /mcp by MapNimBusOperatorMcp, not by the MVC convention.
+            // /mcp by MapNimBusOperatorMcp, not by the MVC convention. A site Owner can
+            // lower the limit live (Spec 037); the limit is part of the key, so a changed
+            // limit gets a new window instead of the cached limiter.
             limiter.AddPolicy(RateLimitPolicyNames.Mcp, context =>
-                FixedWindow(McpPartitionKey(context, options), options.Mcp));
+            {
+                var permits = EffectiveMcpLimit(context, options);
+                return FixedWindow(
+                    McpPartitionKey(context, options) + ":" + permits.ToString(CultureInfo.InvariantCulture),
+                    new RateLimitOptions.WindowLimits { PermitLimit = permits, WindowSeconds = options.Mcp.WindowSeconds });
+            });
 
             // GlobalLimiter stays null on purpose: everything not explicitly
             // listed above — the SignalR hub, health probes, static files, the
@@ -109,6 +116,12 @@ public static class RateLimitingServiceCollectionExtensions
         => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
            ?? context.User.Identity?.Name
            ?? "ip:" + ClientIpPartitionKey.Resolve(context, options);
+
+    // The site Owner's lowered MCP limit, or the deployment's. The policy is loaded by the
+    // MCP request guard, which runs before the rate limiter.
+    private static int EffectiveMcpLimit(HttpContext context, RateLimitOptions options)
+        => context.RequestServices.GetService<NimBus.WebApp.Mcp.Access.IMcpAccessPolicyProvider>()?.Current?.RequestLimit
+           ?? options.Mcp.PermitLimit;
 
     // MCP tokens keep raw claim names (MapInboundClaims = false).
     internal static string McpPartitionKey(HttpContext context, RateLimitOptions options)

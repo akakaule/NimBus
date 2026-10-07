@@ -86,12 +86,19 @@ public sealed class OperatorInsightTools
             EnqueuedAtTo = enqueuedTo,
         };
 
+        // Endpoints the MCP access policy hides behave as if they did not exist (Spec 037).
+        foreach (var named in new[] { filter.EndpointId, filter.SenderEndpoint, filter.ReceiverEndpoint })
+        {
+            if (_catalog.IsHidden(named))
+                throw OperatorToolErrors.EndpointNotFound(named!);
+        }
+
         var scope = string.Join('|', _authorization.GetCurrentUserName(), "search", filter.EventId, filter.MessageId, filter.SessionId,
             filter.EventTypeId.FirstOrDefault(), filter.EndpointId, filter.SenderEndpoint, filter.ReceiverEndpoint, type,
             enqueuedFrom?.ToString("O"), enqueuedTo?.ToString("O"), pageSize);
         var page = await _queries.SearchMessagesAsync(filter, pageSize, OperatorCursor.Decode(cursor, scope)).ConfigureAwait(false);
 
-        var messages = (page.Messages ?? []).Select(message => new SearchedMessage(
+        var messages = (page.Messages ?? []).Where(message => !_catalog.IsHidden(message.EndpointId)).Select(message => new SearchedMessage(
             message.EventId,
             message.MessageId,
             message.EndpointId,
@@ -129,23 +136,33 @@ public sealed class OperatorInsightTools
         {
             case "throughput":
                 var overview = await _queries.GetThroughputAsync(selectedPeriod).ConfigureAwait(false);
-                throughput = new ThroughputMetrics(Counts(overview.Published), Counts(overview.Handled), Counts(overview.Failed));
+                throughput = new ThroughputMetrics(Counts(Visible(overview.Published)), Counts(Visible(overview.Handled)), Counts(Visible(overview.Failed)));
                 break;
             case "latency":
                 var latencies = await _queries.GetLatencyAsync(selectedPeriod).ConfigureAwait(false);
-                latency = (latencies.Latencies ?? []).Take(MaxMetricRows)
+                latency = (latencies.Latencies ?? []).Where(l => !_catalog.IsHidden(l.EndpointId)).Take(MaxMetricRows)
                     .Select(l => new LatencyMetric(l.EndpointId, l.EventTypeId, Stats(l.Queue), Stats(l.Processing)))
                     .ToList();
                 break;
             default:
                 var insights = await _queries.GetFailureInsightsAsync(selectedPeriod).ConfigureAwait(false);
+                var groups = (insights.Groups ?? []).ToList();
+                var anyHidden = groups.Any(group => (group.Endpoints ?? []).Any(_catalog.IsHidden));
+
+                // A group's count can't be split per endpoint, so a group that touches a hidden
+                // endpoint keeps its count but loses the hidden names, and a group that touches
+                // only hidden endpoints is dropped. The total then covers the kept groups.
+                var kept = groups
+                    .Select(group => (Group: group, Endpoints: (ICollection<string>)(group.Endpoints ?? []).Where(e => !_catalog.IsHidden(e)).ToList()))
+                    .Where(g => g.Endpoints.Count > 0 || (g.Group.Endpoints ?? []).Count == 0)
+                    .ToList();
                 failures = new FailureMetrics(
-                    insights.TotalFailed,
-                    (insights.Groups ?? []).Take(MaxMetricRows).Select(group =>
+                    anyHidden ? kept.Sum(g => g.Group.Count) : insights.TotalFailed,
+                    kept.Take(MaxMetricRows).Select(g =>
                     {
-                        var (text, truncated) = OperatorProjection.Truncate(group.ExampleErrorText, MaxExampleErrorLength);
-                        return new FailureGroup(group.ErrorCategory, group.Count, group.Endpoints ?? [], group.EventTypes ?? [],
-                            OperatorProjection.Utc(group.LatestOccurrence), text, truncated);
+                        var (text, truncated) = OperatorProjection.Truncate(g.Group.ExampleErrorText, MaxExampleErrorLength);
+                        return new FailureGroup(g.Group.ErrorCategory, g.Group.Count, g.Endpoints, g.Group.EventTypes ?? [],
+                            OperatorProjection.Utc(g.Group.LatestOccurrence), text, truncated);
                     }).ToList());
                 break;
         }
@@ -194,7 +211,10 @@ public sealed class OperatorInsightTools
             classification is null ? null : ClassificationInfo.From(classification));
     }
 
-    private static List<MetricCount> Counts(ICollection<EndpointEventTypeMessageCount>? rows)
+    private IEnumerable<EndpointEventTypeMessageCount> Visible(ICollection<EndpointEventTypeMessageCount>? rows)
+        => (rows ?? []).Where(r => !_catalog.IsHidden(r.EndpointId));
+
+    private static List<MetricCount> Counts(IEnumerable<EndpointEventTypeMessageCount>? rows)
         => (rows ?? []).Take(MaxMetricRows).Select(r => new MetricCount(r.EndpointId, r.EventTypeId, r.Count)).ToList();
 
     private static TimingStats? Stats(LatencyStats? stats)

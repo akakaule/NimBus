@@ -148,6 +148,8 @@ public sealed class OperatorMessageTools
         if (string.IsNullOrWhiteSpace(eventId))
             throw OperatorToolErrors.InvalidArgument("eventId is required.");
 
+        if (includePayload && !_payloadAccess.PolicyAllowsPayloads)
+            throw OperatorToolErrors.PermissionDenied("Payloads are turned off by an administrator.");
         if (includePayload && !await _payloadAccess.CanReadPayloadsAsync().ConfigureAwait(false))
             throw OperatorToolErrors.PermissionDenied("Payloads require the PiiReader role and, for Entra callers, the nimbus.payload.read scope.");
 

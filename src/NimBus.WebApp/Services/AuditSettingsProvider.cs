@@ -59,6 +59,8 @@ public sealed class AuditSettingsProvider : IAuditSettingsProvider
         MessageAuditType.Skip,
         MessageAuditType.ReportEvent,
         MessageAuditType.CommandNotSent,
+        MessageAuditType.UpdateMcpSettings,
+        MessageAuditType.McpAccessRefused,
     };
 
     /// <summary>

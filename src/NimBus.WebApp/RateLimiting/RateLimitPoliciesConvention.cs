@@ -71,6 +71,7 @@ internal sealed class RateLimitPoliciesConvention : IApplicationModelConvention
         // instead of silently widening or narrowing the policy.
         if (type == typeof(AdminApiController)
             || type == typeof(SimulationApiController)
+            || type == typeof(McpAccessApiController)
             || type == typeof(NimBus.WebApp.Controllers.IntelligenceSettingsController))
         {
             return RateLimitPolicyNames.Admin;

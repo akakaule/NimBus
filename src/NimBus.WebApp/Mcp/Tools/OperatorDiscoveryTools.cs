@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using NimBus.Core;
 using NimBus.Extensions.IntegrationIntelligence;
+using NimBus.WebApp.Mcp.Access;
 using NimBus.WebApp.Mcp.Operations;
 using NimBus.WebApp.RateLimiting;
 using NimBus.WebApp.Services;
@@ -24,6 +25,7 @@ public sealed class OperatorDiscoveryTools
     private readonly OperatorPayloadAccess _payloadAccess;
     private readonly OperatorActionAccess _actionAccess;
     private readonly RateLimitOptions _rateLimits;
+    private readonly IMcpAccessPolicyProvider _policies;
     private readonly bool _classificationEnabled;
 
     /// <summary>Creates the tools for one request.</summary>
@@ -35,8 +37,10 @@ public sealed class OperatorDiscoveryTools
         OperatorPayloadAccess payloadAccess,
         OperatorActionAccess actionAccess,
         IOptions<RateLimitOptions> rateLimits,
+        IMcpAccessPolicyProvider policies,
         IEnumerable<IntegrationIntelligenceActivation> intelligence)
     {
+        _policies = policies;
         _platform = platform;
         _authorization = authorization;
         _catalog = catalog;
@@ -54,7 +58,7 @@ public sealed class OperatorDiscoveryTools
     {
         var access = await _authorization.GetCurrentUserAccessAsync().ConfigureAwait(false);
         var limits = _rateLimits.Enabled
-            ? new RequestLimits(_rateLimits.Mcp.PermitLimit, _rateLimits.Mcp.WindowSeconds)
+            ? new RequestLimits(_policies.Current?.RequestLimit ?? _rateLimits.Mcp.PermitLimit, _rateLimits.Mcp.WindowSeconds)
             : null;
 
         return new CapabilitiesResult(

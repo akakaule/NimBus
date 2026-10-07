@@ -180,6 +180,18 @@ public class EndpointAuthorizationService : IEndpointAuthorizationService
             : AccessRole.None;
     }
 
+    /// <summary>
+    /// The identifiers an access-control entry is matched against: the principal's lowercase
+    /// email-bearing claims and its Entra object id.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveIdentifiers(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        var emails = ResolveEmails(user);
+        var objectId = user.FindFirst(OidClaimType)?.Value ?? user.FindFirst(OidLongClaimType)?.Value;
+        return objectId == null ? emails : emails.Append(objectId).ToList();
+    }
+
     private static List<string> ResolveEmails(ClaimsPrincipal user)
     {
         // DIS's email → upn → name ladder, generalized to a set: an ACL entry may

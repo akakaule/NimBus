@@ -3159,6 +3159,220 @@ export class Client extends ApiClientBase {
     }
 
     /**
+     * Get the MCP access policy and the deployment's MCP configuration
+     * @return OK
+     */
+    getAdminMcpSettings(): Promise<McpAccessState> {
+        let url_ = this.baseUrl + "/api/admin/mcp/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminMcpSettings(_response);
+        });
+    }
+
+    protected processGetAdminMcpSettings(response: Response): Promise<McpAccessState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = McpAccessState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<McpAccessState>(null as any);
+    }
+
+    /**
+     * Save the MCP access policy
+     * @param body (optional) 
+     * @return OK
+     */
+    putAdminMcpSettings(body?: McpAccessUpdate | undefined): Promise<McpAccessState> {
+        let url_ = this.baseUrl + "/api/admin/mcp/settings";
+        url_ = url_.replace(/[?&]$/, "");
+
+        const content_ = JSON.stringify(body);
+
+        let options_: RequestInit = {
+            body: content_,
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPutAdminMcpSettings(_response);
+        });
+    }
+
+    protected processPutAdminMcpSettings(response: Response): Promise<McpAccessState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = McpAccessState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = McpAccessProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = McpAccessProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<McpAccessState>(null as any);
+    }
+
+    /**
+     * Turn MCP access off now
+     * @return OK
+     */
+    postAdminMcpTurnOff(): Promise<McpAccessState> {
+        let url_ = this.baseUrl + "/api/admin/mcp/turn-off";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processPostAdminMcpTurnOff(_response);
+        });
+    }
+
+    protected processPostAdminMcpTurnOff(response: Response): Promise<McpAccessState> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = McpAccessState.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 400) {
+            return response.text().then((_responseText) => {
+            let result400: any = null;
+            let resultData400 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result400 = McpAccessProblem.fromJS(resultData400);
+            return throwException("Bad Request", status, _responseText, _headers, result400);
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status === 409) {
+            return response.text().then((_responseText) => {
+            let result409: any = null;
+            let resultData409 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result409 = McpAccessProblem.fromJS(resultData409);
+            return throwException("Conflict", status, _responseText, _headers, result409);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<McpAccessState>(null as any);
+    }
+
+    /**
+     * Recent agent activity over MCP
+     * @param hours (optional) 
+     * @return OK
+     */
+    getAdminMcpActivity(hours?: number | undefined): Promise<McpActivity> {
+        let url_ = this.baseUrl + "/api/admin/mcp/activity?";
+        if (hours === null)
+            throw new globalThis.Error("The parameter 'hours' cannot be null.");
+        else if (hours !== undefined)
+            url_ += "hours=" + encodeURIComponent("" + hours) + "&";
+        url_ = url_.replace(/[?&]$/, "");
+
+        let options_: RequestInit = {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        };
+
+        return this.transformOptions(options_).then(transformedOptions_ => {
+            return this.http.fetch(url_, transformedOptions_);
+        }).then((_response: Response) => {
+            return this.processGetAdminMcpActivity(_response);
+        });
+    }
+
+    protected processGetAdminMcpActivity(response: Response): Promise<McpActivity> {
+        const status = response.status;
+        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
+        if (status === 200) {
+            return response.text().then((_responseText) => {
+            let result200: any = null;
+            let resultData200 = _responseText === "" ? null : JSON.parse(_responseText, this.jsonParseReviver);
+            result200 = McpActivity.fromJS(resultData200);
+            return result200;
+            });
+        } else if (status === 403) {
+            return response.text().then((_responseText) => {
+            return throwException("Forbidden", status, _responseText, _headers);
+            });
+        } else if (status !== 200 && status !== 204) {
+            return response.text().then((_responseText) => {
+            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
+            });
+        }
+        return Promise.resolve<McpActivity>(null as any);
+    }
+
+    /**
      * Send a heartbeat to every monitored endpoint now
      * @return OK
      */
@@ -16275,6 +16489,1410 @@ export interface IAuditSettings {
     [key: string]: any;
 }
 
+/** The site Owner's MCP access policy (Spec 037). It can only narrow what the deployment, Entra scopes and NimBus roles allow. */
+export class McpAccessSettings implements IMcpAccessSettings {
+    /** Read-only. Null when nothing was saved. */
+    revision?: string | undefined;
+    /** Read-only. */
+    updatedBy?: string | undefined;
+    /** Read-only. */
+    updatedAtUtc?: moment.Moment | undefined;
+    enabled?: boolean;
+    capabilities?: McpCapabilities;
+    allowWorkloads?: boolean;
+    people?: McpPeople;
+    clients?: McpClients;
+    endpoints?: McpEndpointRules;
+    limits?: McpLimits;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpAccessSettings) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.revision = _data["revision"];
+            this.updatedBy = _data["updatedBy"];
+            this.updatedAtUtc = _data["updatedAtUtc"] ? moment(_data["updatedAtUtc"].toString()) : undefined as any;
+            this.enabled = _data["enabled"];
+            this.capabilities = _data["capabilities"] ? McpCapabilities.fromJS(_data["capabilities"]) : undefined as any;
+            this.allowWorkloads = _data["allowWorkloads"];
+            this.people = _data["people"] ? McpPeople.fromJS(_data["people"]) : undefined as any;
+            this.clients = _data["clients"] ? McpClients.fromJS(_data["clients"]) : undefined as any;
+            this.endpoints = _data["endpoints"] ? McpEndpointRules.fromJS(_data["endpoints"]) : undefined as any;
+            this.limits = _data["limits"] ? McpLimits.fromJS(_data["limits"]) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): McpAccessSettings {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpAccessSettings();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["revision"] = this.revision;
+        data["updatedBy"] = this.updatedBy;
+        data["updatedAtUtc"] = this.updatedAtUtc ? this.updatedAtUtc.toISOString() : undefined as any;
+        data["enabled"] = this.enabled;
+        data["capabilities"] = this.capabilities ? this.capabilities.toJSON() : undefined as any;
+        data["allowWorkloads"] = this.allowWorkloads;
+        data["people"] = this.people ? this.people.toJSON() : undefined as any;
+        data["clients"] = this.clients ? this.clients.toJSON() : undefined as any;
+        data["endpoints"] = this.endpoints ? this.endpoints.toJSON() : undefined as any;
+        data["limits"] = this.limits ? this.limits.toJSON() : undefined as any;
+        return data;
+    }
+
+    clone(): McpAccessSettings {
+        const json = this.toJSON();
+        let result = new McpAccessSettings();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The site Owner's MCP access policy (Spec 037). It can only narrow what the deployment, Entra scopes and NimBus roles allow. */
+export interface IMcpAccessSettings {
+    /** Read-only. Null when nothing was saved. */
+    revision?: string | undefined;
+    /** Read-only. */
+    updatedBy?: string | undefined;
+    /** Read-only. */
+    updatedAtUtc?: moment.Moment | undefined;
+    enabled?: boolean;
+    capabilities?: McpCapabilities;
+    allowWorkloads?: boolean;
+    people?: McpPeople;
+    clients?: McpClients;
+    endpoints?: McpEndpointRules;
+    limits?: McpLimits;
+
+    [key: string]: any;
+}
+
+export class McpCapabilities implements IMcpCapabilities {
+    payloads?: boolean;
+    report?: boolean;
+    classify?: boolean;
+    resubmit?: boolean;
+    skip?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpCapabilities) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.payloads = _data["payloads"];
+            this.report = _data["report"];
+            this.classify = _data["classify"];
+            this.resubmit = _data["resubmit"];
+            this.skip = _data["skip"];
+        }
+    }
+
+    static fromJS(data: any): McpCapabilities {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpCapabilities();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["payloads"] = this.payloads;
+        data["report"] = this.report;
+        data["classify"] = this.classify;
+        data["resubmit"] = this.resubmit;
+        data["skip"] = this.skip;
+        return data;
+    }
+
+    clone(): McpCapabilities {
+        const json = this.toJSON();
+        let result = new McpCapabilities();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpCapabilities {
+    payloads?: boolean;
+    report?: boolean;
+    classify?: boolean;
+    resubmit?: boolean;
+    skip?: boolean;
+
+    [key: string]: any;
+}
+
+export enum McpPeopleMode {
+    All = "all",
+    Listed = "listed",
+}
+
+export class McpPeople implements IMcpPeople {
+    mode?: McpPeopleMode;
+    principals?: McpPrincipal[];
+
+    [key: string]: any;
+
+    constructor(data?: IMcpPeople) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.mode = _data["mode"];
+            if (Array.isArray(_data["principals"])) {
+                this.principals = [] as any;
+                for (let item of _data["principals"])
+                    this.principals!.push(McpPrincipal.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): McpPeople {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpPeople();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["mode"] = this.mode;
+        if (Array.isArray(this.principals)) {
+            data["principals"] = [];
+            for (let item of this.principals)
+                data["principals"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): McpPeople {
+        const json = this.toJSON();
+        let result = new McpPeople();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpPeople {
+    mode?: McpPeopleMode;
+    principals?: McpPrincipal[];
+
+    [key: string]: any;
+}
+
+export class McpPrincipal implements IMcpPrincipal {
+    /** An email address, a user object id or a group object id. */
+    principal?: string;
+    label?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpPrincipal) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.principal = _data["principal"];
+            this.label = _data["label"];
+        }
+    }
+
+    static fromJS(data: any): McpPrincipal {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpPrincipal();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["principal"] = this.principal;
+        data["label"] = this.label;
+        return data;
+    }
+
+    clone(): McpPrincipal {
+        const json = this.toJSON();
+        let result = new McpPrincipal();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpPrincipal {
+    /** An email address, a user object id or a group object id. */
+    principal?: string;
+    label?: string | undefined;
+
+    [key: string]: any;
+}
+
+export enum McpClientMode {
+    Any = "any",
+    Approved = "approved",
+}
+
+export class McpClients implements IMcpClients {
+    mode?: McpClientMode;
+    approved?: McpApprovedClient[];
+
+    [key: string]: any;
+
+    constructor(data?: IMcpClients) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.mode = _data["mode"];
+            if (Array.isArray(_data["approved"])) {
+                this.approved = [] as any;
+                for (let item of _data["approved"])
+                    this.approved!.push(McpApprovedClient.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): McpClients {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpClients();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["mode"] = this.mode;
+        if (Array.isArray(this.approved)) {
+            data["approved"] = [];
+            for (let item of this.approved)
+                data["approved"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): McpClients {
+        const json = this.toJSON();
+        let result = new McpClients();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpClients {
+    mode?: McpClientMode;
+    approved?: McpApprovedClient[];
+
+    [key: string]: any;
+}
+
+export class McpApprovedClient implements IMcpApprovedClient {
+    clientId?: string;
+    name?: string;
+    mayChange?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpApprovedClient) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.clientId = _data["clientId"];
+            this.name = _data["name"];
+            this.mayChange = _data["mayChange"];
+        }
+    }
+
+    static fromJS(data: any): McpApprovedClient {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpApprovedClient();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["clientId"] = this.clientId;
+        data["name"] = this.name;
+        data["mayChange"] = this.mayChange;
+        return data;
+    }
+
+    clone(): McpApprovedClient {
+        const json = this.toJSON();
+        let result = new McpApprovedClient();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpApprovedClient {
+    clientId?: string;
+    name?: string;
+    mayChange?: boolean;
+
+    [key: string]: any;
+}
+
+export enum McpEndpointVisibility {
+    All = "all",
+    AllExcept = "allExcept",
+}
+
+export enum McpChangeScope {
+    AllVisible = "allVisible",
+    Listed = "listed",
+}
+
+export class McpEndpointRules implements IMcpEndpointRules {
+    visibility?: McpEndpointVisibility;
+    hidden?: string[];
+    changes?: McpChangeScope;
+    changeOn?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IMcpEndpointRules) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.visibility = _data["visibility"];
+            if (Array.isArray(_data["hidden"])) {
+                this.hidden = [] as any;
+                for (let item of _data["hidden"])
+                    this.hidden!.push(item);
+            }
+            this.changes = _data["changes"];
+            if (Array.isArray(_data["changeOn"])) {
+                this.changeOn = [] as any;
+                for (let item of _data["changeOn"])
+                    this.changeOn!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): McpEndpointRules {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpEndpointRules();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["visibility"] = this.visibility;
+        if (Array.isArray(this.hidden)) {
+            data["hidden"] = [];
+            for (let item of this.hidden)
+                data["hidden"].push(item);
+        }
+        data["changes"] = this.changes;
+        if (Array.isArray(this.changeOn)) {
+            data["changeOn"] = [];
+            for (let item of this.changeOn)
+                data["changeOn"].push(item);
+        }
+        return data;
+    }
+
+    clone(): McpEndpointRules {
+        const json = this.toJSON();
+        let result = new McpEndpointRules();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpEndpointRules {
+    visibility?: McpEndpointVisibility;
+    hidden?: string[];
+    changes?: McpChangeScope;
+    changeOn?: string[];
+
+    [key: string]: any;
+}
+
+export class McpLimits implements IMcpLimits {
+    /** Null means the deployment's value. */
+    requestsPerWindow?: number | undefined;
+    /** Null means the deployment's value. */
+    mutationsPerWindow?: number | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpLimits) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.requestsPerWindow = _data["requestsPerWindow"];
+            this.mutationsPerWindow = _data["mutationsPerWindow"];
+        }
+    }
+
+    static fromJS(data: any): McpLimits {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpLimits();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["requestsPerWindow"] = this.requestsPerWindow;
+        data["mutationsPerWindow"] = this.mutationsPerWindow;
+        return data;
+    }
+
+    clone(): McpLimits {
+        const json = this.toJSON();
+        let result = new McpLimits();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpLimits {
+    /** Null means the deployment's value. */
+    requestsPerWindow?: number | undefined;
+    /** Null means the deployment's value. */
+    mutationsPerWindow?: number | undefined;
+
+    [key: string]: any;
+}
+
+export enum McpDeploymentMode {
+    Disabled = "disabled",
+    LocalDevelopment = "localDevelopment",
+    Entra = "entra",
+}
+
+export class McpWindowLimit implements IMcpWindowLimit {
+    permit?: number;
+    windowSeconds?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpWindowLimit) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.permit = _data["permit"];
+            this.windowSeconds = _data["windowSeconds"];
+        }
+    }
+
+    static fromJS(data: any): McpWindowLimit {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpWindowLimit();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["permit"] = this.permit;
+        data["windowSeconds"] = this.windowSeconds;
+        return data;
+    }
+
+    clone(): McpWindowLimit {
+        const json = this.toJSON();
+        let result = new McpWindowLimit();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpWindowLimit {
+    permit?: number;
+    windowSeconds?: number;
+
+    [key: string]: any;
+}
+
+/** The deployment's MCP settings. Read-only; changed through app settings. */
+export class McpDeployment implements IMcpDeployment {
+    mode?: McpDeploymentMode;
+    endpointUrl?: string;
+    resourceMetadataUrl?: string | undefined;
+    serverVersion?: string;
+    tenantId?: string | undefined;
+    clientId?: string | undefined;
+    applicationIdUri?: string | undefined;
+    authority?: string | undefined;
+    allowedOrigins?: string[];
+    rateLimitsEnabled?: boolean;
+    requestLimit?: McpWindowLimit;
+    mutationLimit?: McpWindowLimit;
+    /** The catalog's endpoint ids, for the endpoint pickers. */
+    endpoints?: string[];
+
+    [key: string]: any;
+
+    constructor(data?: IMcpDeployment) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.mode = _data["mode"];
+            this.endpointUrl = _data["endpointUrl"];
+            this.resourceMetadataUrl = _data["resourceMetadataUrl"];
+            this.serverVersion = _data["serverVersion"];
+            this.tenantId = _data["tenantId"];
+            this.clientId = _data["clientId"];
+            this.applicationIdUri = _data["applicationIdUri"];
+            this.authority = _data["authority"];
+            if (Array.isArray(_data["allowedOrigins"])) {
+                this.allowedOrigins = [] as any;
+                for (let item of _data["allowedOrigins"])
+                    this.allowedOrigins!.push(item);
+            }
+            this.rateLimitsEnabled = _data["rateLimitsEnabled"];
+            this.requestLimit = _data["requestLimit"] ? McpWindowLimit.fromJS(_data["requestLimit"]) : undefined as any;
+            this.mutationLimit = _data["mutationLimit"] ? McpWindowLimit.fromJS(_data["mutationLimit"]) : undefined as any;
+            if (Array.isArray(_data["endpoints"])) {
+                this.endpoints = [] as any;
+                for (let item of _data["endpoints"])
+                    this.endpoints!.push(item);
+            }
+        }
+    }
+
+    static fromJS(data: any): McpDeployment {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpDeployment();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["mode"] = this.mode;
+        data["endpointUrl"] = this.endpointUrl;
+        data["resourceMetadataUrl"] = this.resourceMetadataUrl;
+        data["serverVersion"] = this.serverVersion;
+        data["tenantId"] = this.tenantId;
+        data["clientId"] = this.clientId;
+        data["applicationIdUri"] = this.applicationIdUri;
+        data["authority"] = this.authority;
+        if (Array.isArray(this.allowedOrigins)) {
+            data["allowedOrigins"] = [];
+            for (let item of this.allowedOrigins)
+                data["allowedOrigins"].push(item);
+        }
+        data["rateLimitsEnabled"] = this.rateLimitsEnabled;
+        data["requestLimit"] = this.requestLimit ? this.requestLimit.toJSON() : undefined as any;
+        data["mutationLimit"] = this.mutationLimit ? this.mutationLimit.toJSON() : undefined as any;
+        if (Array.isArray(this.endpoints)) {
+            data["endpoints"] = [];
+            for (let item of this.endpoints)
+                data["endpoints"].push(item);
+        }
+        return data;
+    }
+
+    clone(): McpDeployment {
+        const json = this.toJSON();
+        let result = new McpDeployment();
+        result.init(json);
+        return result;
+    }
+}
+
+/** The deployment's MCP settings. Read-only; changed through app settings. */
+export interface IMcpDeployment {
+    mode?: McpDeploymentMode;
+    endpointUrl?: string;
+    resourceMetadataUrl?: string | undefined;
+    serverVersion?: string;
+    tenantId?: string | undefined;
+    clientId?: string | undefined;
+    applicationIdUri?: string | undefined;
+    authority?: string | undefined;
+    allowedOrigins?: string[];
+    rateLimitsEnabled?: boolean;
+    requestLimit?: McpWindowLimit;
+    mutationLimit?: McpWindowLimit;
+    /** The catalog's endpoint ids, for the endpoint pickers. */
+    endpoints?: string[];
+
+    [key: string]: any;
+}
+
+export class McpAccessState implements IMcpAccessState {
+    saved?: McpAccessSettings;
+    /** What this instance enforces; null when the deployment does not serve MCP or the policy is not loaded. */
+    effective?: McpAccessSettings | undefined;
+    /** False when this instance could not load the policy; agents then get 503 [Unavailable]. */
+    policyLoaded?: boolean;
+    deployment?: McpDeployment;
+    failureIntelligenceEnabled?: boolean;
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpAccessState) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.saved = _data["saved"] ? McpAccessSettings.fromJS(_data["saved"]) : undefined as any;
+            this.effective = _data["effective"] ? McpAccessSettings.fromJS(_data["effective"]) : undefined as any;
+            this.policyLoaded = _data["policyLoaded"];
+            this.deployment = _data["deployment"] ? McpDeployment.fromJS(_data["deployment"]) : undefined as any;
+            this.failureIntelligenceEnabled = _data["failureIntelligenceEnabled"];
+            this.csrfToken = _data["csrfToken"];
+        }
+    }
+
+    static fromJS(data: any): McpAccessState {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpAccessState();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["saved"] = this.saved ? this.saved.toJSON() : undefined as any;
+        data["effective"] = this.effective ? this.effective.toJSON() : undefined as any;
+        data["policyLoaded"] = this.policyLoaded;
+        data["deployment"] = this.deployment ? this.deployment.toJSON() : undefined as any;
+        data["failureIntelligenceEnabled"] = this.failureIntelligenceEnabled;
+        data["csrfToken"] = this.csrfToken;
+        return data;
+    }
+
+    clone(): McpAccessState {
+        const json = this.toJSON();
+        let result = new McpAccessState();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpAccessState {
+    saved?: McpAccessSettings;
+    /** What this instance enforces; null when the deployment does not serve MCP or the policy is not loaded. */
+    effective?: McpAccessSettings | undefined;
+    /** False when this instance could not load the policy; agents then get 503 [Unavailable]. */
+    policyLoaded?: boolean;
+    deployment?: McpDeployment;
+    failureIntelligenceEnabled?: boolean;
+    /** Send as the X-NimBus-CSRF header on writes. */
+    csrfToken?: string;
+
+    [key: string]: any;
+}
+
+export class McpAccessUpdate implements IMcpAccessUpdate {
+    /** The revision the editor read; null when nothing was saved. */
+    revision?: string | undefined;
+    settings?: McpAccessSettings;
+    confirmWidening?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpAccessUpdate) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.revision = _data["revision"];
+            this.settings = _data["settings"] ? McpAccessSettings.fromJS(_data["settings"]) : undefined as any;
+            this.confirmWidening = _data["confirmWidening"];
+        }
+    }
+
+    static fromJS(data: any): McpAccessUpdate {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpAccessUpdate();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["revision"] = this.revision;
+        data["settings"] = this.settings ? this.settings.toJSON() : undefined as any;
+        data["confirmWidening"] = this.confirmWidening;
+        return data;
+    }
+
+    clone(): McpAccessUpdate {
+        const json = this.toJSON();
+        let result = new McpAccessUpdate();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpAccessUpdate {
+    /** The revision the editor read; null when nothing was saved. */
+    revision?: string | undefined;
+    settings?: McpAccessSettings;
+    confirmWidening?: boolean;
+
+    [key: string]: any;
+}
+
+export class McpAccessChange implements IMcpAccessChange {
+    text?: string;
+    widens?: boolean;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpAccessChange) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.text = _data["text"];
+            this.widens = _data["widens"];
+        }
+    }
+
+    static fromJS(data: any): McpAccessChange {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpAccessChange();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["text"] = this.text;
+        data["widens"] = this.widens;
+        return data;
+    }
+
+    clone(): McpAccessChange {
+        const json = this.toJSON();
+        let result = new McpAccessChange();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpAccessChange {
+    text?: string;
+    widens?: boolean;
+
+    [key: string]: any;
+}
+
+export class McpAccessProblem implements IMcpAccessProblem {
+    /** Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
+    code?: string;
+    errors?: string[];
+    changes?: McpAccessChange[];
+
+    [key: string]: any;
+
+    constructor(data?: IMcpAccessProblem) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.code = _data["code"];
+            if (Array.isArray(_data["errors"])) {
+                this.errors = [] as any;
+                for (let item of _data["errors"])
+                    this.errors!.push(item);
+            }
+            if (Array.isArray(_data["changes"])) {
+                this.changes = [] as any;
+                for (let item of _data["changes"])
+                    this.changes!.push(McpAccessChange.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): McpAccessProblem {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpAccessProblem();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["code"] = this.code;
+        if (Array.isArray(this.errors)) {
+            data["errors"] = [];
+            for (let item of this.errors)
+                data["errors"].push(item);
+        }
+        if (Array.isArray(this.changes)) {
+            data["changes"] = [];
+            for (let item of this.changes)
+                data["changes"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): McpAccessProblem {
+        const json = this.toJSON();
+        let result = new McpAccessProblem();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpAccessProblem {
+    /** Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken. */
+    code?: string;
+    errors?: string[];
+    changes?: McpAccessChange[];
+
+    [key: string]: any;
+}
+
+export class McpActivityCount implements IMcpActivityCount {
+    name?: string;
+    count?: number;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpActivityCount) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.name = _data["name"];
+            this.count = _data["count"];
+        }
+    }
+
+    static fromJS(data: any): McpActivityCount {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpActivityCount();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["name"] = this.name;
+        data["count"] = this.count;
+        return data;
+    }
+
+    clone(): McpActivityCount {
+        const json = this.toJSON();
+        let result = new McpActivityCount();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpActivityCount {
+    name?: string;
+    count?: number;
+
+    [key: string]: any;
+}
+
+export class McpActivityItem implements IMcpActivityItem {
+    atUtc?: moment.Moment;
+    /** action, refused or settings. */
+    kind?: string;
+    /** The audit type, camelCase. */
+    type?: string;
+    endpointId?: string | undefined;
+    eventId?: string | undefined;
+    auditor?: string | undefined;
+    clientId?: string | undefined;
+    /** The operator's reason, or the refusal reason. */
+    reason?: string | undefined;
+    detail?: string | undefined;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpActivityItem) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.atUtc = _data["atUtc"] ? moment(_data["atUtc"].toString()) : undefined as any;
+            this.kind = _data["kind"];
+            this.type = _data["type"];
+            this.endpointId = _data["endpointId"];
+            this.eventId = _data["eventId"];
+            this.auditor = _data["auditor"];
+            this.clientId = _data["clientId"];
+            this.reason = _data["reason"];
+            this.detail = _data["detail"];
+        }
+    }
+
+    static fromJS(data: any): McpActivityItem {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpActivityItem();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["atUtc"] = this.atUtc ? this.atUtc.toISOString() : undefined as any;
+        data["kind"] = this.kind;
+        data["type"] = this.type;
+        data["endpointId"] = this.endpointId;
+        data["eventId"] = this.eventId;
+        data["auditor"] = this.auditor;
+        data["clientId"] = this.clientId;
+        data["reason"] = this.reason;
+        data["detail"] = this.detail;
+        return data;
+    }
+
+    clone(): McpActivityItem {
+        const json = this.toJSON();
+        let result = new McpActivityItem();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpActivityItem {
+    atUtc?: moment.Moment;
+    /** action, refused or settings. */
+    kind?: string;
+    /** The audit type, camelCase. */
+    type?: string;
+    endpointId?: string | undefined;
+    eventId?: string | undefined;
+    auditor?: string | undefined;
+    clientId?: string | undefined;
+    /** The operator's reason, or the refusal reason. */
+    reason?: string | undefined;
+    detail?: string | undefined;
+
+    [key: string]: any;
+}
+
+export class McpRefusedClient implements IMcpRefusedClient {
+    clientId?: string;
+    calls?: number;
+    lastAuditor?: string | undefined;
+    lastAtUtc?: moment.Moment;
+
+    [key: string]: any;
+
+    constructor(data?: IMcpRefusedClient) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.clientId = _data["clientId"];
+            this.calls = _data["calls"];
+            this.lastAuditor = _data["lastAuditor"];
+            this.lastAtUtc = _data["lastAtUtc"] ? moment(_data["lastAtUtc"].toString()) : undefined as any;
+        }
+    }
+
+    static fromJS(data: any): McpRefusedClient {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpRefusedClient();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["clientId"] = this.clientId;
+        data["calls"] = this.calls;
+        data["lastAuditor"] = this.lastAuditor;
+        data["lastAtUtc"] = this.lastAtUtc ? this.lastAtUtc.toISOString() : undefined as any;
+        return data;
+    }
+
+    clone(): McpRefusedClient {
+        const json = this.toJSON();
+        let result = new McpRefusedClient();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpRefusedClient {
+    clientId?: string;
+    calls?: number;
+    lastAuditor?: string | undefined;
+    lastAtUtc?: moment.Moment;
+
+    [key: string]: any;
+}
+
+export class McpActivity implements IMcpActivity {
+    hours?: number;
+    actions?: number;
+    refused?: number;
+    /** True when a query hit its row cap, so the counts may be incomplete. */
+    capped?: boolean;
+    actionsByType?: McpActivityCount[];
+    refusedByReason?: McpActivityCount[];
+    items?: McpActivityItem[];
+    refusedClients?: McpRefusedClient[];
+
+    [key: string]: any;
+
+    constructor(data?: IMcpActivity) {
+        if (data) {
+            for (var property in data) {
+                if (data.hasOwnProperty(property))
+                    (this as any)[property] = (data as any)[property];
+            }
+        }
+    }
+
+    init(_data?: any) {
+        if (_data) {
+            for (var property in _data) {
+                if (_data.hasOwnProperty(property))
+                    this[property] = _data[property];
+            }
+            this.hours = _data["hours"];
+            this.actions = _data["actions"];
+            this.refused = _data["refused"];
+            this.capped = _data["capped"];
+            if (Array.isArray(_data["actionsByType"])) {
+                this.actionsByType = [] as any;
+                for (let item of _data["actionsByType"])
+                    this.actionsByType!.push(McpActivityCount.fromJS(item));
+            }
+            if (Array.isArray(_data["refusedByReason"])) {
+                this.refusedByReason = [] as any;
+                for (let item of _data["refusedByReason"])
+                    this.refusedByReason!.push(McpActivityCount.fromJS(item));
+            }
+            if (Array.isArray(_data["items"])) {
+                this.items = [] as any;
+                for (let item of _data["items"])
+                    this.items!.push(McpActivityItem.fromJS(item));
+            }
+            if (Array.isArray(_data["refusedClients"])) {
+                this.refusedClients = [] as any;
+                for (let item of _data["refusedClients"])
+                    this.refusedClients!.push(McpRefusedClient.fromJS(item));
+            }
+        }
+    }
+
+    static fromJS(data: any): McpActivity {
+        data = typeof data === 'object' ? data : {};
+        let result = new McpActivity();
+        result.init(data);
+        return result;
+    }
+
+    toJSON(data?: any) {
+        data = typeof data === 'object' ? data : {};
+        for (var property in this) {
+            if (this.hasOwnProperty(property))
+                data[property] = this[property];
+        }
+        data["hours"] = this.hours;
+        data["actions"] = this.actions;
+        data["refused"] = this.refused;
+        data["capped"] = this.capped;
+        if (Array.isArray(this.actionsByType)) {
+            data["actionsByType"] = [];
+            for (let item of this.actionsByType)
+                data["actionsByType"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.refusedByReason)) {
+            data["refusedByReason"] = [];
+            for (let item of this.refusedByReason)
+                data["refusedByReason"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.items)) {
+            data["items"] = [];
+            for (let item of this.items)
+                data["items"].push(item ? item.toJSON() : undefined as any);
+        }
+        if (Array.isArray(this.refusedClients)) {
+            data["refusedClients"] = [];
+            for (let item of this.refusedClients)
+                data["refusedClients"].push(item ? item.toJSON() : undefined as any);
+        }
+        return data;
+    }
+
+    clone(): McpActivity {
+        const json = this.toJSON();
+        let result = new McpActivity();
+        result.init(json);
+        return result;
+    }
+}
+
+export interface IMcpActivity {
+    hours?: number;
+    actions?: number;
+    refused?: number;
+    /** True when a query hit its row cap, so the counts may be incomplete. */
+    capped?: boolean;
+    actionsByType?: McpActivityCount[];
+    refusedByReason?: McpActivityCount[];
+    items?: McpActivityItem[];
+    refusedClients?: McpRefusedClient[];
+
+    [key: string]: any;
+}
+
 export class HeartbeatOverviewRow implements IHeartbeatOverviewRow {
     endpointId?: string;
     /** Null when the endpoint has never been configured either way, which means it is probed. */
@@ -17711,6 +19329,8 @@ export enum MessageAuditAuditType {
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
     UpdateAuditSettings = "updateAuditSettings",
     CommandNotSent = "commandNotSent",
+    UpdateMcpSettings = "updateMcpSettings",
+    McpAccessRefused = "mcpAccessRefused",
 }
 
 export class MessageContent implements IMessageContent {
@@ -17852,6 +19472,8 @@ export enum AuditSearchFilterAuditType {
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
     UpdateAuditSettings = "updateAuditSettings",
     CommandNotSent = "commandNotSent",
+    UpdateMcpSettings = "updateMcpSettings",
+    McpAccessRefused = "mcpAccessRefused",
 }
 
 export enum StalePendingRowVerdict {
@@ -17929,6 +19551,8 @@ export enum AuditEntryAuditType {
     ClearEndpointAcknowledgement = "clearEndpointAcknowledgement",
     UpdateAuditSettings = "updateAuditSettings",
     CommandNotSent = "commandNotSent",
+    UpdateMcpSettings = "updateMcpSettings",
+    McpAccessRefused = "mcpAccessRefused",
 }
 
 export enum AgentSettleRequestOutcome {

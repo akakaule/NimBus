@@ -1486,6 +1486,120 @@ paths:
           description: Bad Request
         '403':
           description: Forbidden
+  /api/admin/mcp/settings:
+    get:
+      summary: Get the MCP access policy and the deployment's MCP configuration
+      description: >-
+        Spec 037. Site Owner only. Returns the saved policy (revision null when nothing was
+        saved), the policy this instance enforces, the deployment's read-only MCP settings and
+        an antiforgery token for the write operations.
+      operationId: get-admin-mcp-settings
+      tags:
+        - McpAccess
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessState'
+        '403':
+          description: Forbidden
+    put:
+      summary: Save the MCP access policy
+      description: >-
+        Spec 037. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Saves when
+        revision matches the stored revision (409 otherwise). A change that widens access
+        needs confirmWidening (400 ConfirmationRequired otherwise). Applies to every instance
+        within 30 seconds.
+      operationId: put-admin-mcp-settings
+      tags:
+        - McpAccess
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpAccessUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessState'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessProblem'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessProblem'
+  /api/admin/mcp/turn-off:
+    post:
+      summary: Turn MCP access off now
+      description: >-
+        Spec 037. Site Owner only; requires the X-NimBus-CSRF antiforgery header. Turns the
+        endpoint off on the latest saved policy, whatever revision the caller last read, and
+        keeps every other setting. Agents get 503 [Disabled] within 30 seconds.
+      operationId: post-admin-mcp-turn-off
+      tags:
+        - McpAccess
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessState'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessProblem'
+        '403':
+          description: Forbidden
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAccessProblem'
+  /api/admin/mcp/activity:
+    get:
+      summary: Recent agent activity over MCP
+      description: >-
+        Spec 037. Site Owner only. Actions, refusals and settings changes from the audit log
+        (channel Mcp) in the last `hours` (1-168, default 24). Read-only tool calls are not
+        audited.
+      operationId: get-admin-mcp-activity
+      tags:
+        - McpAccess
+      parameters:
+        - name: hours
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 24
+            minimum: 1
+            maximum: 168
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpActivity'
+        '403':
+          description: Forbidden
   /api/admin/heartbeat/send:
     post:
       summary: Send a heartbeat to every monitored endpoint now
@@ -3911,6 +4025,8 @@ components:
             - clearEndpointAcknowledgement
             - updateAuditSettings
             - commandNotSent
+            - updateMcpSettings
+            - mcpAccessRefused
         comment:
           type: string
           nullable: true
@@ -5213,6 +5329,8 @@ components:
             - clearEndpointAcknowledgement
             - updateAuditSettings
             - commandNotSent
+            - updateMcpSettings
+            - mcpAccessRefused
         createdAtFrom:
           type: string
           format: date-time
@@ -5613,6 +5731,339 @@ components:
           description: Read-only. The audit types that can be disabled; ignored on write.
           items:
             type: string
+    McpAccessSettings:
+      title: McpAccessSettings
+      type: object
+      description: The site Owner's MCP access policy (Spec 037). It can only narrow what the deployment, Entra scopes and NimBus roles allow.
+      properties:
+        revision:
+          type: string
+          nullable: true
+          description: Read-only. Null when nothing was saved.
+        updatedBy:
+          type: string
+          nullable: true
+          description: Read-only.
+        updatedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Read-only.
+        enabled:
+          type: boolean
+        capabilities:
+          $ref: '#/components/schemas/McpCapabilities'
+        allowWorkloads:
+          type: boolean
+        people:
+          $ref: '#/components/schemas/McpPeople'
+        clients:
+          $ref: '#/components/schemas/McpClients'
+        endpoints:
+          $ref: '#/components/schemas/McpEndpointRules'
+        limits:
+          $ref: '#/components/schemas/McpLimits'
+    McpCapabilities:
+      title: McpCapabilities
+      type: object
+      properties:
+        payloads:
+          type: boolean
+        report:
+          type: boolean
+        classify:
+          type: boolean
+        resubmit:
+          type: boolean
+        skip:
+          type: boolean
+    McpPeopleMode:
+      title: McpPeopleMode
+      type: string
+      enum:
+        - all
+        - listed
+    McpPeople:
+      title: McpPeople
+      type: object
+      properties:
+        mode:
+          $ref: '#/components/schemas/McpPeopleMode'
+        principals:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpPrincipal'
+    McpPrincipal:
+      title: McpPrincipal
+      type: object
+      properties:
+        principal:
+          type: string
+          description: An email address, a user object id or a group object id.
+        label:
+          type: string
+          nullable: true
+    McpClientMode:
+      title: McpClientMode
+      type: string
+      enum:
+        - any
+        - approved
+    McpClients:
+      title: McpClients
+      type: object
+      properties:
+        mode:
+          $ref: '#/components/schemas/McpClientMode'
+        approved:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpApprovedClient'
+    McpApprovedClient:
+      title: McpApprovedClient
+      type: object
+      properties:
+        clientId:
+          type: string
+        name:
+          type: string
+        mayChange:
+          type: boolean
+    McpEndpointVisibility:
+      title: McpEndpointVisibility
+      type: string
+      enum:
+        - all
+        - allExcept
+    McpChangeScope:
+      title: McpChangeScope
+      type: string
+      enum:
+        - allVisible
+        - listed
+    McpEndpointRules:
+      title: McpEndpointRules
+      type: object
+      properties:
+        visibility:
+          $ref: '#/components/schemas/McpEndpointVisibility'
+        hidden:
+          type: array
+          items:
+            type: string
+        changes:
+          $ref: '#/components/schemas/McpChangeScope'
+        changeOn:
+          type: array
+          items:
+            type: string
+    McpLimits:
+      title: McpLimits
+      type: object
+      properties:
+        requestsPerWindow:
+          type: integer
+          nullable: true
+          description: Null means the deployment's value.
+        mutationsPerWindow:
+          type: integer
+          nullable: true
+          description: Null means the deployment's value.
+    McpDeploymentMode:
+      title: McpDeploymentMode
+      type: string
+      enum:
+        - disabled
+        - localDevelopment
+        - entra
+    McpWindowLimit:
+      title: McpWindowLimit
+      type: object
+      properties:
+        permit:
+          type: integer
+        windowSeconds:
+          type: integer
+    McpDeployment:
+      title: McpDeployment
+      type: object
+      description: The deployment's MCP settings. Read-only; changed through app settings.
+      properties:
+        mode:
+          $ref: '#/components/schemas/McpDeploymentMode'
+        endpointUrl:
+          type: string
+        resourceMetadataUrl:
+          type: string
+          nullable: true
+        serverVersion:
+          type: string
+        tenantId:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+        applicationIdUri:
+          type: string
+          nullable: true
+        authority:
+          type: string
+          nullable: true
+        allowedOrigins:
+          type: array
+          items:
+            type: string
+        rateLimitsEnabled:
+          type: boolean
+        requestLimit:
+          $ref: '#/components/schemas/McpWindowLimit'
+        mutationLimit:
+          $ref: '#/components/schemas/McpWindowLimit'
+        endpoints:
+          type: array
+          description: The catalog's endpoint ids, for the endpoint pickers.
+          items:
+            type: string
+    McpAccessState:
+      title: McpAccessState
+      type: object
+      properties:
+        saved:
+          $ref: '#/components/schemas/McpAccessSettings'
+        effective:
+          nullable: true
+          description: What this instance enforces; null when the deployment does not serve MCP or the policy is not loaded.
+          allOf:
+            - $ref: '#/components/schemas/McpAccessSettings'
+        policyLoaded:
+          type: boolean
+          description: False when this instance could not load the policy; agents then get 503 [Unavailable].
+        deployment:
+          $ref: '#/components/schemas/McpDeployment'
+        failureIntelligenceEnabled:
+          type: boolean
+        csrfToken:
+          type: string
+          description: Send as the X-NimBus-CSRF header on writes.
+    McpAccessUpdate:
+      title: McpAccessUpdate
+      type: object
+      properties:
+        revision:
+          type: string
+          nullable: true
+          description: The revision the editor read; null when nothing was saved.
+        settings:
+          $ref: '#/components/schemas/McpAccessSettings'
+        confirmWidening:
+          type: boolean
+    McpAccessChange:
+      title: McpAccessChange
+      type: object
+      properties:
+        text:
+          type: string
+        widens:
+          type: boolean
+    McpAccessProblem:
+      title: McpAccessProblem
+      type: object
+      properties:
+        code:
+          type: string
+          description: Invalid, ConfirmationRequired, RevisionConflict or InvalidAntiforgeryToken.
+        errors:
+          type: array
+          items:
+            type: string
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpAccessChange'
+    McpActivityCount:
+      title: McpActivityCount
+      type: object
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+    McpActivityItem:
+      title: McpActivityItem
+      type: object
+      properties:
+        atUtc:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          description: action, refused or settings.
+        type:
+          type: string
+          description: The audit type, camelCase.
+        endpointId:
+          type: string
+          nullable: true
+        eventId:
+          type: string
+          nullable: true
+        auditor:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          description: The operator's reason, or the refusal reason.
+        detail:
+          type: string
+          nullable: true
+    McpRefusedClient:
+      title: McpRefusedClient
+      type: object
+      properties:
+        clientId:
+          type: string
+        calls:
+          type: integer
+        lastAuditor:
+          type: string
+          nullable: true
+        lastAtUtc:
+          type: string
+          format: date-time
+    McpActivity:
+      title: McpActivity
+      type: object
+      properties:
+        hours:
+          type: integer
+        actions:
+          type: integer
+        refused:
+          type: integer
+        capped:
+          type: boolean
+          description: True when a query hit its row cap, so the counts may be incomplete.
+        actionsByType:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpActivityCount'
+        refusedByReason:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpActivityCount'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpActivityItem'
+        refusedClients:
+          type: array
+          items:
+            $ref: '#/components/schemas/McpRefusedClient'
     HeartbeatOverviewRow:
       title: HeartbeatOverviewRow
       type: object
@@ -5840,6 +6291,8 @@ components:
             - clearEndpointAcknowledgement
             - updateAuditSettings
             - commandNotSent
+            - updateMcpSettings
+            - mcpAccessRefused
         comment:
           type: string
           nullable: true
@@ -5980,3 +6433,4 @@ tags:
   - name: Metrics
   - name: Agent
   - name: Simulation
+  - name: McpAccess

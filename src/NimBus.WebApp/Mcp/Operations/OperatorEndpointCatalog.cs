@@ -1,4 +1,5 @@
 using NimBus.Core;
+using NimBus.WebApp.Mcp.Access;
 using NimBus.WebApp.Services;
 
 namespace NimBus.WebApp.Mcp.Operations;
@@ -6,19 +7,26 @@ namespace NimBus.WebApp.Mcp.Operations;
 /// <summary>
 /// The catalog endpoints the current caller may read, resolved once per request. Every tool
 /// that takes an endpoint id checks it here first, so an unreadable endpoint is refused before
-/// any store is touched and ids are normalized to their catalog spelling.
+/// any store is touched and ids are normalized to their catalog spelling. Endpoints the site
+/// Owner's MCP access policy hides (Spec 037) are left out, as if the caller could not read them.
 /// </summary>
 public sealed class OperatorEndpointCatalog
 {
     private readonly IPlatform _platform;
     private readonly IEndpointAuthorizationService _authorization;
+    private readonly IMcpAccessPolicyProvider _policies;
     private IReadOnlyList<string>? _readable;
 
     /// <summary>Creates the catalog for one request.</summary>
-    public OperatorEndpointCatalog(IPlatform platform, IEndpointAuthorizationService authorization, IConfiguration configuration)
+    public OperatorEndpointCatalog(
+        IPlatform platform,
+        IEndpointAuthorizationService authorization,
+        IConfiguration configuration,
+        IMcpAccessPolicyProvider policies)
     {
         _platform = platform;
         _authorization = authorization;
+        _policies = policies;
         Environment = configuration.GetValue<string>("Environment");
     }
 
@@ -35,6 +43,7 @@ public sealed class OperatorEndpointCatalog
         foreach (var endpoint in _platform.Endpoints)
         {
             if (EndpointVisibility.IsListed(endpoint.Id, Environment)
+                && !IsHidden(endpoint.Id)
                 && await _authorization.HasRoleAsync(AccessRole.Reader, endpoint.Id).ConfigureAwait(false))
             {
                 readable.Add(endpoint.Id);
@@ -43,6 +52,9 @@ public sealed class OperatorEndpointCatalog
 
         return _readable = readable;
     }
+
+    /// <summary>Whether the MCP access policy hides <paramref name="endpointId"/>.</summary>
+    public bool IsHidden(string? endpointId) => _policies.Current?.IsHidden(endpointId) == true;
 
     /// <summary>
     /// Returns the catalog spelling of <paramref name="endpointId"/>, or throws

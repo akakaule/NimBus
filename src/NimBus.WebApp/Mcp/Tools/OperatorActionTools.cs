@@ -62,8 +62,9 @@ public sealed class OperatorActionTools
         [Description("messageVersion from nimbus_get_message: the state you decided on.")] string messageVersion)
     {
         var kind = ParseCommand(action);
-        _access.RequireScope(kind);
+        await _access.RequireScopeAsync(kind).ConfigureAwait(false);
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
         var id = RequireEventId(eventId);
         if (!OperatorMessageVersion.TryDecode(messageVersion, out var expected))
             throw OperatorToolErrors.InvalidArgument("messageVersion is not one nimbus_get_message returned.");
@@ -136,8 +137,9 @@ public sealed class OperatorActionTools
         [Description("A new GUID for this request, recorded in the audit log.")] string idempotencyKey,
         [Description("External ticket id: letters, digits, '.', '_' and '-', at most 64 characters. Ignored when clearing.")] string? ticketId = null)
     {
-        _access.RequireScope(OperatorAction.Report);
+        await _access.RequireScopeAsync(OperatorAction.Report).ConfigureAwait(false);
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(OperatorAction.Report, endpoint).ConfigureAwait(false);
         var id = RequireEventId(eventId);
         var context = Context(reason, idempotencyKey);
         _limiter.Acquire(Http());
@@ -158,11 +160,12 @@ public sealed class OperatorActionTools
         [Description("Classify again even when a classification exists. Default false.")] bool force = false,
         CancellationToken cancellationToken = default)
     {
-        _access.RequireScope(OperatorAction.Classify);
+        await _access.RequireScopeAsync(OperatorAction.Classify).ConfigureAwait(false);
         if (!_classifications.IsAvailable)
             throw OperatorToolErrors.FeatureUnavailable("AI failure classification is not enabled in this deployment.");
 
         var endpoint = await _catalog.RequireReadableAsync(endpointId).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(OperatorAction.Classify, endpoint).ConfigureAwait(false);
         var id = RequireEventId(eventId);
         var key = RequireGuid(idempotencyKey);
         var attempt = string.IsNullOrWhiteSpace(messageId)
@@ -182,7 +185,7 @@ public sealed class OperatorActionTools
 
     private async Task<OperatorActionResult> ExecuteAsync(OperatorAction kind, string actionToken, string idempotencyKey, string reason)
     {
-        _access.RequireScope(kind);
+        await _access.RequireScopeAsync(kind).ConfigureAwait(false);
         var context = Context(reason, idempotencyKey);
         if (!_tokens.TryRead(actionToken, out var grant) || grant is null)
             throw OperatorToolErrors.StaleMessage("The actionToken is expired or invalid.");
@@ -199,6 +202,7 @@ public sealed class OperatorActionTools
         }
 
         var endpoint = await _catalog.RequireReadableAsync(grant.EndpointId).ConfigureAwait(false);
+        await _access.RequireChangeAllowedOnAsync(kind, endpoint).ConfigureAwait(false);
         _limiter.Acquire(Http());
 
         var lookup = await _commands.FindCurrentAsync(endpoint, grant.EventId).ConfigureAwait(false);

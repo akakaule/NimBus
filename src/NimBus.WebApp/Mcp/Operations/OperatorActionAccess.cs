@@ -1,4 +1,5 @@
 using NimBus.MessageStore;
+using NimBus.WebApp.Mcp.Access;
 using NimBus.WebApp.Services;
 using NimBus.WebApp.Services.Operations;
 
@@ -23,22 +24,32 @@ public enum OperatorAction
 /// <summary>
 /// Decides whether the current MCP caller may take an <see cref="OperatorAction"/>. An Entra
 /// caller needs the action's delegated scope; a workload token, which carries app roles and no
-/// <c>scp</c>, never qualifies in Phase 2a. Local development has no scopes. The endpoint role
-/// (Contributor) is checked separately, and again against fresh access-control lists when a
-/// command runs.
+/// <c>scp</c>, never qualifies in Phase 2a. Local development has no scopes. The site Owner's
+/// MCP access policy (Spec 037) must also allow the action, the caller's client and the
+/// endpoint. The endpoint role (Contributor) is checked separately, and again against fresh
+/// access-control lists when a command runs.
 /// </summary>
 public sealed class OperatorActionAccess
 {
     private readonly IEndpointAuthorizationService _authorization;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly McpOperatorRuntime _runtime;
+    private readonly IMcpAccessPolicyProvider _policies;
+    private readonly McpAccessRefusals _refusals;
 
     /// <summary>Creates the check for one request.</summary>
-    public OperatorActionAccess(IEndpointAuthorizationService authorization, IHttpContextAccessor httpContextAccessor, McpOperatorRuntime runtime)
+    public OperatorActionAccess(
+        IEndpointAuthorizationService authorization,
+        IHttpContextAccessor httpContextAccessor,
+        McpOperatorRuntime runtime,
+        IMcpAccessPolicyProvider policies,
+        McpAccessRefusals refusals)
     {
         _authorization = authorization;
         _httpContextAccessor = httpContextAccessor;
         _runtime = runtime;
+        _policies = policies;
+        _refusals = refusals;
     }
 
     /// <summary>The delegated scope <paramref name="action"/> requires.</summary>
@@ -54,24 +65,43 @@ public sealed class OperatorActionAccess
     /// <summary>The name agents see for <paramref name="action"/>.</summary>
     public static string NameOf(OperatorAction action) => action.ToString().ToLowerInvariant();
 
-    /// <summary>True when the caller holds <paramref name="action"/>'s scope.</summary>
-    public bool HasScope(OperatorAction action)
-    {
-        if (_runtime.Mode == McpAuthenticationMode.LocalDevelopment)
-            return true;
+    /// <summary>
+    /// True when the access policy allows <paramref name="action"/> for the caller's client
+    /// and the caller holds the action's scope.
+    /// </summary>
+    public bool HasScope(OperatorAction action) => PolicyAllows(action) && HoldsScope(action);
 
-        var user = _httpContextAccessor.HttpContext?.User;
-        return user is not null && McpOperatorPermissions.HasDelegatedScope(user, ScopeOf(action));
-    }
-
-    /// <summary>Throws <c>[PermissionDenied]</c> unless the caller holds the scope.</summary>
-    public void RequireScope(OperatorAction action)
+    /// <summary>
+    /// Throws <c>[PermissionDenied]</c>, and audits the refusal, unless the access policy allows
+    /// <paramref name="action"/> for the caller's client and the caller holds the scope.
+    /// </summary>
+    public async Task RequireScopeAsync(OperatorAction action)
     {
-        if (!HasScope(action))
+        if (!PolicyAllows(action))
         {
+            await RecordAsync(McpRefusalReason.Tool, action, endpointId: null).ConfigureAwait(false);
+            throw OperatorToolErrors.PermissionDenied($"{NameOf(action)} is turned off by an administrator.");
+        }
+
+        if (!HoldsScope(action))
+        {
+            await RecordAsync(McpRefusalReason.Scope, action, endpointId: null).ConfigureAwait(false);
             throw OperatorToolErrors.PermissionDenied(
                 $"{NameOf(action)} requires the delegated {ScopeOf(action)} scope. Workload (app-only) tokens cannot change messages.");
         }
+    }
+
+    /// <summary>True when the access policy allows changes on <paramref name="endpointId"/>.</summary>
+    public bool MayChangeOn(string endpointId) => _policies.Current?.MayChangeOn(endpointId) == true;
+
+    /// <summary>Throws <c>[PermissionDenied]</c>, and audits the refusal, unless changes are allowed on <paramref name="endpointId"/>.</summary>
+    public async Task RequireChangeAllowedOnAsync(OperatorAction action, string endpointId)
+    {
+        if (MayChangeOn(endpointId))
+            return;
+
+        await RecordAsync(McpRefusalReason.Endpoint, action, endpointId).ConfigureAwait(false);
+        throw OperatorToolErrors.PermissionDenied($"Changes are not allowed on endpoint '{endpointId}' over MCP.");
     }
 
     /// <summary>
@@ -81,7 +111,7 @@ public sealed class OperatorActionAccess
     public async Task<IReadOnlyList<string>> EligibleActionsAsync(UnresolvedEvent row, string endpointId, bool classificationAvailable)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (!await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false))
+        if (!MayChangeOn(endpointId) || !await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false))
             return [];
 
         var actions = new List<string>();
@@ -122,5 +152,31 @@ public sealed class OperatorActionAccess
 
     /// <summary>True when the caller holds the scope and Contributor on <paramref name="endpointId"/>.</summary>
     public async Task<bool> MayAsync(OperatorAction action, string endpointId)
-        => HasScope(action) && await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
+        => HasScope(action) && MayChangeOn(endpointId)
+           && await _authorization.HasRoleAsync(AccessRole.Contributor, endpointId).ConfigureAwait(false);
+
+    private bool PolicyAllows(OperatorAction action)
+    {
+        var policy = _policies.Current;
+        return policy is not null
+            && policy.AllowsAction(action)
+            && policy.ClientMayChange(McpCaller.From(_httpContextAccessor.HttpContext?.User, _runtime.Mode));
+    }
+
+    private bool HoldsScope(OperatorAction action)
+    {
+        if (_runtime.Mode == McpAuthenticationMode.LocalDevelopment)
+            return true;
+
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user is not null && McpOperatorPermissions.HasDelegatedScope(user, ScopeOf(action));
+    }
+
+    private Task RecordAsync(McpRefusalReason reason, OperatorAction action, string? endpointId)
+    {
+        var http = _httpContextAccessor.HttpContext;
+        return http is null
+            ? Task.CompletedTask
+            : _refusals.RecordAsync(http, McpCaller.From(http.User, _runtime.Mode), reason, NameOf(action), endpointId);
+    }
 }

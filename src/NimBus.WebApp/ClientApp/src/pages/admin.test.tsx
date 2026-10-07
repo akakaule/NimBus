@@ -19,6 +19,7 @@ vi.mock("components/admin/subscription-manager", () => ({
 vi.mock("components/admin/health", () => ({ default: () => null }));
 vi.mock("components/admin/simulation-settings", () => ({ default: () => null }));
 vi.mock("components/admin/audit-settings", () => ({ default: () => null }));
+vi.mock("components/admin/mcp-access-settings", () => ({ default: () => null }));
 vi.mock("components/admin/cosmos-container-manager", () => ({
   default: () => <div>Cosmos container manager</div>,
 }));
@@ -38,6 +39,7 @@ describe("Admin storage tab", () => {
     expect(screen.getByRole("tab", { name: "Storage" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Simulation" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Audit" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "MCP access" })).toBeTruthy();
   });
 
   it("is not available for SQL Server storage", async () => {

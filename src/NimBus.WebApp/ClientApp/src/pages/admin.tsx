@@ -7,6 +7,7 @@ import Health from "components/admin/health";
 import FailureIntelligenceSettings from "components/admin/failure-intelligence-settings";
 import SimulationSettings from "components/admin/simulation-settings";
 import AuditSettings from "components/admin/audit-settings";
+import McpAccessSettings from "components/admin/mcp-access-settings";
 import CosmosContainerManager from "components/admin/cosmos-container-manager";
 import { useStorageProvider } from "hooks/app-status";
 
@@ -29,6 +30,7 @@ export default function Admin() {
           <Tab index={5} tabIndex={0}>Failure intelligence</Tab>
           <Tab index={6}>Simulation</Tab>
           <Tab index={7}>Audit</Tab>
+          <Tab index={8}>MCP access</Tab>
         </TabList>
         <TabPanels>
           <TabPanel index={0} className="p-6">
@@ -51,6 +53,9 @@ export default function Admin() {
           </TabPanel>
           <TabPanel index={7} className="p-6">
             <AuditSettings />
+          </TabPanel>
+          <TabPanel index={8} className="p-6">
+            <McpAccessSettings />
           </TabPanel>
           {hasCosmosStorage && (
             <TabPanel index={4} className="p-6">

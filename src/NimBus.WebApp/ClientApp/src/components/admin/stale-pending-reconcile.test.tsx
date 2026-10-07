@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "components/ui";
+import {
+  REPAIR_BATCH_SIZE,
+  StalePendingReconcileCard,
+} from "./stale-pending-reconcile";
 
 const { previewMock, reconcileMock } = vi.hoisted(() => ({
   previewMock: vi.fn(),
@@ -24,10 +28,8 @@ afterEach(() => {
 });
 
 const endpoints = [{ value: "Nav09Endpoint", label: "Nav09Endpoint" }];
-const { REPAIR_BATCH_SIZE } = await import("./stale-pending-reconcile");
 
 async function renderCard() {
-  const { StalePendingReconcileCard } = await import("./stale-pending-reconcile");
   render(
     <ToastProvider>
       <StalePendingReconcileCard endpoints={endpoints} />

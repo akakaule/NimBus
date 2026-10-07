@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import CosmosContainerManager from "./cosmos-container-manager";
 
 const { listMock, deleteMock } = vi.hoisted(() => ({
   listMock: vi.fn(),
@@ -28,8 +29,6 @@ describe("CosmosContainerManager", () => {
       .mockResolvedValueOnce([{ name: "OldEndpoint", isInPlatform: false }])
       .mockResolvedValueOnce([]);
     deleteMock.mockResolvedValue({ name: "OldEndpoint", deleted: true });
-    const { default: CosmosContainerManager } =
-      await import("./cosmos-container-manager");
     render(<CosmosContainerManager />);
 
     expect(await screen.findByText("OldEndpoint")).toBeTruthy();
@@ -59,8 +58,6 @@ describe("CosmosContainerManager", () => {
 
   it("explains when Cosmos DB is not configured", async () => {
     listMock.mockRejectedValue({ status: 404 });
-    const { default: CosmosContainerManager } =
-      await import("./cosmos-container-manager");
     render(<CosmosContainerManager />);
     expect(
       await screen.findByText(/Cosmos DB storage is not configured/),
@@ -76,8 +73,6 @@ const mixedContainers = [
 ];
 
 async function renderManager() {
-  const { default: CosmosContainerManager } =
-    await import("./cosmos-container-manager");
   render(<CosmosContainerManager />);
   await screen.findByText("OldEndpoint");
 }

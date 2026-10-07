@@ -3,6 +3,7 @@ import { cleanup, render, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as React from "react";
 import * as api from "api-client";
+import EndpointsList from "./endpoints-list";
 
 // Shared fakes for the two api-client calls the endpoints list makes while
 // resolving which statuses to show. Declared via vi.hoisted so the hoisted
@@ -84,7 +85,6 @@ afterEach(() => {
 
 describe("EndpointsList handleCheck (wave3)", () => {
   it("fetches only missing statuses on check, never refetches on uncheck, and never mutates state in place", async () => {
-    const { default: EndpointsList } = await import("./endpoints-list");
     const ref = React.createRef<InstanceType<typeof EndpointsList>>();
 
     render(
@@ -140,7 +140,6 @@ describe("EndpointsList handleCheck (wave3)", () => {
 
 describe("EndpointsList filter persistence", () => {
   const mount = async () => {
-    const { default: EndpointsList } = await import("./endpoints-list");
     const ref = React.createRef<InstanceType<typeof EndpointsList>>();
     render(
       <MemoryRouter>

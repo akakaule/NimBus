@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "api-client";
+import AccessControl from "./access-control";
 
 const mocks = vi.hoisted(() => {
   interface PendingRequest {
@@ -74,7 +75,6 @@ const accessSet = (reader: string) =>
   new api.AccessControlSet({ readers: [reader] });
 
 const renderPage = async () => {
-  const { default: AccessControl } = await import("./access-control");
   render(
     <MemoryRouter>
       <AccessControl />

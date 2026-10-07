@@ -10,6 +10,7 @@ import {
 import { MemoryRouter } from "react-router-dom";
 import moment from "moment";
 import * as api from "api-client";
+import AuditsList from "./audits-list";
 
 // Each postAuditsSearch call parks its resolver in `auditsDeferreds` so the
 // test can settle the two in-flight fetches out of order.
@@ -55,7 +56,6 @@ function auditRow(auditorName: string): api.AuditEntry {
 
 describe("AuditsList stale-response guard", () => {
   it("keeps the newer fetch's rows when an older fetch resolves last", async () => {
-    const { default: AuditsList } = await import("./audits-list");
     render(
       <MemoryRouter>
         <AuditsList />

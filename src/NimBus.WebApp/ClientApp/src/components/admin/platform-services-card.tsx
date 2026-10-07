@@ -57,7 +57,7 @@ const refreshIcon = (
 );
 
 /**
- * Admin → Health, top card. Liveness of NimBus's own services, measured by a
+ * Heartbeat page, top card (site Owners only). Liveness of NimBus's own services, measured by a
  * round-trip probe over Service Bus — a service only answers if it is running
  * AND draining its subscription, which no HTTP health check can tell you.
  */

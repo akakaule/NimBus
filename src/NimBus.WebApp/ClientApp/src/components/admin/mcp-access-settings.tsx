@@ -11,7 +11,7 @@ import {
   type ApprovedClient, type CapabilityKey, type McpActivity, type McpChange, type McpProblem, type McpSettings, type McpState, type Persona,
 } from "./mcp-access-model";
 
-// Spec 037 — Admin → MCP access. Site Owner only. The policy narrows what the
+// Spec 037 — Settings → MCP access. Site Owner only. The policy narrows what the
 // deployment, Entra scopes and NimBus roles allow, and applies to every instance
 // within 30 seconds without a restart.
 

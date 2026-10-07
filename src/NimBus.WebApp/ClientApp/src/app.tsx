@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Sidebar from "components/sidebar";
 import Topbar from "components/topbar";
 import Footer from "components/footer";
@@ -19,7 +19,9 @@ const EndpointsList = lazy(() => import("pages/endpoints-list"));
 const EventTypesList = lazy(() => import("pages/event-types-list"));
 const EventTypeDetails = lazy(() => import("pages/event-type-details"));
 const MessagesList = lazy(() => import("pages/messages-list"));
-const Admin = lazy(() => import("pages/admin"));
+const Operations = lazy(() => import("pages/operations"));
+const Topology = lazy(() => import("pages/topology"));
+const Settings = lazy(() => import("pages/settings"));
 const AccessControl = lazy(() => import("pages/access-control"));
 const Metrics = lazy(() => import("pages/metrics"));
 const Flow = lazy(() => import("pages/flow"));
@@ -116,10 +118,30 @@ const navigation: Navigation = [
     render: () => <AuditsList />,
   },
   {
+    name: "Operations",
+    path: "/Operations",
+    header: true,
+    render: () => <Operations />,
+  },
+  {
+    name: "Topology",
+    path: "/Topology/:view?",
+    header: true,
+    render: () => <Topology />,
+  },
+  {
+    name: "Settings",
+    path: "/Settings/:feature?",
+    header: true,
+    render: () => <Settings />,
+  },
+  {
+    // Spec 038 §12.1: the Admin page was split into Operations, Topology and
+    // Settings. Its tabs had no URLs, so every old link lands on Operations.
     name: "Admin",
     path: "/Admin",
-    header: true,
-    render: () => <Admin />,
+    header: false,
+    render: () => <Navigate to="/Operations" replace />,
   },
   {
     name: "Simulate",

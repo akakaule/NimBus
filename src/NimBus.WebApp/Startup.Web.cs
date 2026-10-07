@@ -120,7 +120,7 @@ public partial class Startup
         services.AddTransient<IAccessControlApiController, AccessControlImplementation>();
         services.AddTransient<IAgentApiController, AgentImplementation>();
         services.AddTransient<ISimulationApiController, SimulationImplementation>();
-        // Spec 037: Admin → MCP access. Registered whatever the deployment's MCP mode, so the
+        // Spec 037: Settings → MCP access. Registered whatever the deployment's MCP mode, so the
         // tab can explain how to set the endpoint up and a policy can be saved in advance.
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<NimBus.WebApp.Mcp.Access.McpAccessSettingsService>();

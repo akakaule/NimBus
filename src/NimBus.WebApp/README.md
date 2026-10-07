@@ -59,7 +59,7 @@ To add endpoints:
 
 ## Simulating traffic
 
-Admin → Simulation switches on a traffic simulator that publishes generated events and hosts
+Settings → Simulation switches on a traffic simulator that publishes generated events and hosts
 the handlers of endpoints an Owner hands to it. It runs only in allowed, non-production
 environments. See [docs/webapp-simulate.md](../../docs/webapp-simulate.md).
 

@@ -595,7 +595,7 @@ public class SubscriptionAdminService : ISubscriptionAdminService
             result.Succeeded = false;
             result.Message =
                 $"Rule '{ruleName}' isn't part of the platform topology for '{topicName}/{subscriptionName}', so " +
-                "detaching it could not be undone from here. Remove it from Admin → Topology if it really is " +
+                "detaching it could not be undone from here. Remove it from Topology → Catalog drift if it really is " +
                 "deprecated, or pause the subscription instead.";
             result.Errors.Add(result.Message);
             return result;

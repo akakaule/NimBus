@@ -1,4 +1,4 @@
-// Spec 037 — Admin → MCP access. Types mirror the /api/admin/mcp/* contract in
+// Spec 037 — Settings → MCP access. Types mirror the /api/admin/mcp/* contract in
 // api-spec.yaml; the change list and the access preview mirror the server rules
 // (McpAccessRules, McpAccessPolicy) for display only. The server stays authoritative.
 

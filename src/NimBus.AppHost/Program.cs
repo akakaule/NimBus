@@ -175,7 +175,7 @@ if (simulationEnabled)
 
     Console.WriteLine(
         "Traffic simulation: enabled. The WebApp simulates BillingEndpoint and WarehouseEndpoint; " +
-        "the sample publisher and subscribers are not started. Open Admin → Simulation, then Simulate.");
+        "the sample publisher and subscribers are not started. Open Settings → Simulation, then Simulate.");
 }
 else
 {

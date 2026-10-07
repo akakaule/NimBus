@@ -976,7 +976,7 @@ function SubscriptionTable({
                         ) : (
                           <span
                             key={rule}
-                            title="Not part of the platform topology, so NimBus can't restore it — remove it from Admin → Topology if it really is deprecated."
+                            title="Not part of the platform topology, so NimBus can't restore it — remove it from Topology → Catalog drift if it really is deprecated."
                             className="font-mono text-xs px-1.5 py-0.5 rounded-sm bg-surface-2 text-muted-foreground"
                           >
                             {rule}

@@ -51,10 +51,10 @@ Evidence is bounded and redacted before it leaves the process. Event payload inc
 
 For Cosmos deployments, provision the `failureclassifications` and `intelligencesettings` containers by setting the deployment parameter `integrationIntelligenceEnabled` to `true`. SQL deployments use the message-store connection with extension-owned `dbo.FailureClassifications` and a separate DbUp journal, `dbo.IntelligenceSchemaVersions`. There is no in-memory fallback. Keep the feature disabled while changing provider credentials or storage configuration; invalid provider settings leave the status route available as `ProviderNotConfigured` and do not expose the analysis route.
 
-## Admin settings
+## Settings
 
-Site Owners can use **Admin → Failure intelligence** even when classification is
-disabled. The page edits activation, model, data-sharing, history, endpoint
+Site Owners can use **Settings → Failure intelligence** even when classification is
+disabled. The panel edits activation, model, data-sharing, history, endpoint
 allow-list, timeout and guidance settings, and can save the TypeSafe API key. The
 provider base URL remains deployment-managed. No secret is ever returned by the
 settings API.
@@ -63,7 +63,7 @@ settings API.
 
 The `jev-*` models need a TypeSafe API key. Supply it either through deployment
 configuration (`NimBus__IntegrationIntelligence__FailureClassification__TypeSafe__ApiKey`,
-a Key Vault reference or user secrets) or from the Admin page:
+a Key Vault reference or user secrets) or from the Settings panel:
 
 - **API key** is a write-only password field. Leave it blank to keep the saved key;
   paste a new one to replace it. The value is trimmed and must be a single token of

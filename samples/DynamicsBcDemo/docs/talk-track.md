@@ -40,7 +40,7 @@ The long path:
      sales quote** → **Edit lines** → add one item → **Save**. Sales Hub's OPP-10099 now shows the
      Business Central quote.
    - Don't run the initial sync: that is scene 1.
-3. **In nimbus-ops** (https://localhost:18543), open **Admin → Health** and switch on the heartbeat
+3. **In nimbus-ops** (https://localhost:18543), open **Settings → Heartbeat probing** and switch on the heartbeat
    schedule, so both adapters show as alive.
 4. **Shared screen: open these tabs, in this order:**
    1. Sales Hub, **Accounts**;

@@ -49,7 +49,7 @@ describe("Sidebar Simulate item", () => {
     renderSidebar();
 
     await waitFor(() => expect(mocks.getAdminSimulation).toHaveBeenCalled());
-    expect(screen.getByRole("link", { name: /Admin/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Settings/ })).toBeTruthy();
     expect(screen.queryByRole("link", { name: /Simulate/ })).toBeNull();
   });
 

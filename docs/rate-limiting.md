@@ -24,7 +24,7 @@ to 5 per 60 s per tenant, client application and user (`RateLimiting:McpMutation
 call shares the one `/mcp` route, so this limit is counted inside the tools and answered with a
 `[RateLimited]` tool error rather than a 429. It is off when `Enabled` is false.
 
-A site Owner can lower both MCP limits in **Admin → MCP access** without a restart (Spec 037). The
+A site Owner can lower both MCP limits in **Settings → MCP access** without a restart (Spec 037). The
 configured values are the ceiling. The effective limit is part of the partition key, so a changed
 limit starts a new window rather than reusing the cached limiter.
 

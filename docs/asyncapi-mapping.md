@@ -36,7 +36,7 @@ server declares `protocol: amqp` and an empty `amqp1` binding for tooling that k
 Two ways to produce the same full-platform document:
 
 - **CLI** — `nb catalog asyncapi` writes it to a file (`.json` ⇒ JSON, else YAML).
-- **Management WebApp** — on **Admin → Topology**, the **AsyncAPI export** panel offers
+- **Management WebApp** — the **Topology** page's header offers
   **Download YAML** and **Download JSON** buttons. The endpoint is
   `GET /api/admin/asyncapi?format=yaml|json` (missing/empty `format` defaults to YAML; any other
   value is a `400`). It is admin-only — restricted to the `EIP_Management` security group, the same

@@ -13,7 +13,7 @@ using Api = NimBus.WebApp.ManagementApi;
 namespace NimBus.WebApp.Controllers.ApiContract;
 
 /// <summary>
-/// Admin → Simulation API. Site Owner only, like every other <c>/api/admin/*</c> operation.
+/// Settings → Simulation API. Site Owner only, like every other <c>/api/admin/*</c> operation.
 /// Outside an allowed environment every operation but <c>GET</c> returns 403; <c>GET</c>
 /// reports <c>allowed: false</c> with the reason so the UI can explain it.
 /// </summary>

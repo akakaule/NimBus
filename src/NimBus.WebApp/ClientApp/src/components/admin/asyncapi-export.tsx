@@ -57,8 +57,8 @@ export default function AsyncApiExport() {
     }
   }
 
-  // Title/description are rendered by the surrounding OperationGroup on the
-  // Admin → Topology tab, so this component is just the action row.
+  // Rendered as the Topology page's header action, so this component is just
+  // the action row (plus an error, when a download fails).
   return (
     <div className="space-y-3 w-full">
       <div className="flex gap-3">

@@ -109,7 +109,7 @@ public enum MessageAuditType
     RevokeRole,
 
     /// <summary>
-    /// Operator changed a Service Bus subscription from Admin → Subscriptions
+    /// Operator changed a Service Bus subscription from Topology → Subscriptions
     /// (pause, resume, purge, delete, recreate, rule detach/restore). The topic,
     /// subscription and action are recorded as Data.
     /// </summary>
@@ -118,7 +118,7 @@ public enum MessageAuditType
     /// <summary>Operator changed the platform heartbeat schedule (the new settings are recorded as Data).</summary>
     UpdateHeartbeatSettings,
 
-    /// <summary>Operator triggered an immediate heartbeat fan-out from Admin → Health.</summary>
+    /// <summary>Operator triggered an immediate heartbeat fan-out from Settings → Heartbeat probing.</summary>
     SendHeartbeatNow,
 
     /// <summary>Operator opted one endpoint back into the heartbeat fan-out.</summary>

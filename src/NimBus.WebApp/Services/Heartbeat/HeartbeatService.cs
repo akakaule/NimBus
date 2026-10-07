@@ -380,9 +380,9 @@ public sealed partial class HeartbeatService : IHeartbeatService
     /// rather than a key, and Cosmos ids are case-sensitive while every lookup here
     /// is case-insensitive, so "OrderEndpoint" and "orderendpoint" are two records
     /// that collide on read. A plain <c>ToDictionary</c> throws ArgumentException
-    /// and takes out the whole Admin → Health tab plus "Send now" for a data
-    /// condition that is merely untidy. Duplicates are logged so the stray records
-    /// can be cleaned up.
+    /// and takes out the Platform services card and Heartbeat probing, "Send now"
+    /// included, for a data condition that is merely untidy. Duplicates are logged
+    /// so the stray records can be cleaned up.
     /// </remarks>
     private Dictionary<string, T> IndexByEndpointId<T>(
         IEnumerable<T> items,

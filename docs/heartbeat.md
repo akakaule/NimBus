@@ -105,7 +105,7 @@ things at once — the host is running, it is draining its session subscription,
 and it can write to the message store. The Resolver settles the probe itself
 instead of replying over the bus.
 
-- **Where**: Admin → Health → platform services, above the endpoint table.
+- **Where**: the **Platform services** card at the top of the Heartbeat page (site Owners only).
   Status, round-trip, the Resolver's assembly version, last seen, last probe.
 - **Independent of the global switch.** The probe goes out every interval whether
   or not `Enabled` is on. `Enabled` governs the per-endpoint fan-out, which is N
@@ -162,7 +162,7 @@ behaves like a disabled-but-healthy one instead of erroring.
 The top-level **Heartbeat** page is available to site Readers and above. It
 shows current fleet reachability, weighted uptime, UTC-day history cells, SDK
 versions, and recent or ongoing gaps. Use the 7, 30, or 90 day controls to
-change the history window. The Admin → Health card remains the place to change
+change the history window. **Settings → Heartbeat probing** is the place to change
 the schedule, send a probe immediately, or opt an endpoint out.
 
 History is folded from the retained per-probe rows after every timeout sweep.

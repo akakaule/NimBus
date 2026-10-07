@@ -31,7 +31,7 @@ export default function SubscribersCard({
         <ul className="divide-y divide-border" aria-label="Simulated subscribers">
           {owned.length === 0 && (
             <li className="py-2 text-sm text-muted-foreground">
-              No endpoint is owned by the simulator. Take ownership in Admin → Simulation.
+              No endpoint is owned by the simulator. Take ownership in Settings → Simulation.
             </li>
           )}
           {owned.map((endpoint) => (

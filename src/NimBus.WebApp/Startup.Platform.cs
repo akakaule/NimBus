@@ -202,7 +202,7 @@ public partial class Startup
             sp.GetRequiredService<ServiceBusAdministrationClient>()));
     }
 
-    // Traffic simulator (Admin → Simulation, /Simulate). Singleton, in-memory state per
+    // Traffic simulator (Settings → Simulation, /Simulate). Singleton, in-memory state per
     // instance; options are validated at startup, including the production-name exclusion.
     private void AddSimulation(IServiceCollection services)
     {

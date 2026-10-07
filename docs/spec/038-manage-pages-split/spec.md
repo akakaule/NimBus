@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved 2026-10-07 (option B). Slice 1 in progress; slices 2–4 not started. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
+| **Status** | Approved 2026-10-07 (option B). Slice 1 implemented on branch `claude/admin-page-ui-simplify-4e82d0`; slices 2–4 not started. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
 | **Date** | 2026-10-07 |
 | **Baseline** | master `0f3b02ef` |
 | **Mockup** | [mockup.html](mockup.html). Open it in a browser. The yellow **Design notes** cite the sections below. The **Mock state** bar switches between the states in §7.3. [alternative-a.html](alternative-a.html) is the rejected alternative in §15. |

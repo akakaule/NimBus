@@ -108,13 +108,13 @@ export default function FailureIntelligenceSettings() {
   };
   const keyMissingAfterSave = draft.enabled && keyAction !== "replaced"
     && (clearApiKey ? state.credentialSource !== "deployment" : state.savedApiKey !== "configured" && !state.credentialConfigured);
-  return <form className="w-full min-w-0 space-y-6 max-sm:fixed max-sm:inset-0 max-sm:z-40 max-sm:overflow-y-auto max-sm:bg-background max-sm:p-4" onSubmit={event => {
+  return <form className="w-full min-w-0 space-y-6" onSubmit={event => {
     event.preventDefault();
     if (selected && names(endpoints).length === 0) { setError("Enter at least one endpoint ID, or select all authorized endpoints."); return; }
     if (apiKey.trim() && /\s/.test(apiKey.trim())) { setError("The API key must be a single token without spaces."); return; }
     setReview(true); setError(undefined);
   }}>
-    <header><a href="/Admin" className="mb-4 inline-block text-sm text-primary sm:hidden">← Back to Admin</a><h2 className="text-xl font-semibold">Failure intelligence</h2><p className="text-muted-foreground">On-demand advisory analysis. You control the provider, evidence and endpoint scope.</p>
+    <header><h2 className="text-xl font-semibold">Failure intelligence</h2><p className="text-muted-foreground">On-demand advisory analysis. You control the provider, evidence and endpoint scope.</p>
       <p className="mt-2 text-sm">Active on this instance: {state.active.enabled ? "enabled" : "disabled"} · payload {state.active.includeEventPayload ? "included" : "excluded"} · API key {credentialText[state.credentialSource]}</p>
       {state.restartRequired && <p role="status" className="mt-2 text-status-warning">Saved settings differ from this instance. Restart all WebApp instances to apply.</p>}
       {state.startupLoadFailed && <p role="alert">Startup settings could not be loaded. Classification is disabled until storage is restored and the WebApp restarts.</p>}

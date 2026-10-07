@@ -7,7 +7,8 @@ namespace NimBus.WebApp.Services.Heartbeat;
 
 /// <summary>
 /// Platform heartbeat: the scheduled probe of every catalog endpoint plus the
-/// Resolver liveness probe, and the operator-facing reads behind Admin → Health.
+/// Resolver liveness probe, and the operator-facing reads behind the Heartbeat
+/// page's Platform services and Settings → Heartbeat probing.
 /// </summary>
 public interface IHeartbeatService
 {

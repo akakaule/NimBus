@@ -121,7 +121,37 @@ const Icon = {
       />
     </svg>
   ),
-  admin: (
+  operations: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M13 8a5 5 0 1 1-1.5-3.6"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M13 2v3h-3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  topology: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="3" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="3" cy="12.5" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="13" cy="12.5" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M7.2 4.4L3.8 11M8.8 4.4l3.4 6.6M4.6 12.5h6.8"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
+  settings: (
     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
       <path
@@ -271,15 +301,28 @@ const NAV: NavGroup[] = [
   {
     label: "Manage",
     items: [
-      { name: "Admin", path: "/Admin", icon: Icon.admin },
+      { name: "Operations", path: "/Operations", icon: Icon.operations },
+      {
+        name: "Topology",
+        path: "/Topology",
+        matchPrefix: "/Topology",
+        icon: Icon.topology,
+      },
+      {
+        name: "Settings",
+        path: "/Settings",
+        matchPrefix: "/Settings",
+        icon: Icon.settings,
+      },
       { name: "Simulate", path: "/Simulate", icon: Icon.simulate },
       { name: "Access Control", path: "/AccessControl", icon: Icon.access },
     ],
   },
 ];
 
-// Render-side gating only — the server enforces every role check. Admin is a
-// site-Owner surface; Access Control also serves endpoint Owners. Items stay
+// Render-side gating only — the server enforces every role check. Operations,
+// Topology and Settings are site-Owner surfaces; Access Control also serves
+// endpoint Owners. Items stay
 // hidden until the access lookup resolves so role-less users never see a
 // flash of manage links.
 const useVisibleNav = (): NavGroup[] => {
@@ -305,7 +348,7 @@ const useVisibleNav = (): NavGroup[] => {
       ...group,
       items: group.items
         .filter((item) => {
-          if (item.path === "/Admin") return canManageSite;
+          if (SITE_OWNER_PAGES.includes(item.path)) return canManageSite;
           if (item.path === "/Simulate") return showSimulate;
           return canManageSite || ownsEndpoint;
         })
@@ -317,6 +360,9 @@ const useVisibleNav = (): NavGroup[] => {
     };
   }).filter((group) => group.items.length > 0);
 };
+
+// The pages that replaced Admin (Spec 038): every API they call is site-Owner only.
+const SITE_OWNER_PAGES = ["/Operations", "/Topology", "/Settings"];
 
 const SIMULATION_POLL_MS = 15_000;
 

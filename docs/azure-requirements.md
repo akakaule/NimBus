@@ -61,7 +61,7 @@ For governance review — the Bicep grants the two system-assigned managed ident
 |---|---|---|---|---|
 | Azure Service Bus Data Owner | `090c5cfd-751d-490a-894a-3ce6f1109419` | Service Bus namespace | Resolver + WebApp identities | Always |
 | Cosmos DB Built-in Data Contributor *(Cosmos data-plane `sqlRoleAssignments`)* | `00000000-0000-0000-0000-000000000002` | Cosmos account | Resolver + WebApp identities | Cosmos provider |
-| Cosmos DB Operator *(Azure control plane; account keys remain inaccessible)* | `230815da-be43-4aae-9cb4-875f7bd000aa` | `MessageDatabase` | WebApp identity | Cosmos provider; required by Admin storage cleanup |
+| Cosmos DB Operator *(Azure control plane; account keys remain inaccessible)* | `230815da-be43-4aae-9cb4-875f7bd000aa` | `MessageDatabase` | WebApp identity | Cosmos provider; required by Topology → Storage container cleanup |
 | Storage Blob Data Owner | `b7e6dc6d-f1e8-4753-8033-0f276bb0955b` | Functions storage account | Resolver identity | Flex Consumption plan (identity-based host storage + deployment package) |
 | Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` | Application Insights component | WebApp identity | When `appInsightsAppId` is set (always through `nb`); the event logs endpoint queries Application Insights with Microsoft Entra ([details](authentication.md#application-insights-log-queries)) |
 

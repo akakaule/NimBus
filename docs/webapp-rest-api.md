@@ -283,7 +283,7 @@ privileges.
 
 ### McpAccess
 
-Admin → MCP access (Spec 037): `GET`/`PUT /api/admin/mcp/settings`,
+Settings → MCP access (Spec 037): `GET`/`PUT /api/admin/mcp/settings`,
 `POST /api/admin/mcp/turn-off` and `GET /api/admin/mcp/activity`. Site Owner only, under the
 `nimbus-admin` rate limit. The writes require the `X-NimBus-CSRF` antiforgery token that `GET`
 returns, and `PUT` is fenced by the policy revision (409 when stale). See
@@ -428,7 +428,7 @@ before the command runs and refuses the command (503) if it cannot.
 
 ### Choosing which actions are recorded
 
-A site Owner can switch individual audit types off in **Admin → Audit**
+A site Owner can switch individual audit types off in **Settings → Audit logging**
 (`GET`/`PUT /api/admin/audit/settings`) — for example `SearchEvents`, which
 fires on every list refresh. A disabled type is skipped by both sinks. Some
 rows are always written regardless: access-denied attempts;
@@ -465,7 +465,7 @@ controller method that fires each one:
 | `UpdateAuditSettings` | `AdminImplementation.PutAdminAuditSettingsAsync` — the disabled types as `Data`; always recorded |
 | `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
 | `UpdateMcpSettings`   | `McpAccessImplementation.PutAdminMcpSettingsAsync` / `PostAdminMcpTurnOffAsync` — the revisions and the list of changes as `Data`; always recorded |
-| `McpAccessRefused`    | The operator MCP endpoint — a call refused by the Admin MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
+| `McpAccessRefused`    | The operator MCP endpoint — a call refused by the MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

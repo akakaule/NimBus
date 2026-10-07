@@ -11,7 +11,7 @@ using NimBus.MessageStore.States;
 namespace NimBus.WebApp.Services;
 
 /// <summary>
-/// Which operator actions the audit log records. Admin → Audit edits the selection;
+/// Which operator actions the audit log records. Settings → Audit logging edits the selection;
 /// <see cref="AuditLogService"/> consults it before every write.
 /// </summary>
 public interface IAuditSettingsProvider

@@ -1,7 +1,7 @@
 # Simulating traffic from the WebApp
 
 The management WebApp can drive synthetic traffic through the real platform. A site Owner
-switches on **simulate mode** in **Admin → Simulation**, and a **Simulate** page appears under
+switches on **simulate mode** in **Settings → Simulation**, and a **Simulate** page appears under
 Manage. From there the simulator:
 
 - publishes schema-valid generated events from every endpoint that produces event types, at
@@ -47,12 +47,12 @@ the same endpoint is running, they compete for the same messages. So ownership i
 - Every consuming endpoint is **External** by default. The simulator publishes to it but
   never hosts its handler; its own process handles the messages.
 - An endpoint becomes **Simulated** only when an Owner ticks "Simulator owns this endpoint" in
-  Admin → Simulation (with a confirmation), or when it is listed in
+  Settings → Simulation (with a confirmation), or when it is listed in
   `NimBus:Simulation:OwnedEndpoints`. Unknown or non-consuming endpoints in that list fail
   startup validation.
 - Ownership changes apply at the next Start. They are refused (409) while a run is active.
 - Heartbeat data is advisory only. When an owned endpoint answered a heartbeat recently while
-  the simulator was not hosting it, the Admin tab and the Simulate page warn that a live
+  the simulator was not hosting it, the Simulation settings and the Simulate page warn that a live
   instance may be competing. Heartbeats never change ownership.
 
 ## Failure modes
@@ -137,7 +137,7 @@ deadline, the loop is abandoned, its sender is disposed (which aborts the send),
 "abandoned sends" counter goes up and a warning is logged; the transition still completes.
 The next Start builds fresh publishers, senders and handlers.
 
-Stop does not delete anything. To clear a leftover backlog, use the Admin purge.
+Stop does not delete anything. To clear a leftover backlog, use **Purge** in Topology → Subscriptions.
 
 ## State is per instance
 

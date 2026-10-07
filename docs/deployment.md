@@ -205,7 +205,7 @@ trap - EXIT
 
 The Service Bus namespace follows the convention `sb-{solutionId}-{environment}.servicebus.windows.net`.
 
-For Cosmos deployments, the template also configures `CosmosAccountResourceId` and grants the WebApp's managed identity Cosmos DB Operator on `MessageDatabase`. The Admin **Storage** tab uses that ARM access to list and delete containers outside the current platform catalog; Cosmos data-plane Entra authentication cannot perform container deletion.
+For Cosmos deployments, the template also configures `CosmosAccountResourceId` and grants the WebApp's managed identity Cosmos DB Operator on `MessageDatabase`. The **Topology → Storage** view uses that ARM access to list and delete containers outside the current platform catalog; Cosmos data-plane Entra authentication cannot perform container deletion.
 
 The template also grants the WebApp's managed identity Reader on the Application Insights component (`ai-{solutionId}-{environment}-global-tracelog`), because the event logs endpoint (`GET /api/event/details/{endpointId}/{id}/logs`) queries Application Insights with that identity ([details](authentication.md#application-insights-log-queries)). No API key is involved: the `apiKey` parameter is deprecated and ignored, so leave it out.
 

@@ -571,7 +571,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
             }
 
             if (!owned.Contains(subscriber.EndpointId))
-                errors.Add($"{prefix}: the simulator does not own this endpoint; take ownership in Admin → Simulation first.");
+                errors.Add($"{prefix}: the simulator does not own this endpoint; take ownership in Settings → Simulation first.");
 
             var consumed = endpoint.EventTypesConsumed.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
             errors.AddRange(ValidateFailure(prefix, subscriber.Failure, consumed));
@@ -627,7 +627,7 @@ public sealed class SimulationService : ISimulationService, ISimulationFeedSink,
         if (!allowed)
             return $"Simulation is not allowed in this environment ({reason}).";
         if (!_settings.Enabled)
-            return "Simulate mode is disabled. Enable it in Admin → Simulation first.";
+            return "Simulate mode is disabled. Enable it in Settings → Simulation first.";
         if (State is SimulationState.Pausing or SimulationState.Stopping)
             return $"A {State} transition is in progress.";
         return null;

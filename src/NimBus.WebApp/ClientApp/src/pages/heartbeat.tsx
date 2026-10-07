@@ -22,6 +22,8 @@ import {
 } from "components/admin/heartbeat-status";
 import { subscribeHeartbeatUpdates } from "lib/grid-events-connection";
 import { cn } from "lib/utils";
+import { useAccess } from "hooks/use-access";
+import PlatformServicesCard from "components/admin/platform-services-card";
 
 const WINDOWS = [7, 30, 90] as const;
 
@@ -56,6 +58,9 @@ function duration(seconds?: number): string {
 
 export default function Heartbeat() {
   const [windowDays, setWindowDays] = useState<(typeof WINDOWS)[number]>(30);
+  // Platform services came here from Admin → Health (Spec 038 §9.1). Its API is
+  // site-Owner only, so it renders for them alone; the server still enforces it.
+  const canManageSite = useAccess().access?.canManageAccessControl ?? false;
   const [data, setData] = useState<api.HeartbeatPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +123,8 @@ export default function Heartbeat() {
       }
     >
       <div className="w-full space-y-5">
+        {canManageSite && <PlatformServicesCard />}
+
         {error && (
           <div
             role="alert"

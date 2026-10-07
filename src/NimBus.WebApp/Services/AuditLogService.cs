@@ -31,7 +31,7 @@ public sealed class AuditLogService : IAuditLogService
 
     /// <param name="logger">Structured-log sink (Application Insights).</param>
     /// <param name="messageStore">Durable sink.</param>
-    /// <param name="settings">The Admin → Audit selection. When null every type is recorded.</param>
+    /// <param name="settings">The Settings → Audit logging selection. When null every type is recorded.</param>
     public AuditLogService(
         ILogger<AuditLogService> logger,
         IMessageTrackingStore messageStore,
@@ -54,7 +54,7 @@ public sealed class AuditLogService : IAuditLogService
         string? auditorNameOverride = null,
         CancellationToken cancellationToken = default)
     {
-        // An operator can switch a type off in Admin → Audit; the selection governs both
+        // An operator can switch a type off in Settings → Audit logging; the selection governs both
         // sinks. A denied attempt is recorded regardless — it is the security signal the
         // log exists for, not routine traffic.
         if (!accessDenied && _settings != null && !await IsRecordedAsync(type).ConfigureAwait(false))
@@ -92,7 +92,7 @@ public sealed class AuditLogService : IAuditLogService
         string? eventTypeId = null,
         CancellationToken cancellationToken = default)
     {
-        // No Admin → Audit check: a command recorded here may only run once its row exists.
+        // No audit-logging selection check: a command recorded here may only run once its row exists.
         var entity = CreateEntity(type, context, accessDenied: false, data, eventId, endpointId, auditorNameOverride: null);
         try
         {

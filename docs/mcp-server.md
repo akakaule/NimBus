@@ -85,14 +85,14 @@ message was claimed; it was restored, so read it again before you retry).
 
 ## Managing access in the WebApp
 
-A site Owner manages MCP access in **Admin → MCP access** ([Spec 037](spec/037-mcp-admin-access/spec.md)).
+A site Owner manages MCP access in **Settings → MCP access** ([Spec 037](spec/037-mcp-admin-access/spec.md)).
 There are two layers:
 
 - **The deployment** decides whether `/mcp` can exist and whom NimBus trusts for tokens:
   `NimBus__Mcp__Enabled`, `NimBus__Mcp__EnableForLocalDevelopment`, `NimBus__Mcp__Entra__*`,
   `NimBus__Mcp__AllowedOrigins__*` and the `RateLimiting__Mcp*` limits. The tab shows them but
   cannot change them.
-- **The Admin policy** can only narrow that. A call proceeds only when the policy, the Entra scope
+- **The Owner's policy** can only narrow that. A call proceeds only when the policy, the Entra scope
   or app role, the NimBus role on the endpoint and the message state all allow it.
 
 The policy covers:
@@ -242,7 +242,7 @@ can reach `/mcp`. Cloud-hosted agents need a path through the Application Gatewa
 `/mcp` has its own rate-limit policy, `nimbus-mcp`: 60 requests per 60 seconds, per tenant,
 client application and user. Tools that change a message are also limited to 5 per 60 seconds
 for the same caller (`RateLimiting:McpMutations`), and answer `[RateLimited]` beyond that. A site
-Owner can lower both limits in Admin → MCP access, but not raise them. See
+Owner can lower both limits in Settings → MCP access, but not raise them. See
 [rate limiting](rate-limiting.md).
 
 ## Migrating from NimBus.Mcp

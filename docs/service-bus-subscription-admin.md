@@ -1,10 +1,10 @@
-# Admin → Subscriptions (Service Bus incident response)
+# Topology → Subscriptions (Service Bus incident response)
 
-Operator reference for the **Subscriptions** tab in the NimBus WebApp admin page.
+Operator reference for the **Subscriptions** view of the NimBus WebApp's **Topology** page.
 Use it when a producer floods the bus and you need to find, stop and clear a
 backlog without collateral damage to other endpoints.
 
-Access is site **Owner**, same as the rest of `/admin`. Every mutating action is
+Access is site **Owner**, same as the rest of `/api/admin`. Every mutating action is
 written to the audit trail as `ManageSubscription`.
 
 ## What the numbers mean
@@ -127,11 +127,11 @@ point; outside one, prefer Pause.
 ## Related
 
 - [architecture.md](architecture.md) — endpoint/event topology.
-- Admin → **Topology** tab — audits subscriptions and rules against the expected
+- **Topology → Catalog drift** — audits subscriptions and rules against the expected
   topology and removes deprecated leftovers.
-- Admin → **Operations** tab — message-store operations (resubmit, skip, delete
+- **Operations** page — message-store operations (resubmit, skip, delete
   by status). Those act on stored events, not on the bus.
-- [stale-pending-reconcile.md](stale-pending-reconcile.md) — Admin → Operations →
+- [stale-pending-reconcile.md](stale-pending-reconcile.md) — Operations →
   *Reconcile Stale Pending*, for rows a late request copy left `Pending` before
   3.7.0. It repairs the stored projection; it sends nothing to the bus.
 - [cli.md](cli.md) — `nb topology apply` re-provisions everything the descriptor

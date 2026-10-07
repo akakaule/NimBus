@@ -88,4 +88,14 @@ describe("Failure intelligence settings", () => {
     expect((model as HTMLInputElement).value).toBe("jev-test");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
+  // Spec 038: the form now renders inside the Settings side panel, which owns
+  // closing and full-screen phone layout, so it must not take over the viewport
+  // itself or link back to the removed Admin page.
+  it("leaves layout and navigation to the panel that hosts it", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(Response.json(state)) as typeof fetch;
+    const { container } = render(<FailureIntelligenceSettings />);
+    await screen.findByLabelText("Model");
+    expect(screen.queryByRole("link", { name: /Back to Admin/ })).toBeNull();
+    expect(container.querySelector("form")?.className).not.toMatch(/fixed/);
+  });
 });

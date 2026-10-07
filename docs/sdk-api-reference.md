@@ -761,7 +761,7 @@ healthChecks.AddCosmosDbHealthCheck();  // calls ReadAccountAsync
 
 These probes cover the transport and the store, not the platform's own liveness.
 For "is the Resolver running?" and "are my endpoints reachable?", use the
-platform heartbeat and its Admin → Health tab — it probes every catalog endpoint
+platform heartbeat (the Heartbeat page and Settings → Heartbeat probing) — it probes every catalog endpoint
 without an adapter-side handler and settles a Resolver liveness probe on every
 tick. See [heartbeat.md](heartbeat.md).
 

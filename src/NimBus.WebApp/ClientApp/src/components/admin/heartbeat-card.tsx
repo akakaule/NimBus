@@ -86,7 +86,7 @@ const sendIcon = (
 );
 
 /**
- * Admin → Health, second card. The scheduled endpoint fan-out: its schedule,
+ * Settings → Heartbeat probing. The scheduled endpoint fan-out: its schedule,
  * a manual send, and the per-endpoint answer table. Adapters answer the probe
  * automatically from the SDK, so a row that never leaves Pending means the
  * endpoint is not draining its subscription.

@@ -16,7 +16,7 @@ using Api = NimBus.WebApp.ManagementApi;
 namespace NimBus.WebApp.Tests.Simulation;
 
 /// <summary>
-/// The Admin → Simulation API (plan Task 7): site Owner only, 403 outside an allowed environment
+/// The Settings → Simulation API (plan Task 7): site Owner only, 403 outside an allowed environment
 /// (with <c>GET</c> still reporting why), audited writes, 400s that list every violation, and
 /// 409 for transitions refused in the current state.
 /// </summary>

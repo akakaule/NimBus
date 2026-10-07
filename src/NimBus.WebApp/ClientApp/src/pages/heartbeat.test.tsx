@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getHeartbeatPage: vi.fn(),
   subscribeHeartbeatUpdates: vi.fn(),
   heartbeatUpdate: undefined as (() => void) | undefined,
+  access: { current: null as Record<string, unknown> | null },
 }));
 
 vi.mock("api-client", async () => {
@@ -29,6 +30,14 @@ vi.mock("api-client", async () => {
 
 vi.mock("lib/grid-events-connection", () => ({
   subscribeHeartbeatUpdates: mocks.subscribeHeartbeatUpdates,
+}));
+
+vi.mock("hooks/use-access", () => ({
+  useAccess: () => ({ access: mocks.access.current }),
+}));
+
+vi.mock("components/admin/platform-services-card", () => ({
+  default: () => <section aria-label="Platform services" />,
 }));
 
 function page(overrides: Record<string, unknown> = {}) {
@@ -72,6 +81,7 @@ function page(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  mocks.access.current = null;
   mocks.getHeartbeatPage.mockReset().mockResolvedValue(page());
   mocks.heartbeatUpdate = undefined;
   mocks.subscribeHeartbeatUpdates
@@ -149,5 +159,31 @@ describe("Heartbeat page", () => {
     await waitFor(() =>
       expect(mocks.getHeartbeatPage).toHaveBeenCalledTimes(2),
     );
+  });
+  // Spec 038 §9.1: Platform services moved here from Admin → Health. Its API is
+  // site-Owner only, so everyone else sees the page as before.
+  it("shows Platform services to a site Owner", async () => {
+    mocks.access.current = { canManageAccessControl: true, endpointRoles: [] };
+
+    render(
+      <MemoryRouter>
+        <Heartbeat />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("region", { name: "Platform services" })).toBeTruthy();
+  });
+
+  it("hides Platform services from everyone else", async () => {
+    mocks.access.current = { canManageAccessControl: false, endpointRoles: [] };
+
+    render(
+      <MemoryRouter>
+        <Heartbeat />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("1/2");
+    expect(screen.queryByRole("region", { name: "Platform services" })).toBeNull();
   });
 });

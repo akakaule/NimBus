@@ -569,7 +569,7 @@ Key mechanics on display:
   on the same subscription; native messages are processed byte-identically.
 - **Outbox survival** — ERP events flow business-transactionally through
   `nimbus.OutboxMessages` and are still emitted as CloudEvents by the dispatcher.
-- **AsyncAPI** — `ErpEndpoint` implements `ICloudEventsAware`, so the nimbus-ops Admin
+- **AsyncAPI** — `ErpEndpoint` implements `ICloudEventsAware`, so the nimbus-ops Topology
   AsyncAPI export carries the `x-cloudevents` channel extension + `CloudEventsMessageHeaders`
   schema for the `erpendpoint` channel.
 

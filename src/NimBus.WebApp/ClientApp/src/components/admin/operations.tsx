@@ -48,8 +48,12 @@ export default function Operations() {
   // Design recommendation §09: group operations by *blast radius*, not by
   // name. Operators at 2 a.m. care about "is this safe?" — make that the
   // primary axis. Rails graduate success → warning → info → danger.
+  // The kill switch leads, outside the groups: it is a reversible per-endpoint
+  // toggle and the first thing reached for in an incident (Spec 038 §6.2).
   return (
-    <div className="w-full">
+    <div className="w-full space-y-6">
+      <EndpointControlsCard endpoints={endpoints} />
+
       <Accordion allowMultiple={true} defaultExpandedItems={["recovery"]}>
         <OperationGroup
           id="recovery"
@@ -101,18 +105,6 @@ export default function Operations() {
             <SubscriptionPurgeCard endpoints={endpoints} />
             <CopyEndpointCard endpoints={endpoints} />
           </div>
-        </OperationGroup>
-
-        <OperationGroup
-          id="endpoint-controls"
-          tone="warning"
-          icon="⏻"
-          title="Endpoint Kill Switch"
-          count={1}
-          caption="Reversible · per-endpoint"
-          description="Enable or disable each endpoint's receive (processing) and send (publishing) independently via Service Bus entity status."
-        >
-          <EndpointControlsCard endpoints={endpoints} />
         </OperationGroup>
 
         <OperationGroup

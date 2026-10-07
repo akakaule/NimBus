@@ -23,7 +23,7 @@ using StoreAuditSettings = NimBus.MessageStore.States.AuditSettings;
 namespace NimBus.WebApp.Tests;
 
 /// <summary>
-/// Admin → Audit: an Owner chooses which audit types are recorded. The writer skips a
+/// Settings → Audit logging: an Owner chooses which audit types are recorded. The writer skips a
 /// disabled type, but a denied attempt and the settings change itself are always recorded,
 /// and a settings outage never stops auditing.
 /// </summary>

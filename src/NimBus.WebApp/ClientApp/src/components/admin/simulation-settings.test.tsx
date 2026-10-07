@@ -34,7 +34,7 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("Admin → Simulation", () => {
+describe("Settings → Simulation", () => {
   it("lists consuming endpoints with ownership unchecked by default", async () => {
     renderTab();
 

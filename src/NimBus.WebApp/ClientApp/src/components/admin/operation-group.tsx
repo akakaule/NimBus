@@ -68,8 +68,7 @@ export interface OperationGroupProps {
  *
  * The coloured rail on the left + status-tinted icon badge + blast-radius
  * caption give operators a glance-level read on what each group can do.
- * Shared by the Admin page's Operations and Topology tabs so both group
- * their features identically.
+ * Used by the Operations page to group bulk operations by blast radius.
  */
 export function OperationGroup({
   id,

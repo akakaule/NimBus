@@ -36,7 +36,7 @@ export default function ScenarioBar({
       ))}
       {!hasOwned && (
         <span className="text-xs text-muted-foreground">
-          Scenarios change simulated handlers only. Take ownership of an endpoint in Admin → Simulation.
+          Scenarios change simulated handlers only. Take ownership of an endpoint in Settings → Simulation.
         </span>
       )}
     </section>

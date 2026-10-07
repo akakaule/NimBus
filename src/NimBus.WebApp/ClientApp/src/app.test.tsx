@@ -1,9 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./app";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("App", () => {
+  afterEach(() => cleanup());
+
   beforeEach(() => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -26,5 +28,18 @@ describe("App", () => {
 
     expect(screen.getByRole("navigation")).toBeTruthy();
     expect(screen.getByText("NimBus")).toBeTruthy();
+  });
+
+  // Spec 038 §12.1: the Admin page is gone; old links and bookmarks land on Operations.
+  it.each(["/Admin", "/admin"])("redirects %s to Operations", async (path) => {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Operations" }, { timeout: 5000 }),
+    ).toBeTruthy();
   });
 });

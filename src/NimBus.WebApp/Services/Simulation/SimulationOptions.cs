@@ -9,7 +9,7 @@ namespace NimBus.WebApp.Services.Simulation;
 /// <summary>
 /// Deploy-time configuration for the traffic simulator, bound from <c>NimBus:Simulation</c>.
 /// Runtime settings (enabled flag, auto-stop, rate ceiling, ownership) start from these
-/// values on every restart and can then be changed from Admin → Simulation.
+/// values on every restart and can then be changed from Settings → Simulation.
 /// </summary>
 public sealed class SimulationOptions
 {

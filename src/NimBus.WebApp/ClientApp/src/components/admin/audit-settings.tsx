@@ -96,7 +96,7 @@ function sameSet(a: Set<string>, b: Set<string>) {
 }
 
 /**
- * Admin → Audit. Chooses which operator actions reach the audit log (the Audit
+ * Settings → Audit logging. Chooses which operator actions reach the audit log (the Audit
  * Log page, endpoint and event audit trails, and Application Insights). A busy
  * site can switch off high-volume reads such as searches without losing the
  * resubmits and role grants the log exists for.

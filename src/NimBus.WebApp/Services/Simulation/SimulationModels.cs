@@ -84,7 +84,7 @@ public sealed record SimulationConfig(
     IReadOnlyList<SimulationPublisherConfig> Publishers,
     IReadOnlyList<SimulationSubscriberConfig> Subscribers);
 
-/// <summary>Runtime settings changed from Admin → Simulation.</summary>
+/// <summary>Runtime settings changed from Settings → Simulation.</summary>
 public sealed record SimulationSettings(
     bool Enabled,
     int AutoStopMinutes,

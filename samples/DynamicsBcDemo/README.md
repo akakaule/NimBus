@@ -218,7 +218,7 @@ NIMBUS_SB_EMULATOR=false aspire run --apphost samples/DynamicsBcDemo/DynamicsBcD
 ```
 
 A real namespace keeps broker state between runs. Use a namespace of its own, or purge the demo's
-subscriptions in nimbus-ops (Admin → Subscriptions) before presenting, because the seed ids are
+subscriptions in nimbus-ops (Topology → Subscriptions) before presenting, because the seed ids are
 fixed. `Reset-Demo.ps1` refuses to run against a real namespace until you confirm that with
 `-NamespacePurged`.
 

@@ -2,6 +2,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { useTheme } from "hooks/use-theme";
 import { useCommandPalette } from "components/command-palette";
 import { cn } from "lib/utils";
+import { SETTINGS_FEATURES, TOPOLOGY_VIEWS } from "models/manage-pages";
 
 interface Crumb {
   label: string;
@@ -55,8 +56,20 @@ function useBreadcrumbs(): Crumb[] {
       return [{ label: "Insights" }];
     case "Audits":
       return [{ label: "Audit Log" }];
-    case "Admin":
-      return [{ label: "Admin" }];
+    case "Operations":
+      return [{ label: "Operations" }];
+    case "Topology": {
+      const view = TOPOLOGY_VIEWS.find((v) => v.id === segs[1]?.toLowerCase());
+      return view
+        ? [{ label: "Topology", to: "/Topology" }, { label: view.label }]
+        : [{ label: "Topology" }];
+    }
+    case "Settings": {
+      const feature = SETTINGS_FEATURES.find((f) => f.id === segs[1]?.toLowerCase());
+      return feature
+        ? [{ label: "Settings", to: "/Settings" }, { label: feature.name }]
+        : [{ label: "Settings" }];
+    }
     default:
       return [{ label: top }];
   }

@@ -73,7 +73,7 @@ compare-and-swap. There is no retry: a lost race means someone else decided, and
 re-reads. Provider failures throw.
 
 It exists for one caller, the operator reconcile of rows corrupted before the guard shipped
-([Spec 032](spec/032-stale-pending-reconcile/spec.md), driven from Admin → Operations). Every other
+([Spec 032](spec/032-stale-pending-reconcile/spec.md), driven from the Operations page). Every other
 terminal write stays unguarded and unconditional.
 
 The interface ships a **default implementation** — read the row, compare, then

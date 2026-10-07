@@ -30,7 +30,7 @@ const toDraft = (status: api.SimulationStatus): Draft => ({
 });
 
 /**
- * Admin → Simulation. Switches simulate mode on, bounds it, and hands
+ * Settings → Simulation. Switches simulate mode on, bounds it, and hands
  * consuming endpoints to the simulator. Ownership is explicit and defaults to
  * External: a simulated handler competes for the endpoint's real subscription.
  */

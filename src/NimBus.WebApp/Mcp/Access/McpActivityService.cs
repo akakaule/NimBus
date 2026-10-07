@@ -47,7 +47,7 @@ public sealed record McpActivity(int Hours, IReadOnlyList<McpActivityItem> Items
 }
 
 /// <summary>
-/// Builds the Admin tab's activity summary from the audit log (Spec 037 §5.8): rows written
+/// Builds the MCP access settings' activity summary from the audit log (Spec 037 §5.8): rows written
 /// with <c>channel: "Mcp"</c>, refusals and settings changes. Classification requests made over
 /// MCP are audited by the classification service without a channel, so they are not counted.
 /// </summary>

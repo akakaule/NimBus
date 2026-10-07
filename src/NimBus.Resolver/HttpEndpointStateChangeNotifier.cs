@@ -59,7 +59,7 @@ public sealed class HttpEndpointStateChangeNotifier : IMessageStateChangeNotifie
 
     /// <summary>
     /// Pushes an endpoint's heartbeat change to <c>api/storagehook/heartbeat/{endpointId}</c>
-    /// so the WebApp broadcasts a <c>heartbeatupdate</c> to the Admin → Health tab.
+    /// so the WebApp broadcasts a <c>heartbeatupdate</c> to the Heartbeat page and Settings → Heartbeat probing.
     /// </summary>
     /// <param name="endpointId">The endpoint whose heartbeat state changed.</param>
     /// <param name="cancellationToken">Cancels the notification.</param>

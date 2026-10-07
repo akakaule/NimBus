@@ -303,7 +303,7 @@ broker redeliveries consume one shared ten-attempt budget
 (`ThrottleRetryCount + DeliveryCount`). On the final attempt Resolver explicitly
 dead-letters with the stable reason `CosmosDbThrottled`; generic storage
 transients retain the existing redelivery behavior. Owners can inspect and
-atomically replay these regular Resolver dead letters from Admin → Subscriptions;
+atomically replay these regular Resolver dead letters from Topology → Subscriptions;
 see [the subscription incident-response guide](service-bus-subscription-admin.md#replaying-resolver-dead-letters).
 
 ```mermaid
@@ -536,7 +536,7 @@ Two consequences for reading the Flow tab:
   A five-round backoff therefore no longer looks like five request copies.
 
 Rows that a late copy corrupted **before** 3.7.0 still read `Pending`; the guard stops new ones but
-repairs none. Repair them from Admin → Operations → *Reconcile Stale Pending*, which re-applies the
+repairs none. Repair them from Operations → *Reconcile Stale Pending*, which re-applies the
 `ResolutionResponse` the Resolver already stored — see
 [the operator guide](stale-pending-reconcile.md).
 

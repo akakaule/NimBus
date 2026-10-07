@@ -14,7 +14,7 @@ using Store = NimBus.MessageStore.States;
 namespace NimBus.WebApp.Controllers.ApiContract;
 
 /// <summary>
-/// Admin → MCP access API (Spec 037). Site Owner only, like every other <c>/api/admin/*</c>
+/// Settings → MCP access API (Spec 037). Site Owner only, like every other <c>/api/admin/*</c>
 /// operation. Writes are always audited; their <c>X-NimBus-CSRF</c> antiforgery token is checked
 /// by <c>[AutoValidateAntiforgeryToken]</c> on the generated controller before they get here.
 /// </summary>

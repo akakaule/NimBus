@@ -17,7 +17,7 @@ namespace NimBus.WebApp.Services;
 /// durable message store AND emits a structured "Webapp AuditEvent occurred"
 /// log event (which Application Insights captures via ILogger telemetry).</para>
 ///
-/// <para>A site Owner can switch audit types off in Admin → Audit
+/// <para>A site Owner can switch audit types off in Settings → Audit logging
 /// (<see cref="IAuditSettingsProvider"/>); a disabled type writes to neither sink.
 /// Access-denied attempts and <see cref="MessageAuditType.UpdateAuditSettings"/> are
 /// always recorded.</para>
@@ -60,7 +60,7 @@ public interface IAuditLogService
 
     /// <summary>
     /// Records an operator command that must not run unaudited. Unlike
-    /// <see cref="LogAuditAsync"/>, it ignores the Admin → Audit selection and throws
+    /// <see cref="LogAuditAsync"/>, it ignores the audit-logging selection and throws
     /// <see cref="AuditUnavailableException"/> when the row cannot be persisted, so the caller
     /// can refuse the command. The default implementation keeps the best-effort behavior of
     /// <see cref="LogAuditAsync"/> for implementations that predate it.

@@ -68,7 +68,10 @@ skip. When the tool runs, NimBus:
 - then publishes the command.
 
 The result says the command was sent, not that it succeeded. Read the message again to see the
-outcome. A message that failed again has a new version and needs a new token.
+outcome. A message that failed again has a new version and needs a new token. For the few seconds
+between the command and the Resolver recording it, `nimbus_get_message` reports the message as
+`[MessageNotFound]`, because the command claims the row by archiving it; read it again a little
+later.
 
 Over MCP, resubmit and skip accept Failed, DeadLettered and Unsupported messages. Deferred messages
 and pending handoffs are recovered in the Web UI. `nimbus_set_message_reported` and

@@ -250,6 +250,141 @@ public abstract class EndpointMetadataStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task GetMcpAccessSettings_always_returns_the_singleton_record()
+    {
+        var store = CreateStore();
+
+        var settings = await store.GetMcpAccessSettings();
+
+        // A shared backend may already carry a saved policy, so the defaults are asserted
+        // on the type and only the never-null contract against the store.
+        Assert.IsNotNull(settings);
+        Assert.AreEqual(McpAccessSettings.SingletonId, settings.Id);
+        Assert.IsNotNull(settings.Capabilities);
+        Assert.IsNotNull(settings.People?.Principals);
+        Assert.IsNotNull(settings.Clients?.Approved);
+        Assert.IsNotNull(settings.Endpoints?.Hidden);
+        Assert.IsNotNull(settings.Limits);
+
+        var defaults = new McpAccessSettings();
+        Assert.IsNull(defaults.Revision);
+        Assert.IsTrue(defaults.Enabled);
+        Assert.IsTrue(defaults.Capabilities.Skip);
+    }
+
+    [TestMethod]
+    public async Task TrySetMcpAccessSettings_round_trips_every_field()
+    {
+        var store = CreateStore();
+        var sample = SampleMcpAccessSettings();
+
+        await SaveMcpAccessSettingsAsync(store, sample);
+        var stored = await store.GetMcpAccessSettings();
+
+        Assert.AreEqual(sample.Revision, stored.Revision);
+        Assert.AreEqual(sample.UpdatedBy, stored.UpdatedBy);
+        Assert.AreEqual(sample.UpdatedAtUtc!.Value.Ticks, stored.UpdatedAtUtc!.Value.Ticks);
+        Assert.IsFalse(stored.Enabled);
+        Assert.IsFalse(stored.Capabilities.Payloads);
+        Assert.IsTrue(stored.Capabilities.Report);
+        Assert.IsFalse(stored.Capabilities.Classify);
+        Assert.IsTrue(stored.Capabilities.Resubmit);
+        Assert.IsFalse(stored.Capabilities.Skip);
+        Assert.IsFalse(stored.AllowWorkloads);
+        Assert.AreEqual(McpPeopleMode.Listed, stored.People.Mode);
+        Assert.AreEqual("pilot@example.com", stored.People.Principals.Single().Principal);
+        Assert.AreEqual("Pilot", stored.People.Principals.Single().Label);
+        Assert.AreEqual(McpClientMode.Approved, stored.Clients.Mode);
+        Assert.AreEqual("5c1e9a40-7d2b-4f6e-9a31-0b8d2c7e4f19", stored.Clients.Approved.Single().ClientId);
+        Assert.AreEqual("Claude Code", stored.Clients.Approved.Single().Name);
+        Assert.IsTrue(stored.Clients.Approved.Single().MayChange);
+        Assert.AreEqual(McpEndpointVisibility.AllExcept, stored.Endpoints.Visibility);
+        CollectionAssert.AreEqual(new[] { "PayrollEndpoint" }, stored.Endpoints.Hidden);
+        Assert.AreEqual(McpChangeScope.Listed, stored.Endpoints.Changes);
+        CollectionAssert.AreEqual(new[] { "ErpEndpoint" }, stored.Endpoints.ChangeOn);
+        Assert.AreEqual(30, stored.Limits.RequestsPerWindow);
+        Assert.AreEqual(2, stored.Limits.MutationsPerWindow);
+    }
+
+    [TestMethod]
+    public async Task TrySetMcpAccessSettings_refuses_a_stale_revision_and_keeps_the_record()
+    {
+        var store = CreateStore();
+        var saved = await SaveMcpAccessSettingsAsync(store, SampleMcpAccessSettings());
+
+        var stale = SampleMcpAccessSettings();
+        stale.Enabled = true;
+        stale.Revision = Guid.NewGuid().ToString();
+        Assert.IsFalse(await store.TrySetMcpAccessSettings(stale, Guid.NewGuid().ToString()));
+
+        // Null means "create": refused because a record exists.
+        Assert.IsFalse(await store.TrySetMcpAccessSettings(stale, null));
+
+        var stored = await store.GetMcpAccessSettings();
+        Assert.AreEqual(saved, stored.Revision);
+        Assert.IsFalse(stored.Enabled);
+    }
+
+    [TestMethod]
+    public async Task TrySetMcpAccessSettings_lets_exactly_one_of_two_concurrent_writers_win()
+    {
+        var store = CreateStore();
+        var current = await SaveMcpAccessSettingsAsync(store, SampleMcpAccessSettings());
+
+        var first = SampleMcpAccessSettings();
+        first.Revision = Guid.NewGuid().ToString();
+        var second = SampleMcpAccessSettings();
+        second.Revision = Guid.NewGuid().ToString();
+
+        var results = await Task.WhenAll(
+            store.TrySetMcpAccessSettings(first, current),
+            store.TrySetMcpAccessSettings(second, current));
+
+        Assert.AreEqual(1, results.Count(r => r));
+        var winner = results[0] ? first.Revision : second.Revision;
+        Assert.AreEqual(winner, (await store.GetMcpAccessSettings()).Revision);
+    }
+
+    /// <summary>Saves <paramref name="settings"/> over whatever is stored and returns its new revision.</summary>
+    private static async Task<string> SaveMcpAccessSettingsAsync(IEndpointMetadataStore store, McpAccessSettings settings)
+    {
+        var current = await store.GetMcpAccessSettings();
+        settings.Revision = Guid.NewGuid().ToString();
+        Assert.IsTrue(await store.TrySetMcpAccessSettings(settings, current.Revision));
+        return settings.Revision;
+    }
+
+    private static McpAccessSettings SampleMcpAccessSettings() => new()
+    {
+        UpdatedBy = "owner@example.com",
+        UpdatedAtUtc = T0,
+        Enabled = false,
+        Capabilities = new McpCapabilitySettings { Payloads = false, Report = true, Classify = false, Resubmit = true, Skip = false },
+        AllowWorkloads = false,
+        People = new McpPeopleSettings
+        {
+            Mode = McpPeopleMode.Listed,
+            Principals = new List<McpPrincipal> { new() { Principal = "pilot@example.com", Label = "Pilot" } },
+        },
+        Clients = new McpClientSettings
+        {
+            Mode = McpClientMode.Approved,
+            Approved = new List<McpApprovedClient>
+            {
+                new() { ClientId = "5c1e9a40-7d2b-4f6e-9a31-0b8d2c7e4f19", Name = "Claude Code", MayChange = true },
+            },
+        },
+        Endpoints = new McpEndpointSettings
+        {
+            Visibility = McpEndpointVisibility.AllExcept,
+            Hidden = new List<string> { "PayrollEndpoint" },
+            Changes = McpChangeScope.Listed,
+            ChangeOn = new List<string> { "ErpEndpoint" },
+        },
+        Limits = new McpLimitSettings { RequestsPerWindow = 30, MutationsPerWindow = 2 },
+    };
+
+    [TestMethod]
     public async Task TryClaimHeartbeatSend_lets_exactly_one_caller_send_per_interval()
     {
         var store = CreateStore();

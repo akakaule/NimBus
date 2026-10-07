@@ -901,6 +901,8 @@ public class ResolverServiceTests
         public Task<HeartbeatSettings> GetHeartbeatSettings() => Task.FromResult(new HeartbeatSettings());
         public Task<bool> SetHeartbeatSettings(HeartbeatSettings settings) => Task.FromResult(true);
         public Task<AuditSettings> GetAuditSettings() => Task.FromResult(new AuditSettings());
+        public Task<McpAccessSettings> GetMcpAccessSettings() => Task.FromResult(new McpAccessSettings());
+        public Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision) => Task.FromResult(true);
         public Task<bool> SetAuditSettings(AuditSettings settings) => Task.FromResult(true);
         public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore) => Task.FromResult(true);
         public Task<List<HeartbeatOverviewItem>> GetHeartbeatOverview() => Task.FromResult(new List<HeartbeatOverviewItem>());

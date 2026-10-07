@@ -45,6 +45,7 @@ internal sealed class SqlServerSchemaInitializer : IHostedService
         "ServiceHealth",
         "EndpointAcknowledgements",
         "AuditSettings",
+        "McpAccessSettings",
     };
 
     private static readonly string[] RequiredViews =

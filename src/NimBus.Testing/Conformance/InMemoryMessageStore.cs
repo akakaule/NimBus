@@ -47,6 +47,9 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
     private HeartbeatSettings? _heartbeatSettings;
     // Replaced whole on every write, so a volatile reference swap is enough.
     private volatile AuditSettings? _auditSettings;
+    // Compare-and-set on the revision, so the read and the write share one lock.
+    private readonly object _mcpAccessLock = new();
+    private McpAccessSettings? _mcpAccessSettings;
 
     private (string, string, string) Key(string endpoint, string eventId, string session) => (endpoint, eventId, session ?? string.Empty);
 
@@ -875,6 +878,29 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         if (string.IsNullOrWhiteSpace(stored.Id)) stored.Id = AuditSettings.SingletonId;
         _auditSettings = stored;
         return Task.FromResult(true);
+    }
+
+    public virtual Task<McpAccessSettings> GetMcpAccessSettings()
+    {
+        lock (_mcpAccessLock)
+        {
+            return Task.FromResult(_mcpAccessSettings?.Clone() ?? new McpAccessSettings());
+        }
+    }
+
+    public virtual Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        lock (_mcpAccessLock)
+        {
+            if (!string.Equals(_mcpAccessSettings?.Revision, expectedRevision, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            var stored = settings.Clone();
+            stored.Id = McpAccessSettings.SingletonId;
+            _mcpAccessSettings = stored;
+            return Task.FromResult(true);
+        }
     }
 
     public Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)

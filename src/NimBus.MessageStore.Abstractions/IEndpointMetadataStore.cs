@@ -94,4 +94,20 @@ public interface IEndpointMetadataStore
     /// <param name="settings">The selection to store.</param>
     /// <returns>True when the record was written.</returns>
     Task<bool> SetAuditSettings(AuditSettings settings);
+
+    /// <summary>
+    /// The site Owner's MCP access policy (Spec 037), or the defaults with a null
+    /// <see cref="McpAccessSettings.Revision"/> when none was saved.
+    /// </summary>
+    Task<McpAccessSettings> GetMcpAccessSettings();
+
+    /// <summary>
+    /// Saves the MCP access policy when the stored revision equals
+    /// <paramref name="expectedRevision"/>; null means only when nothing is stored yet.
+    /// <paramref name="settings"/> must already carry the new revision.
+    /// </summary>
+    /// <param name="settings">The policy to store, with its new revision.</param>
+    /// <param name="expectedRevision">The revision the caller read, or null to create.</param>
+    /// <returns>False on a revision conflict; the stored record is unchanged.</returns>
+    Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision);
 }

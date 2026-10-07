@@ -166,4 +166,17 @@ public enum MessageAuditType
     /// Always recorded, whatever the selection.
     /// </summary>
     CommandNotSent,
+
+    /// <summary>
+    /// A site Owner saved the MCP access policy or turned MCP access off (Spec 037). The
+    /// revisions and the list of changes are recorded as Data. Always recorded.
+    /// </summary>
+    UpdateMcpSettings,
+
+    /// <summary>
+    /// An MCP call was refused by the MCP access policy or for a missing scope (Spec 037),
+    /// recorded with <see cref="MessageAuditEntity.AccessDenied"/> set. The reason, tool and
+    /// client are recorded as Data. Always recorded, deduplicated per caller and reason.
+    /// </summary>
+    McpAccessRefused,
 }

@@ -316,6 +316,57 @@ VALUES (@Id, @DisabledAuditTypes);";
         return rows > 0;
     }
 
+    public async Task<McpAccessSettings> GetMcpAccessSettings()
+    {
+        await using var conn = await OpenAsync();
+        var json = await conn.QuerySingleOrDefaultAsync<string?>(
+            $"SELECT SettingsJson FROM {T("McpAccessSettings")} WHERE Id = @Id",
+            new { Id = McpAccessSettings.SingletonId },
+            commandTimeout: _context.CommandTimeout);
+
+        return string.IsNullOrEmpty(json)
+            ? new McpAccessSettings()
+            : JsonConvert.DeserializeObject<McpAccessSettings>(json) ?? new McpAccessSettings();
+    }
+
+    public async Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The policy must carry its new revision.", nameof(settings));
+        settings.Id = McpAccessSettings.SingletonId;
+
+        // One statement per branch, so the rows-affected count is the compare-and-set result.
+        // The insert's lock hints serialize two first saves; the loser inserts nothing.
+        var sql = expectedRevision is null
+            ? $@"
+INSERT INTO {T("McpAccessSettings")} (Id, Revision, SettingsJson)
+SELECT @Id, @Revision, @Json
+WHERE NOT EXISTS (SELECT 1 FROM {T("McpAccessSettings")} WITH (UPDLOCK, HOLDLOCK) WHERE Id = @Id);"
+            : $@"
+UPDATE {T("McpAccessSettings")}
+SET Revision = @Revision, SettingsJson = @Json, UpdatedAtUtc = SYSUTCDATETIME()
+WHERE Id = @Id AND Revision = @Expected;";
+
+        await using var conn = await OpenAsync();
+        try
+        {
+            var rows = await conn.ExecuteAsync(sql, new
+            {
+                settings.Id,
+                settings.Revision,
+                Json = JsonConvert.SerializeObject(settings),
+                Expected = expectedRevision,
+            }, commandTimeout: _context.CommandTimeout);
+            return rows == 1;
+        }
+        catch (SqlException e) when (e.Number is 2627 or 2601)
+        {
+            // A concurrent first save won the primary key.
+            return false;
+        }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The rows-affected check is what makes at most one scaled-out instance

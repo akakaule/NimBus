@@ -300,6 +300,54 @@ internal sealed class CosmosDbEndpointMetadataStore : IEndpointMetadataStore
         }
     }
 
+    public async Task<McpAccessSettings> GetMcpAccessSettings()
+    {
+        var container = await _getSettingsContainer();
+        try
+        {
+            var response = await container.ReadItemAsync<McpAccessSettings>(
+                McpAccessSettings.SingletonId,
+                new PartitionKey(McpAccessSettings.SingletonId));
+            return response.Resource ?? new McpAccessSettings();
+        }
+        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new McpAccessSettings();
+        }
+    }
+
+    public async Task<bool> TrySetMcpAccessSettings(McpAccessSettings settings, string? expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (string.IsNullOrWhiteSpace(settings.Revision))
+            throw new ArgumentException("The policy must carry its new revision.", nameof(settings));
+        settings.Id = McpAccessSettings.SingletonId;
+        var partitionKey = new PartitionKey(McpAccessSettings.SingletonId);
+
+        var container = await _getSettingsContainer();
+        try
+        {
+            if (expectedRevision is null)
+            {
+                // Create fails with 409 when a record exists.
+                await container.CreateItemAsync(settings, partitionKey);
+                return true;
+            }
+
+            var current = await container.ReadItemAsync<McpAccessSettings>(McpAccessSettings.SingletonId, partitionKey);
+            if (!string.Equals(current.Resource?.Revision, expectedRevision, StringComparison.Ordinal))
+                return false;
+
+            // The ETag precondition closes the gap between the revision check and the write.
+            await container.UpsertItemAsync(settings, partitionKey, new ItemRequestOptions { IfMatchEtag = current.ETag });
+            return true;
+        }
+        catch (CosmosException e) when (e.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> TryClaimHeartbeatSend(DateTime dueBefore)
     {
         // The ETag precondition is what makes at most one scaled-out instance send

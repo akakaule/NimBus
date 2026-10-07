@@ -9,6 +9,8 @@ export interface ModalProps {
   size?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
   closeOnOverlayClick?: boolean;
   closeOnEsc?: boolean;
+  /** Accessible name of the dialog. */
+  label?: string;
 }
 
 const Modal = ({
@@ -18,24 +20,27 @@ const Modal = ({
   size = "md",
   closeOnOverlayClick = true,
   closeOnEsc = true,
+  label,
 }: ModalProps) => {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isOpen) return;
+    // Capture phase, and mark the key handled: a Modal opened over a SidePanel
+    // must take Escape before the panel's document listener closes the panel.
     const handleEsc = (e: KeyboardEvent) => {
-      if (closeOnEsc && e.key === "Escape") {
-        onClose();
-      }
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (closeOnEsc) onClose();
     };
-
-    if (isOpen) {
-      document.addEventListener("keydown", handleEsc);
-      document.body.style.overflow = "hidden";
-    }
+    document.addEventListener("keydown", handleEsc, true);
+    // Restore whatever lock was there before (a SidePanel's), not a blank value.
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     return () => {
-      document.removeEventListener("keydown", handleEsc);
-      document.body.style.overflow = "";
+      document.removeEventListener("keydown", handleEsc, true);
+      document.body.style.overflow = overflow;
     };
   }, [isOpen, onClose, closeOnEsc]);
 
@@ -70,6 +75,7 @@ const Modal = ({
         )}
         role="dialog"
         aria-modal="true"
+        aria-label={label}
       >
         {children}
       </div>

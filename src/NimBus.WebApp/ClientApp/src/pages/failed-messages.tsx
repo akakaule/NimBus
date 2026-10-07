@@ -423,21 +423,22 @@ export default function FailedMessages() {
   const openIndex = openId
     ? visible.findIndex((e) => failureIdOf(e) === openId)
     : -1;
-  // "Next" on the last loaded failure loads the next page first, then moves on.
-  const pendingNext = React.useRef<string>(undefined);
+  // "Next" on the last loaded failure loads the next page first, then moves on. The request is
+  // state, not a ref: it is set in the same render as listLoading, so an effect still pending
+  // from an earlier commit cannot see it with that commit's stale list and drop it.
+  const [pendingNext, setPendingNext] = React.useState<string>();
   React.useEffect(() => {
-    const from = pendingNext.current;
-    if (!from) return;
-    if (from !== openId) {
-      pendingNext.current = undefined;
+    if (!pendingNext) return;
+    if (pendingNext !== openId) {
+      setPendingNext(undefined);
       return;
     }
     if (listLoading) return;
-    pendingNext.current = undefined;
-    const i = visible.findIndex((e) => failureIdOf(e) === from);
+    setPendingNext(undefined);
+    const i = visible.findIndex((e) => failureIdOf(e) === pendingNext);
     if (i >= 0 && i + 1 < visible.length)
       setOpen(failureIdOf(visible[i + 1]), true);
-  }, [visible, listLoading, openId, setOpen]);
+  }, [pendingNext, visible, listLoading, openId, setOpen]);
   const onNextFailure =
     openIndex < 0
       ? undefined
@@ -445,7 +446,7 @@ export default function FailedMessages() {
         ? () => setOpen(failureIdOf(visible[openIndex + 1]), true)
         : continuationToken
           ? () => {
-              pendingNext.current = openId;
+              setPendingNext(openId);
               void fetchPage(continuationToken, true);
             }
           : undefined;

@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>NimBus · MCP access settings mockup</title>
+  <style>
+    :root{
+      --bg:#F4F2EA;--fg:#1A1814;--card:#FAF8F2;--muted:#ECE7DA;--muted-fg:#4A463D;--ink3:#8A8473;--border:#E5DFCE;--border-strong:#C9C1AB;--field:#FFFDF8;
+      --primary:#E8743C;--primary-600:#D45F25;--primary-tint:#FCEEDD;
+      --ok:#2E8F5E;--ok-50:#DCEFE4;--ok-ink:#1F6B45;
+      --warn:#C98A1B;--warn-50:#F6E7C7;--warn-ink:#8A5E0F;
+      --bad:#C2412E;--bad-50:#F4D9D3;--bad-ink:#8E2C1F;
+      --info:#3A6FB0;--info-50:#D8E3F2;--info-ink:#234E80;
+      --purple:#6B3FA3;--purple-50:#ECE2F4;
+      --code:#1A1814;--code-fg:#EDE6D3;
+      --shadow:0 1px 2px rgba(26,24,20,.04),0 1px 1px rgba(26,24,20,.03);
+      --shadow-lg:0 18px 40px rgba(26,24,20,.10),0 4px 12px rgba(26,24,20,.05);
+      --sans:Manrope,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+      --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+      color-scheme:light;
+    }
+    .dark{
+      --bg:#0F0E0B;--fg:#F4F2EA;--card:#1A1814;--muted:#2A2620;--muted-fg:#A8A293;--border:#2A2620;--border-strong:#3D3830;--field:#14130F;
+      --primary-tint:rgba(232,116,60,.16);
+      --ok-50:rgba(46,143,94,.18);--ok-ink:#8FD3AE;
+      --warn-50:rgba(201,138,27,.18);--warn-ink:#E9C27A;
+      --bad-50:rgba(194,65,46,.20);--bad-ink:#F0A396;
+      --info-50:rgba(58,111,176,.22);--info-ink:#A9C6EC;
+      --purple-50:rgba(107,63,163,.28);--purple:#C3A4EA;
+      --code:#0B0A08;
+      color-scheme:dark;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit;color:inherit}
+    button{cursor:pointer}
+    button:disabled{cursor:not-allowed}
+    a{color:var(--primary-600)}
+    .dark .page a,.dark dialog a{color:#EFB477}
+    code,.mono{font-family:var(--mono);font-size:.92em}
+    h1,h2,h3,h4,p{margin:0}
+    :focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    [hidden]{display:none!important}
+
+    /* App shell — mirrors components/sidebar.tsx, topbar.tsx and page.tsx */
+    .app{display:flex;min-height:100vh}
+    .sidebar{width:232px;flex:none;background:#1A1814;color:#C9C1AB;position:sticky;top:0;height:100vh;padding:20px 14px;border-right:1px solid #2A2620;display:flex;flex-direction:column;gap:2px}
+    .logo{display:flex;align-items:baseline;gap:4px;padding:0 8px 6px;color:#F4F2EA;font-weight:800;font-size:20px;letter-spacing:-.4px}
+    .logo span.dot{color:var(--primary)}
+    .tagline{padding:0 8px 14px;margin-bottom:8px;border-bottom:1px solid #2A2620;font:10px/1.3 var(--mono);color:#6F6A5C;letter-spacing:.5px}
+    .env{display:inline-block;margin-left:6px;background:#FCEEDD;color:#D45F25;font:700 9px var(--mono);text-transform:uppercase;letter-spacing:.14em;padding:1px 6px;border-radius:4px}
+    .navgroup{font:9.5px var(--mono);color:#6F6A5C;letter-spacing:.2em;text-transform:uppercase;margin:14px 10px 4px}
+    .navitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;font-size:13px;font-weight:500;color:#C9C1AB;text-decoration:none}
+    .navitem:hover{background:rgba(255,255,255,.04);color:#F4F2EA}
+    .navitem.active{background:rgba(232,116,60,.16);color:var(--primary)}
+    .navitem svg{width:16px;height:16px;flex:none;opacity:.9}
+    .navitem .nb{margin-left:auto;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:99px;background:rgba(232,116,60,.22);color:var(--primary)}
+    .navitem .nb.count{background:var(--bad);color:#fff}
+    .navscroll{flex:1;overflow-y:auto}
+    .userfoot{display:flex;align-items:center;gap:10px;padding:12px 8px 0;border-top:1px solid #2A2620;font-size:12px}
+    .avatar{width:28px;height:28px;border-radius:50%;background:#3D3830;color:#F4F2EA;display:grid;place-items:center;font-weight:700;font-size:11px}
+    .userfoot small{display:block;color:#6F6A5C;font:10px var(--mono)}
+    .main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:14px 28px;border-bottom:1px solid var(--border);background:var(--bg)}
+    .crumbs{font:12px var(--mono);color:var(--muted-fg)}
+    .crumbs b{color:var(--fg)}
+    .spacer{flex:1}
+    .kbd{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--muted-fg)}
+    .kbd kbd{font:10px var(--mono);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+    .iconbtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--card);display:grid;place-items:center}
+    .page{padding:28px 28px 100px;display:flex;flex-direction:column;gap:24px}
+    .page h1{font-size:28px;font-weight:700;letter-spacing:-.5px}
+    .page .sub{margin-top:4px;color:var(--muted-fg);font-size:14px}
+
+    /* Tabs — components/ui/tabs.tsx (enclosed) */
+    .tabs{display:flex;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin}
+    .tab{flex:1 0 auto;padding:8px 16px;font-size:14px;font-weight:600;border:1px solid var(--border);border-bottom:0;border-radius:6px 6px 0 0;margin-bottom:-1px;background:var(--bg);color:var(--muted-fg);white-space:nowrap}
+    .tab:hover{background:var(--muted);color:var(--fg)}
+    .tab[aria-selected=true]{background:rgba(232,116,60,.10);color:var(--primary);border-color:var(--primary)}
+    .tab .new{font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;background:var(--primary);color:#fff;border-radius:99px;padding:1px 5px;margin-left:6px;vertical-align:2px}
+    .panel{padding:24px}
+
+    /* Tab content */
+    .tabhead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+    .tabhead h2{font-size:20px;font-weight:600;display:flex;align-items:center;gap:10px}
+    .tabhead p{color:var(--muted-fg);max-width:820px;margin-top:4px}
+    .meta{font-size:12px;color:var(--muted-fg);margin-top:8px!important}
+    .meta b{color:var(--fg);font-weight:600}
+    .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:20px}
+    .tile{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;box-shadow:var(--shadow);min-width:0}
+    .tile .k{font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+    .tile .v{font-size:20px;font-weight:700;margin-top:2px;display:flex;align-items:center;gap:8px;letter-spacing:-.3px}
+    .tile .s{font-size:12px;color:var(--muted-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ld{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ink3)}
+    .ld.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-50)}
+    .ld.warn{background:var(--warn);box-shadow:0 0 0 3px var(--warn-50)}
+    .ld.bad{background:var(--bad);box-shadow:0 0 0 3px var(--bad-50)}
+    .tileslabel{font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-top:20px}
+    .tileslabel + .tiles{margin-top:8px}
+
+    .banner{display:flex;gap:12px;align-items:flex-start;border-radius:8px;padding:12px 14px;margin-top:16px;font-size:13px;border:1px solid}
+    .banner b{display:block;font-size:14px;margin-bottom:2px}
+    .banner.warn{background:var(--warn-50);border-color:rgba(201,138,27,.35);color:var(--warn-ink)}
+    .banner.info{background:var(--info-50);border-color:rgba(58,111,176,.30);color:var(--info-ink)}
+    .banner.ok{background:var(--ok-50);border-color:rgba(46,143,94,.30);color:var(--ok-ink)}
+    .banner .grow{flex:1}
+
+    .layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:24px;margin-top:24px;align-items:start}
+    .stack{display:grid;gap:20px;min-width:0}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);min-width:0}
+    .card-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
+    .card-h h3{font-size:16px;font-weight:600;letter-spacing:-.2px}
+    .card-h .step{font:12px var(--mono);color:var(--primary-600);margin-right:8px}
+    .dark .card-h .step{color:#EFB477}
+    .card-h .hint{font-size:12px;color:var(--muted-fg)}
+    .card-b{padding:16px;display:grid;gap:16px}
+    .card-f{padding:12px 16px;border-top:1px solid var(--border);background:var(--muted);border-radius:0 0 8px 8px;font-size:12px;color:var(--muted-fg)}
+    fieldset{border:0;margin:0;padding:0;min-width:0}
+    fieldset:disabled .dimmable{opacity:.55}
+
+    .setting{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+    .setting .t{font-weight:600;font-size:14px}
+    .setting .d{font-size:12px;color:var(--muted-fg);margin-top:2px;max-width:560px}
+    .switch{display:inline-flex;align-items:center;gap:8px;background:none;border:0;padding:2px;border-radius:99px;flex:none}
+    .switch .track{position:relative;width:34px;height:20px;border-radius:99px;background:var(--border-strong);box-shadow:inset 0 1px 2px rgba(0,0,0,.06);transition:background .15s}
+    .switch .thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .15s}
+    .switch .st{width:24px;font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg);text-align:left}
+    .switch[aria-checked=true] .track{background:var(--ok)}
+    .switch[aria-checked=true] .thumb{left:16px}
+    .switch[aria-checked=true] .st{color:var(--ok)}
+    .switch:disabled{opacity:.55}
+    .locked{display:inline-flex;align-items:center;gap:6px;font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg);border:1px dashed var(--border-strong);border-radius:99px;padding:2px 8px;flex:none}
+
+    .kv{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:6px 12px;align-items:center;font-size:13px}
+    .kv dt{color:var(--muted-fg)}
+    .kv dd{margin:0;font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+    .copy{border:1px solid var(--border);background:var(--field);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--muted-fg)}
+    .copy:hover{color:var(--fg);border-color:var(--border-strong)}
+    .checks{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted-fg)}
+    .checks span::before{content:"✓";color:var(--ok);font-weight:700;margin-right:5px}
+    .checks span.no::before{content:"✕";color:var(--bad)}
+    details.deploy{border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+    details.deploy summary{cursor:pointer;padding:10px 12px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px;list-style:none}
+    details.deploy summary::-webkit-details-marker{display:none}
+    details.deploy summary::before{content:"▸";color:var(--muted-fg);transition:transform .15s}
+    details.deploy[open] summary::before{transform:rotate(90deg)}
+    details.deploy .inner{padding:0 12px 12px;display:grid;gap:10px}
+    .lockpill{margin-left:auto;font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted-fg);background:var(--muted);border-radius:4px;padding:2px 6px}
+    .why{font-size:12px;color:var(--muted-fg);background:var(--card);border-left:3px solid var(--border-strong);padding:8px 10px;border-radius:0 6px 6px 0}
+
+    .formula{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--muted-fg);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+    .formula .op{font:600 10px var(--mono);letter-spacing:.1em;color:var(--ink3)}
+    .formula .f{border-radius:99px;padding:2px 9px;font-weight:600;font-size:12px;border:1px solid var(--border-strong);background:var(--card);color:var(--fg)}
+    .formula .f.here{border-color:var(--primary);color:var(--primary-600);background:var(--primary-tint)}
+    .dark .formula .f.here{color:#EFB477}
+    .caps{display:grid;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+    .cap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;padding:12px 14px;border-top:1px solid var(--border);background:var(--card)}
+    .cap:first-child{border-top:0}
+    .cap.off .ct{color:var(--muted-fg)}
+    .cap .ct{font-weight:600;display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+    .cap .cd{font-size:12px;color:var(--muted-fg);grid-column:1}
+    .cap .tags{display:flex;flex-wrap:wrap;gap:6px;grid-column:1}
+    .cap .ctl{grid-row:1 / span 3;grid-column:2;align-self:center}
+    .cap .note{grid-column:1 / -1;font-size:12px;border-radius:6px;padding:8px 10px;background:var(--warn-50);color:var(--warn-ink);border:1px solid rgba(201,138,27,.3)}
+    .tag{display:inline-flex;align-items:center;gap:4px;font:11px var(--mono);border-radius:4px;padding:1px 6px;background:var(--muted);color:var(--muted-fg);white-space:nowrap}
+    .tag.scope{background:var(--info-50);color:var(--info-ink)}
+    .tag.role{background:var(--purple-50);color:var(--purple)}
+    .risk{font:700 9.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;border-radius:99px;padding:2px 7px}
+    .risk.low{background:var(--ok-50);color:var(--ok-ink)}
+    .risk.medium{background:var(--warn-50);color:var(--warn-ink)}
+    .risk.high{background:var(--bad-50);color:var(--bad-ink)}
+    .risk.data{background:var(--purple-50);color:var(--purple)}
+    .subhead{font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:-6px}
+
+    .group{display:grid;gap:10px}
+    .group + .group{padding-top:16px;border-top:1px dashed var(--border)}
+    .group h4{font-size:14px;font-weight:600}
+    .group .gd{font-size:12px;color:var(--muted-fg);margin-top:-6px}
+    .radios{display:flex;flex-wrap:wrap;gap:8px}
+    .radio{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:8px 12px;background:var(--field);font-size:13px;cursor:pointer}
+    .radio:has(input:checked){border-color:var(--primary);background:var(--primary-tint)}
+    .radio input{accent-color:var(--primary);margin:0}
+    .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-strong);background:var(--card);border-radius:99px;padding:3px 4px 3px 10px;font-size:12px}
+    .chip .kind{font:10px var(--mono);color:var(--ink3)}
+    .chip button{border:0;background:var(--muted);width:18px;height:18px;border-radius:50%;line-height:18px;padding:0;font-size:12px;color:var(--muted-fg)}
+    .chip button:hover{background:var(--bad-50);color:var(--bad-ink)}
+    .adder{display:flex;gap:6px}
+    .adder input{flex:1;min-width:0}
+    input[type=text],input[type=number],select{border:1px solid var(--border-strong);border-radius:6px;background:var(--field);padding:7px 10px;font-size:13px;min-width:0}
+    input[type=number]{width:84px}
+    input:disabled,select:disabled{opacity:.6}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border);background:var(--muted)}
+    td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle}
+    tr:last-child td{border-bottom:0}
+    .tablewrap{border:1px solid var(--border);border-radius:8px;overflow:auto}
+    td .sm{display:block;font:11px var(--mono);color:var(--muted-fg)}
+    .x{border:0;background:none;color:var(--muted-fg);font-size:16px;line-height:1;padding:2px 6px;border-radius:4px}
+    .x:hover{background:var(--bad-50);color:var(--bad-ink)}
+    .refused{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;background:var(--bg);border:1px dashed var(--border-strong);border-radius:8px;padding:8px 10px;color:var(--muted-fg)}
+    .refused b{color:var(--fg)}
+    .limits{display:grid;gap:10px}
+    .limit{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;align-items:center}
+    .limit .lt{font-weight:600;font-size:13px}
+    .limit .ld2{font-size:12px;color:var(--muted-fg)}
+    .limit .lc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-fg);grid-row:1 / span 2;grid-column:2}
+    .newtag{font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--primary-600);border:1px solid var(--primary);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:1px}
+    .err{color:var(--bad);font-size:12px}
+
+    .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-strong);background:var(--card);border-radius:6px;padding:7px 14px;font-weight:600;font-size:13px}
+    .btn:hover:not(:disabled){background:var(--muted)}
+    .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+    .btn.primary:hover:not(:disabled){background:var(--primary-600)}
+    .btn.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+    .btn.danger-outline{border-color:rgba(194,65,46,.5);color:var(--bad)}
+    .btn.danger-outline:hover{background:var(--bad-50)!important}
+    .btn.sm{padding:4px 10px;font-size:12px}
+    .btn:disabled{opacity:.5}
+
+    /* Aside */
+    .preview-row{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:12px}
+    .preview-row:first-child{border-top:0}
+    .preview-row .nm{font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
+    .preview-row .why2{font-size:11px;color:var(--muted-fg);text-align:right}
+    .yes{color:var(--ok);font-weight:700}
+    .no{color:var(--bad);font-weight:700}
+    .preview-sum{font-size:12px;color:var(--muted-fg);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .preview-sum b{color:var(--fg)}
+    .pills{display:flex;gap:4px;border:1px solid var(--border);background:var(--bg);padding:3px;border-radius:8px;flex-wrap:wrap}
+    .pills button{border:0;background:none;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--muted-fg)}
+    .pills button[aria-pressed=true]{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+    pre.code{margin:0;background:var(--code);color:var(--code-fg);border-radius:8px;padding:12px 14px;font:12px/1.65 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;position:relative}
+    pre.code .c{color:#8A8473}
+    pre.code .s{color:#F3C597}
+    pre.code .k{color:#A9C6EC}
+    .codewrap{position:relative}
+    .codewrap .copy{position:absolute;top:8px;right:8px;background:#2A2620;border-color:#3D3830;color:#C9C1AB}
+    .act{display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 10px;padding:8px 0;border-top:1px solid var(--border);font-size:12px}
+    .act:first-child{border-top:0}
+    .act .tm{font:11px var(--mono);color:var(--ink3);padding-top:1px}
+    .act .what{font-weight:600}
+    .act .what .badge{font:700 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:1px 5px;margin-right:6px}
+    .badge.ok{background:var(--ok-50);color:var(--ok-ink)}
+    .badge.bad{background:var(--bad-50);color:var(--bad-ink)}
+    .badge.info{background:var(--info-50);color:var(--info-ink)}
+    .badge.warn{background:var(--warn-50);color:var(--warn-ink)}
+    .act .who{grid-column:2;color:var(--muted-fg);overflow-wrap:anywhere}
+
+    /* Review + footer */
+    .review{margin-top:24px;border:1px solid var(--primary);border-radius:8px;background:var(--card);padding:16px 18px;display:grid;gap:12px;box-shadow:var(--shadow-lg)}
+    .review h3{font-size:16px}
+    .review ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+    .review li{display:flex;gap:10px;align-items:center;font-size:13px}
+    .review li .badge{font:700 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:2px 6px;flex:none;width:76px;text-align:center}
+    .confirm{display:flex;gap:8px;align-items:flex-start;font-size:13px;background:var(--warn-50);color:var(--warn-ink);border-radius:6px;padding:10px 12px}
+    .confirm input{accent-color:var(--primary);margin-top:3px}
+    .footer{margin-top:24px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .footer p{font-size:12px;color:var(--muted-fg)}
+    .footer .actions{display:flex;gap:8px;align-items:center}
+    .dirty{font:600 11px var(--mono);color:var(--warn-ink);background:var(--warn-50);border-radius:99px;padding:2px 8px}
+
+    .setup{display:grid;gap:12px}
+    .setup ol{margin:0;padding-left:20px;display:grid;gap:10px}
+    .setup li{padding-left:4px}
+    .setup li b{display:block}
+    .setup li span{color:var(--muted-fg);font-size:13px}
+
+    dialog{border:1px solid var(--border);border-radius:12px;padding:0;background:var(--card);color:var(--fg);box-shadow:0 24px 80px rgba(0,0,0,.3);width:min(480px,calc(100% - 32px))}
+    dialog::backdrop{background:rgba(23,21,15,.55)}
+    dialog .dh{padding:18px 20px 0;font-size:17px;font-weight:700}
+    dialog .db{padding:10px 20px;color:var(--muted-fg);font-size:13px;display:grid;gap:10px}
+    dialog .db label{display:grid;gap:4px;color:var(--fg);font-weight:600;font-size:12px}
+    dialog .df{padding:14px 20px 18px;display:flex;justify-content:flex-end;gap:8px}
+    dialog.notes{width:min(760px,calc(100% - 32px));max-height:min(86vh,900px)}
+    dialog.notes .db{color:var(--fg);font-size:13px;gap:14px;overflow:auto}
+    dialog.notes h4{font-size:12px;font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--primary-600);margin-bottom:4px}
+    dialog.notes p,dialog.notes li{color:var(--muted-fg)}
+    dialog.notes ul{margin:4px 0 0;padding-left:18px;display:grid;gap:4px}
+    dialog.notes table td,dialog.notes table th{font-size:12px}
+
+    .toast{position:fixed;right:20px;bottom:92px;z-index:60;background:var(--fg);color:var(--bg);border-radius:8px;padding:10px 14px;font-size:13px;max-width:420px;box-shadow:var(--shadow-lg);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
+    .toast.show{opacity:1;transform:none}
+
+    /* Mockup-only control bar */
+    .mockbar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;background:repeating-linear-gradient(135deg,#26231C,#26231C 10px,#2C2820 10px,#2C2820 20px);color:#EDE6D3;border:1px solid #4A463D;border-radius:12px;padding:8px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);max-width:calc(100% - 24px)}
+    .mockbar .lbl{font:700 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:#EFB477}
+    .mockbar .pills{background:#1A1814;border-color:#3D3830}
+    .mockbar .pills button{color:#A8A293}
+    .mockbar .pills button[aria-pressed=true]{background:#3D3830;color:#F4F2EA}
+    .mockbar .btn{background:#1A1814;border-color:#4A463D;color:#EDE6D3}
+
+    @media (max-width:1250px){.layout{grid-template-columns:minmax(0,1fr)}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:900px){.sidebar{display:none}.page{padding:18px 16px 120px}.panel{padding:16px 0}.topbar{padding:12px 16px}.kbd{display:none}}
+    @media (max-width:600px){.mockbar{left:8px;right:8px;bottom:8px;transform:none;padding:6px;gap:6px}.mockbar .lbl{display:none}.mockbar .pills button,.mockbar .btn{padding:4px 7px;font-size:11px}.tiles{grid-template-columns:minmax(0,1fr)}.tabhead{flex-direction:column}.kv{grid-template-columns:minmax(0,1fr) auto}.kv dt{grid-column:1 / -1;margin-top:6px}.cap{grid-template-columns:minmax(0,1fr)}.cap .ctl{grid-row:auto;grid-column:1}.limit{grid-template-columns:minmax(0,1fr)}.limit .lc{grid-row:auto;grid-column:1}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar (components/sidebar.tsx) -->
+  <aside class="sidebar" aria-label="Main navigation">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 36 36" fill="none" style="transform:translateY(2px)" aria-hidden="true"><path d="M5 22c0-3.5 2.8-6.3 6.3-6.3.7 0 1.4.1 2 .3.8-3.7 4.1-6.5 8-6.5 4.2 0 7.6 3.2 8.1 7.2 2.7.4 4.8 2.7 4.8 5.5 0 3.1-2.5 5.5-5.5 5.5H11.3C7.8 27.7 5 25 5 22z" stroke="#F4F2EA" stroke-width="2.5" stroke-linejoin="round"/><circle cx="29" cy="11" r="3" fill="#E8743C"/></svg>
+      <span>NimBus</span><span class="dot">.</span>
+    </div>
+    <div class="tagline">A nimbus for your Azure cloud.<span class="env">dev</span></div>
+    <div class="navscroll">
+      <div class="navgroup">Observe</div>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M2 6h12" stroke="currentColor" stroke-width="1.4"/></svg>Endpoints</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M2 4h6M2 8h12M2 12h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Event Types</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12v8H2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M2 4l6 5 6-5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Messages</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M8 2.2 14.2 13H1.8L8 2.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.3" r=".8" fill="currentColor"/></svg>Failed<span class="nb count">23</span></a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M2 13V3M2 13h12M5 10V7M8 10V5M11 10V8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Metrics</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><circle cx="3.5" cy="5" r="2" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="11" r="2" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 6.5c2.5 1.5 2.5 2.5 5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Flow<span class="nb">live</span></a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M1.5 8h3l1.5-3.5 2.5 7 1.5-3.5h4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Heartbeat</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="8.5" rx="1.2" stroke="currentColor" stroke-width="1.4"/><path d="M6 14h4M8 11v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Monitor<span class="nb">wall</span></a>
+      <div class="navgroup">Diagnose</div>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Insights</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Audit Log</a>
+      <div class="navgroup">Manage</div>
+      <a class="navitem active" href="#" aria-current="page"><svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.3 3.3l1.4 1.4M11.3 11.3l1.4 1.4M3.3 12.7l1.4-1.4M11.3 4.7l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Admin</a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><path d="M5 3.5v9l7-4.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Simulate<span class="nb">idle</span></a>
+      <a class="navitem" href="#"><svg viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.2" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.4"/></svg>Access Control</a>
+    </div>
+    <div class="userfoot"><span class="avatar">ML</span><div>Maria Lopez<small>site owner</small></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <nav class="crumbs" aria-label="Breadcrumb"><b>Admin</b> / MCP access</nav>
+      <div class="spacer"></div>
+      <span class="kbd">Search endpoints, events… <kbd>Ctrl K</kbd></span>
+      <button class="iconbtn" id="themeBtn" type="button" aria-label="Toggle dark mode">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
+    </header>
+
+    <div class="page">
+      <div>
+        <h1>Admin</h1>
+        <p class="sub">Topology and bulk operations. Some actions are irreversible.</p>
+      </div>
+
+      <div>
+        <div class="tabs" role="tablist" aria-label="Admin sections">
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Topology</button>
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Operations</button>
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Subscriptions</button>
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Health</button>
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Failure intelligence</button>
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Simulation</button>
+          <button class="tab" role="tab" type="button" aria-selected="false" data-other>Audit</button>
+          <button class="tab" role="tab" type="button" aria-selected="true">MCP access<span class="new">new</span></button>
+        </div>
+
+        <section class="panel" role="tabpanel" aria-label="MCP access">
+          <header class="tabhead">
+            <div>
+              <h2>MCP access</h2>
+              <p>Let AI agents such as Claude Code check endpoint health, investigate failed messages and, for signed-in Contributors, recover them through <code>/mcp</code>. These settings can only narrow what Entra scopes and NimBus roles already allow. They never widen it.</p>
+              <p class="meta" id="revMeta"></p>
+            </div>
+            <button class="btn danger-outline" id="killBtn" type="button">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M4.4 4a5.5 5.5 0 1 0 7.2 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              Turn off now
+            </button>
+          </header>
+
+          <div id="banner"></div>
+          <div class="tileslabel">Active now</div>
+          <div class="tiles" id="tiles"></div>
+
+          <form id="form" novalidate>
+            <div class="layout">
+              <fieldset class="stack" id="mainFields">
+                <!-- 01 Activation -->
+                <section class="card" aria-labelledby="h-act">
+                  <div class="card-h"><h3 id="h-act"><span class="step">01</span>Activation</h3><span class="hint" id="actHint"></span></div>
+                  <div class="card-b">
+                    <div class="setting">
+                      <div>
+                        <div class="t">Serve the MCP endpoint</div>
+                        <div class="d" id="enabledDesc"></div>
+                      </div>
+                      <span id="enabledSwitch"></span>
+                    </div>
+                    <dl class="kv" id="endpointKv"></dl>
+                    <div class="checks" id="ceilingChecks"></div>
+                    <details class="deploy" id="identity">
+                      <summary>Sign-in <span class="lockpill">managed by deployment</span></summary>
+                      <div class="inner">
+                        <dl class="kv" id="identityKv"></dl>
+                        <p class="why"><b>Why can't I edit this here?</b> The tenant and app registration decide who can get a token for <code>/mcp</code>. They stay in the WebApp's app settings (<code>NimBus__Mcp__Entra__*</code>), so changing whom NimBus trusts needs Azure access, not only a NimBus Owner session. The same goes for <code>NimBus__Mcp__Enabled</code>, which sets the ceiling for this page.</p>
+                      </div>
+                    </details>
+                  </div>
+                </section>
+
+                <!-- 02 Capabilities -->
+                <section class="card" aria-labelledby="h-cap">
+                  <div class="card-h"><h3 id="h-cap"><span class="step">02</span>What agents may do</h3><span class="hint">applies to every caller</span></div>
+                  <div class="card-b dimmable">
+                    <div class="formula" aria-label="How access is decided">
+                      <span class="f here">Switch on this page</span><span class="op">AND</span>
+                      <span class="f">Entra scope</span><span class="op">AND</span>
+                      <span class="f">NimBus role on the endpoint</span><span class="op">AND</span>
+                      <span class="f">Message state</span><span class="op">→</span><span>tool runs</span>
+                    </div>
+                    <div class="caps" id="caps"></div>
+                    <div class="setting">
+                      <div>
+                        <div class="t">Unattended workloads (app-only tokens)</div>
+                        <div class="d">Callers with the <code>Nimbus.Observe</code> app role, such as a scheduled triage job, may use the read tools. Workloads can't change messages or read payloads whatever this page says. That waits for the operation journal (Spec 035, Phase 2b).</div>
+                      </div>
+                      <span id="workloadSwitch"></span>
+                    </div>
+                  </div>
+                  <div class="card-f">Tools that are switched off are removed from <code>tools/list</code> and from <code>permittedActions</code> in <code>nimbus_get_capabilities</code>, so agents don't offer them. A direct call gets <code>[PermissionDenied]</code> "turned off by an administrator".</div>
+                </section>
+
+                <!-- 03 Who and where -->
+                <section class="card" aria-labelledby="h-who">
+                  <div class="card-h"><h3 id="h-who"><span class="step">03</span>Who and where</h3><span class="hint" id="whoHint">optional restrictions for a pilot</span></div>
+                  <div class="card-b dimmable" id="whoBody">
+                    <div class="group">
+                      <h4>People</h4>
+                      <p class="gd">Who may connect. NimBus roles still decide what each person sees and changes.</p>
+                      <div class="radios" role="radiogroup" aria-label="People">
+                        <label class="radio"><input type="radio" name="people" value="all">Everyone with a NimBus role</label>
+                        <label class="radio"><input type="radio" name="people" value="only">Only these users and groups</label>
+                      </div>
+                      <div id="peopleList"></div>
+                    </div>
+                    <div class="group">
+                      <h4>Client applications</h4>
+                      <p class="gd">Matched on the token's <code>azp</code> claim, the app registration the agent signed in with. Entra pre-authorization still applies.</p>
+                      <div class="radios" role="radiogroup" aria-label="Client applications">
+                        <label class="radio"><input type="radio" name="clients" value="any">Any client pre-authorized in Entra</label>
+                        <label class="radio"><input type="radio" name="clients" value="approved">Only approved clients</label>
+                      </div>
+                      <div id="clientList"></div>
+                    </div>
+                    <div class="group">
+                      <h4>Endpoints</h4>
+                      <p class="gd">A hidden endpoint behaves as if it did not exist (<code>[EndpointNotFound]</code>), as for a caller without a role on it.</p>
+                      <div class="setting" style="align-items:center">
+                        <div class="t" style="font-weight:500">Agents can see</div>
+                        <select id="visibleMode" aria-label="Agents can see"><option value="all">All endpoints the caller can read</option><option value="except">All except the endpoints below</option></select>
+                      </div>
+                      <div id="hiddenList"></div>
+                      <div class="setting" style="align-items:center">
+                        <div class="t" style="font-weight:500">Agents can change messages on</div>
+                        <select id="writeMode" aria-label="Agents can change messages on"><option value="all">Every endpoint they can see</option><option value="selected">Only the endpoints below</option></select>
+                      </div>
+                      <div id="writeList"></div>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- 04 Limits -->
+                <section class="card" aria-labelledby="h-lim">
+                  <div class="card-h"><h3 id="h-lim"><span class="step">04</span>Limits</h3><span class="hint">per caller · lower only</span></div>
+                  <div class="card-b dimmable limits" id="limits"></div>
+                  <div class="card-f">The deployment's <code>RateLimiting:Mcp</code> and <code>RateLimiting:McpMutations</code> values are the ceiling. Raise them in app settings. The action token lifetime is fixed at 2 minutes.</div>
+                </section>
+              </fieldset>
+
+              <!-- Aside -->
+              <aside class="stack">
+                <section class="card" aria-labelledby="h-prev">
+                  <div class="card-h"><h3 id="h-prev">Effective access</h3><span class="hint" id="prevHint">saved settings</span></div>
+                  <div class="card-b">
+                    <div class="pills" role="group" aria-label="Preview as" id="personas"></div>
+                    <div id="preview"></div>
+                    <div class="preview-sum" id="previewSum"></div>
+                  </div>
+                </section>
+
+                <section class="card" aria-labelledby="h-con">
+                  <div class="card-h"><h3 id="h-con">Connect an agent</h3><span class="hint">share with operators</span></div>
+                  <div class="card-b" id="connect"></div>
+                </section>
+
+                <section class="card" aria-labelledby="h-actv">
+                  <div class="card-h"><h3 id="h-actv">Recent agent activity</h3><a href="#" class="hint" data-toast="Opens Audit Log filtered to channel = MCP.">Audit Log →</a></div>
+                  <div class="card-b" style="gap:0" id="activity"></div>
+                  <div class="card-f">From the audit log (channel <code>Mcp</code>): actions, refusals and settings changes. Read-only tool calls are not audited.</div>
+                </section>
+              </aside>
+            </div>
+
+            <section class="review" id="review" hidden aria-labelledby="h-rev">
+              <h3 id="h-rev">Review changes</h3>
+              <ul id="reviewList"></ul>
+              <label class="confirm" id="confirmWrap" hidden><input type="checkbox" id="confirmBox"><span id="confirmText"></span></label>
+              <div class="actions" style="display:flex;gap:8px">
+                <button class="btn" type="button" id="backBtn">Back</button>
+                <button class="btn primary" type="button" id="saveBtn">Save settings</button>
+              </div>
+            </section>
+
+            <footer class="footer">
+              <p>Site Owner only · every change is audited · applies to all instances within 30 s, no restart</p>
+              <div class="actions">
+                <span class="dirty" id="dirty" hidden></span>
+                <button class="btn" type="button" id="resetBtn">Discard changes</button>
+                <button class="btn primary" type="submit" id="reviewBtn">Review changes</button>
+              </div>
+            </footer>
+            <p class="err" id="formErr" role="alert"></p>
+          </form>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Turn off now -->
+<dialog id="killDlg" aria-labelledby="killTitle">
+  <div class="dh" id="killTitle">Turn off MCP access now?</div>
+  <div class="db">
+    <p>Every call to <code>/mcp</code> gets <code>503 [Disabled]</code>. This instance stops at once and the others within 30 seconds. A command that has already written its audit row still completes.</p>
+    <p>This skips the review step and ignores unsaved edits on this page. It saves a new revision and is audited. Your other settings are kept, so you can turn it back on here.</p>
+  </div>
+  <div class="df"><button class="btn" type="button" data-close>Cancel</button><button class="btn danger" type="button" id="killConfirm">Turn off MCP access</button></div>
+</dialog>
+
+<!-- Approve client -->
+<dialog id="clientDlg" aria-labelledby="clientTitle">
+  <div class="dh" id="clientTitle">Approve a client application</div>
+  <div class="db">
+    <label>Display name<input type="text" id="cName" placeholder="Claude Code — support team"></label>
+    <label>Application (client) ID<input type="text" id="cId" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false"></label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" id="cWrite">May change messages (callers still need the scope and Contributor)</label>
+    <p>The client must also be pre-authorized on the MCP app registration in Entra. Approving it here does not grant Entra consent.</p>
+  </div>
+  <div class="df"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" id="cAdd">Approve client</button></div>
+</dialog>
+
+<!-- Design notes -->
+<dialog id="notesDlg" class="notes" aria-labelledby="notesTitle">
+  <div class="dh" id="notesTitle">Design notes: Admin → MCP access</div>
+  <div class="db">
+    <p>The full design is in <a href="spec.md">Spec 037</a>. These notes summarize it.</p>
+    <div>
+      <h4>1 · Two layers</h4>
+      <p>The <b>deployment</b> remains the trust anchor and the ceiling: <code>NimBus__Mcp__Enabled</code>, the Entra tenant, the client ID, the App ID URI, browser origins and the rate-limit maxima. The <b>Admin tab</b> holds a live policy that can only narrow that ceiling. Effective access = deployment ceiling ∧ admin policy ∧ Entra scope or app role ∧ NimBus role ∧ message state. A stolen Owner session can turn things off or restrict them, but it can't make NimBus trust another tenant.</p>
+    </div>
+    <div>
+      <h4>2 · Live, no restart</h4>
+      <p>Unlike Failure intelligence, which needs a restart because it changes provider wiring, nothing here changes DI. <code>/mcp</code> is mapped whenever the deployment allows it. A per-request gate in <code>McpRequestGuardMiddleware</code> and a tool filter read a 30-second cached policy. This is the <code>AuditSettingsProvider</code> pattern: a save refreshes this instance at once, and other instances catch up within the TTL.</p>
+    </div>
+    <div>
+      <h4>3 · Fail closed, stay compatible</h4>
+      <ul>
+        <li>No saved record means today's behaviour: everything the deployment allows is on. Upgrading changes nothing.</li>
+        <li>A store read that fails keeps the last known good policy. Until the first successful read, <code>/mcp</code> answers <code>503 [Unavailable]</code>. It never falls back to the defaults, which may be wider than the saved policy. This is the opposite of audit settings, which fail open.</li>
+        <li><b>Turn off now</b> is a separate <code>POST</code> that ignores the revision check, because an emergency stop must never fail with a 409. A normal save uses the revision check and answers 409 to a stale editor.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>4 · Where each control comes from</h4>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Control</th><th>Today</th><th>Change</th></tr></thead>
+        <tbody>
+          <tr><td>Serve the endpoint</td><td><code>NimBus:Mcp:Enabled</code> (startup)</td><td>Becomes the ceiling. Live switch + 503 gate</td></tr>
+          <tr><td>Per-action switches</td><td>Entra scopes only</td><td>AND-ed into <code>OperatorActionAccess.HasScope</code> + a tool-list filter</td></tr>
+          <tr><td>Raw payloads</td><td><code>nimbus.payload.read</code> + PiiReader</td><td>AND-ed into <code>OperatorPayloadAccess</code></td></tr>
+          <tr><td>Workload tokens</td><td><code>Nimbus.Observe</code> app role</td><td>AND-ed into the <code>NimBusMcpObserve</code> policy</td></tr>
+          <tr><td>People / clients</td><td>None</td><td>New: <code>oid</code>/<code>groups</code> and <code>azp</code>/<code>appid</code> allowlists</td></tr>
+          <tr><td>Endpoint visibility</td><td>NimBus roles</td><td>New: exclusion in <code>OperatorEndpointCatalog</code></td></tr>
+          <tr><td>Limits</td><td><code>RateLimiting:Mcp*</code> (startup)</td><td>Lower-only override. The limit is part of the partition key, so a change starts a new window</td></tr>
+          <tr><td>Activity</td><td>Audit rows with <code>channel = Mcp</code></td><td>Read-only summary endpoint</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div>
+      <h4>5 · Storage and API</h4>
+      <ul>
+        <li><code>McpAccessSettings</code> singleton on <code>IEndpointMetadataStore</code>, like <code>AuditSettings</code> and <code>HeartbeatSettings</code>: a Cosmos fixed-id document, a SQL migration and the in-memory store, plus conformance tests (defaults, round trip, revision conflict).</li>
+        <li><code>GET/PUT /api/admin/mcp/settings</code>, <code>POST /api/admin/mcp/turn-off</code> and <code>GET /api/admin/mcp/activity</code>, defined in <code>api-spec.yaml</code> (NSwag). Site Owner only, CSRF header, bounded body.</li>
+        <li>New audit type <code>UpdateMcpSettings</code>, always recorded, with the diff in the audit data.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>6 · Suggested slices</h4>
+      <ul>
+        <li><b>A:</b> activation switch, Turn off now, per-action and payload switches, effective-access preview, connect panel. This covers "enable and configure MCP usage".</li>
+        <li><b>B:</b> recent activity, people allowlist, client allowlist with refused-client suggestions.</li>
+        <li><b>C:</b> endpoint visibility and write scope, lower-only limits.</li>
+        <li><b>Deferred:</b> a daily change budget per caller. Audit rows record the display name, which isn't unique. It waits for Phase 2b's operation journal.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="df"><button class="btn primary" type="button" data-close>Close</button></div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- Mockup-only controls -->
+<div class="mockbar" role="region" aria-label="Mockup controls">
+  <span class="lbl">Mockup</span>
+  <div class="pills" role="group" aria-label="Scenario" id="scenarios">
+    <button type="button" data-s="serving" aria-pressed="true">Serving · Entra</button>
+    <button type="button" data-s="off" aria-pressed="false">Turned off</button>
+    <button type="button" data-s="notsetup" aria-pressed="false">Not set up</button>
+    <button type="button" data-s="local" aria-pressed="false">Local dev</button>
+  </div>
+  <button class="btn sm" type="button" id="notesBtn">Design notes</button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const clone = o => JSON.parse(JSON.stringify(o));
+
+  const HOST = "https://nimbus-mgmt-dev.azurewebsites.net";
+  const LOCAL = "https://localhost:18443";
+  const TENANT = "contoso.onmicrosoft.com";
+  const TENANT_ID = "8a3c1f52-6b0e-4d17-9e2a-55c7d0b4e913";
+  const MCP_APP = "2f6d9b18-4c3a-4e70-8f1d-9a0c6e2b7d45";
+  const CEIL = { requests: 60, mutations: 5 };
+  const READ_TOOLS = ["nimbus_get_capabilities","nimbus_list_endpoints","nimbus_get_overview","nimbus_get_endpoint","nimbus_find_messages","nimbus_get_message","nimbus_get_message_history","nimbus_get_session","nimbus_search_messages","nimbus_get_metrics","nimbus_get_classification"];
+  const CAPS = [
+    { key:"payload", label:"Raw payloads", risk:"data", riskText:"data", tools:["nimbus_get_message · includePayload"], scope:"nimbus.payload.read", role:"PiiReader",
+      desc:"Return the stored event payload when an agent asks for it. Without this, agents see status, errors and history only.",
+      note:"Payloads go into the agent's model context and may leave your tenant with the AI provider. Only callers who are PiiReader on the endpoint get them." },
+    { key:"report", label:"Mark reported", risk:"low", riskText:"low", tools:["nimbus_set_message_reported"], scope:"nimbus.annotate", role:"Contributor",
+      desc:"Set or clear the \"reported\" marker, optionally with an external ticket ID." },
+    { key:"classify", label:"Classify failures", risk:"low", riskText:"low · cost", tools:["nimbus_classify_failure"], scope:"nimbus.classify", role:"Contributor",
+      desc:"Request an AI classification of a failure. Uses the Failure intelligence provider and its evidence settings (enabled)." },
+    { key:"resubmit", label:"Resubmit messages", risk:"medium", riskText:"medium", tools:["nimbus_prepare_action","nimbus_resubmit_message"], scope:"nimbus.resubmit", role:"Contributor",
+      desc:"Replay the latest stored payload to the endpoint after a preview, with a state guard and an audit row written first." },
+    { key:"skip", label:"Skip messages", risk:"high", riskText:"high", tools:["nimbus_prepare_action","nimbus_skip_message"], scope:"nimbus.skip", role:"Contributor",
+      desc:"Mark a message as never to be processed. This can release the later messages waiting in its session and can't be undone.",
+      note:"Agents should show the preview and ask before skipping, but NimBus can't verify that a person approved it. Consider leaving Skip to the Web UI until the pilot has run for a while." },
+  ];
+  const PERSONAS = {
+    reader: { label:"Reader", delegated:true, contributor:false, pii:false },
+    contributor: { label:"Contributor", delegated:true, contributor:true, pii:false },
+    pii: { label:"Contributor + PiiReader", delegated:true, contributor:true, pii:true },
+    workload: { label:"Workload", delegated:false, contributor:false, pii:false },
+  };
+  const ENDPOINTS = ["CrmEndpoint","ErpEndpoint","BillingEndpoint","PayrollEndpoint","WarehouseEndpoint"];
+  const DIRECTORY = ["NimBus MCP pilot (group)","NimBus operators (group)","jonas.berg@contoso.com","aisha.khan@contoso.com","tom.reyes@contoso.com"];
+
+  const pilotSettings = () => ({
+    enabled: true,
+    caps: { payload:false, report:true, classify:true, resubmit:true, skip:false },
+    workloads: true,
+    people: { mode:"only", list:["NimBus MCP pilot (group)","jonas.berg@contoso.com"] },
+    clients: { mode:"approved", list:[
+      { name:"Claude Code — operations", id:"5c1e9a40-7d2b-4f6e-9a31-0b8d2c7e4f19", write:true, last:"12 min ago" },
+      { name:"Triage bot (workload)", id:"b83f0d27-1e6a-4c9b-8d55-3a7e9c1f2b60", write:false, last:"1 h ago" } ] },
+    endpoints: { visible:"except", hidden:["PayrollEndpoint"], write:"all", writeList:[] },
+    limits: { requests:60, mutations:5 },
+  });
+  const defaultSettings = () => ({
+    enabled: false,
+    caps: { payload:true, report:true, classify:true, resubmit:true, skip:true },
+    workloads: true,
+    people: { mode:"all", list:[] },
+    clients: { mode:"any", list:[] },
+    endpoints: { visible:"all", hidden:[], write:"all", writeList:[] },
+    limits: { requests:60, mutations:5 },
+  });
+
+  const ACTIVITY = {
+    serving: [
+      { t:"09:42", kind:"ok", b:"Resubmit", what:"ErpEndpoint · CrmAccountCreated", who:"jonas.berg · Claude Code — operations · \"ERP back from maintenance\"" },
+      { t:"09:41", kind:"ok", b:"Resubmit", what:"ErpEndpoint · CrmAccountCreated", who:"jonas.berg · Claude Code — operations" },
+      { t:"09:15", kind:"bad", b:"Refused", what:"Skip · BillingEndpoint", who:"jonas.berg · [PermissionDenied] skip is turned off by an administrator" },
+      { t:"08:58", kind:"info", b:"Reported", what:"CrmEndpoint · INC-20431", who:"jonas.berg · Claude Code — operations" },
+      { t:"08:30", kind:"bad", b:"Refused", what:"Client 1b9e…7f04", who:"aisha.khan · [PermissionDenied] client not approved" },
+      { t:"Mon", kind:"warn", b:"Settings", what:"Turned skip off (rev 7)", who:"maria.lopez@contoso.com" },
+    ],
+    off: [
+      { t:"07:52", kind:"warn", b:"Settings", what:"Turned MCP access off (rev 8)", who:"maria.lopez@contoso.com · Turn off now" },
+      { t:"07:49", kind:"ok", b:"Resubmit", what:"ErpEndpoint · ErpInvoicePosted", who:"jonas.berg · Claude Code — operations" },
+      { t:"07:48", kind:"ok", b:"Resubmit", what:"ErpEndpoint · ErpInvoicePosted", who:"jonas.berg · Claude Code — operations" },
+    ],
+    notsetup: [],
+    local: [
+      { t:"10:03", kind:"ok", b:"Resubmit", what:"ErpEndpoint · CrmAccountCreated", who:"Local Developer · local client" },
+      { t:"10:01", kind:"info", b:"Classify", what:"ErpEndpoint · CrmAccountCreated", who:"Local Developer · local client" },
+    ],
+  };
+
+  const state = { scenario:"serving", available:true, local:false, saved:null, draft:null, revision:7, savedBy:"maria.lopez@contoso.com", savedWhen:"2 days ago", offInfo:null, persona:"contributor", connectTab:"claude", connectClient:0, reviewing:false, activity:[] };
+
+  function loadScenario(s) {
+    state.scenario = s; state.available = s !== "notsetup"; state.local = s === "local"; state.reviewing = false;
+    state.persona = "contributor"; state.connectClient = 0; state.offInfo = null; state.offSince = null;
+    if (s === "serving") { state.saved = pilotSettings(); state.revision = 7; state.savedBy = "maria.lopez@contoso.com"; state.savedWhen = "2 days ago"; }
+    if (s === "off") { state.saved = pilotSettings(); state.saved.enabled = false; state.revision = 8; state.savedBy = "maria.lopez@contoso.com"; state.savedWhen = "2 h ago"; state.offSince = "2 h ago"; state.offInfo = "Turned off by maria.lopez@contoso.com at 07:52 with Turn off now."; }
+    if (s === "notsetup") { state.saved = defaultSettings(); state.revision = 0; }
+    if (s === "local") { state.saved = defaultSettings(); state.saved.enabled = true; state.revision = 0; }
+    state.draft = clone(state.saved);
+    state.activity = clone(ACTIVITY[s]);
+    document.querySelectorAll("#scenarios button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === s)));
+    render();
+  }
+
+  const sw = (path, on, label, disabled) =>
+    `<button type="button" class="switch" role="switch" aria-checked="${on}" aria-label="${esc(label)}" data-path="${path}"${disabled ? " disabled" : ""}><span class="track"><span class="thumb"></span></span><span class="st">${on ? "On" : "Off"}</span></button>`;
+  const get = (o, p) => p.split(".").reduce((a, k) => a[k], o);
+  const set = (o, p, v) => { const ks = p.split("."); const last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; };
+  const endpointUrl = () => (state.local ? LOCAL : HOST) + "/mcp";
+
+  function render() {
+    const d = state.draft, s = state.saved;
+    // Header meta + kill switch
+    $("#revMeta").innerHTML = state.revision
+      ? `Revision <b>${state.revision}</b> · saved by ${esc(state.savedBy)} ${esc(state.savedWhen)} · applies to every instance within 30 s, no restart`
+      : state.available
+        ? `No saved settings, so everything the deployment allows is on (today's behaviour). Saving creates revision 1.`
+        : `No saved settings yet. Anything you save now applies once the endpoint is set up.`;
+    $("#killBtn").hidden = !(state.available && s.enabled);
+
+    // Banner
+    let banner = "";
+    if (state.scenario === "notsetup") banner = `<div class="banner info"><div class="grow setup"><div><b>MCP isn't set up on this deployment</b>The endpoint needs its own Entra app registration, which someone with Azure access creates once. After that, everything on this tab is managed here.</div>
+      <ol>
+        <li><b>Register the MCP resource in Entra</b><span>Expose the <code>nimbus.*</code> scopes, add <code>${esc(HOST)}/mcp</code> as a second Application ID URI and set the access token version to 2. <a href="#" data-toast="Opens docs/mcp-server.md#1-register-the-mcp-resource">Step-by-step guide</a></span></li>
+        <li><b>Set the WebApp's app settings, then restart it</b>
+          <div class="codewrap" style="margin-top:6px"><pre class="code">az webapp config appsettings set --resource-group &lt;rg&gt; --name &lt;webapp&gt; \\
+  --settings NimBus__Mcp__Enabled=true \\
+  NimBus__Mcp__Entra__TenantId=&lt;tenant-id&gt; \\
+  NimBus__Mcp__Entra__ClientId=&lt;mcp-app-client-id&gt;</pre><button type="button" class="copy" data-copy="az webapp config appsettings set --resource-group <rg> --name <webapp> --settings NimBus__Mcp__Enabled=true NimBus__Mcp__Entra__TenantId=<tenant-id> NimBus__Mcp__Entra__ClientId=<mcp-app-client-id>">Copy</button></div></li>
+        <li><b>Come back here</b><span>The switch below becomes available. You can prepare the policy now. It is saved and applies once the endpoint exists.</span></li>
+      </ol>
+      <span style="font-size:12px">Local development needs none of this: the Aspire AppHost serves <code>/mcp</code> with no sign-in.</span></div></div>`;
+    else if (state.scenario === "local") banner = `<div class="banner info"><div class="grow"><b>Local development mode</b>The local-dev bypass is on, so every call runs as Local Developer with no sign-in, from loopback addresses only. Entra scopes aren't checked, but the switches in 02, NimBus roles and message state still are. People and client restrictions don't apply.</div></div>`;
+    else if (!s.enabled) banner = `<div class="banner warn"><div class="grow"><b>MCP access is off</b>Agents get <code>503 [Disabled]</code>. ${esc(state.offInfo || "")} The other settings were kept. Turn the endpoint on below and save to restore access.</div></div>`;
+    $("#banner").innerHTML = banner;
+
+    // Tiles (active = saved)
+    const tiles = [];
+    if (!state.available) {
+      tiles.push(["Endpoint", `<span class="ld"></span>Not set up`, "/mcp is not mapped"], ["Sign-in", "—", "no MCP app registration"], ["Agent actions · 24 h", "—", ""], ["Refused · 24 h", "—", ""]);
+    } else if (state.local) {
+      tiles.push(["Endpoint", `<span class="ld ok"></span>Serving`, "loopback only · " + LOCAL.replace("https://", "")], ["Sign-in", "Local developer", "no sign-in · scopes not checked"], ["Agent actions · 24 h", "2", "1 resubmit · 1 classify"], ["Refused · 24 h", "0", ""]);
+    } else if (s.enabled) {
+      tiles.push(["Endpoint", `<span class="ld ok"></span>Serving`, "nimbus-operator 4.3.0 · rev " + state.revision], ["Sign-in", "Entra ID", TENANT], ["Agent actions · 24 h", "3", "2 resubmit · 1 reported"], ["Refused · 24 h", "2", "1 switched off · 1 client not approved"]);
+    } else {
+      const fresh = state.offSince === "just now";
+      tiles.push(["Endpoint", `<span class="ld warn"></span>Off`, "turned off " + state.offSince], ["Sign-in", "Entra ID", TENANT], ["Agent actions · 24 h", fresh ? "3" : "2", "before it was turned off"], ["Refused · 24 h", fresh ? "2" : "0", "503 [Disabled] answers aren't audited"]);
+    }
+    $("#tiles").innerHTML = tiles.map(([k, v, sub]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s" title="${esc(sub)}">${esc(sub) || "&nbsp;"}</div></div>`).join("");
+
+    // 01 Activation
+    $("#actHint").textContent = state.available ? (state.local ? "local development" : "Entra ID") : "not available";
+    $("#enabledSwitch").innerHTML = sw("enabled", d.enabled, "Serve the MCP endpoint", !state.available);
+    $("#enabledDesc").innerHTML = state.available
+      ? `Agents connect at the URL below and sign in as themselves. When off, every call gets <code>503 [Disabled]</code> within 30 seconds on all instances, and the settings below are kept.`
+      : `Unavailable until the deployment sets <code>NimBus__Mcp__Enabled</code> and the Entra registration.`;
+    const kv = [
+      ["Endpoint", state.available ? endpointUrl() : "—", state.available],
+      ["Resource metadata", state.available && !state.local ? HOST + "/.well-known/oauth-protected-resource/mcp" : "—", state.available && !state.local],
+      ["Server", state.available ? "nimbus-operator 4.3.0 · Streamable HTTP, stateless" : "—", false],
+    ];
+    $("#endpointKv").innerHTML = kv.map(([k, v, c]) => `<dt>${k}</dt><dd>${esc(v)}</dd><span>${c ? `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>` : ""}</span>`).join("");
+    $("#ceilingChecks").innerHTML = !state.available
+      ? `<span class="no">NimBus__Mcp__Enabled</span><span class="no">Entra registration</span><span>Rate limiting on</span>`
+      : state.local
+        ? `<span>EnableForLocalDevelopment</span><span>Local-dev bypass active</span><span>Origin check: localhost only</span>`
+        : `<span>Allowed by deployment</span><span>Entra metadata reachable</span><span>Rate limiting on</span>`;
+    $("#identityKv").innerHTML = (state.local
+      ? [["Mode", "Local-dev bypass (EnableLocalDevAuthentication)"], ["Caller", "Local Developer (all scopes implied)"], ["Origins", "localhost only"]]
+      : [["Tenant", state.available ? `${TENANT} (${TENANT_ID})` : "not set"], ["MCP app (client) ID", state.available ? MCP_APP : "not set"], ["Application ID URI", state.available ? `api://${MCP_APP}` : "—"], ["Authority", state.available ? "https://login.microsoftonline.com/…/v2.0" : "—"], ["Browser origins", "none (desktop and CLI clients only)"]]
+    ).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd><span></span>`).join("");
+
+    // 02 Capabilities
+    const capsHtml = [`<div class="cap"><div class="ct">Observe <span class="risk low">read</span></div><div class="cd">Endpoint health, messages, history, sessions, metrics and stored classifications. Stack traces are never returned and error text is shortened.</div>
+      <div class="tags"><span class="tag">${READ_TOOLS.length} read tools</span><span class="tag scope">nimbus.observe</span><span class="tag role">Reader</span></div>
+      <div class="ctl"><span class="locked" title="The endpoint has no purpose without the read tools">Always on</span></div></div>`];
+    for (const c of CAPS) {
+      const on = d.caps[c.key];
+      capsHtml.push(`<div class="cap${on ? "" : " off"}"><div class="ct">${c.label} <span class="risk ${c.risk}">${c.riskText}</span></div>
+        <div class="cd">${c.desc}</div>
+        <div class="tags">${c.tools.map(t => `<span class="tag">${t}</span>`).join("")}<span class="tag scope">${c.scope}</span><span class="tag role">${c.role}</span></div>
+        <div class="ctl">${sw("caps." + c.key, on, c.label, false)}</div>
+        ${on && c.note ? `<div class="note">${c.note}</div>` : ""}</div>`);
+    }
+    $("#caps").innerHTML = capsHtml.join("");
+    $("#workloadSwitch").innerHTML = sw("workloads", d.workloads, "Allow workload tokens", state.local);
+
+    // 03 Who and where
+    const whoNA = state.local;
+    $("#whoHint").textContent = whoNA ? "not used in local development" : "optional restrictions for a pilot";
+    document.querySelectorAll('input[name=people]').forEach(i => { i.checked = i.value === d.people.mode; i.disabled = whoNA; });
+    document.querySelectorAll('input[name=clients]').forEach(i => { i.checked = i.value === d.clients.mode; i.disabled = whoNA; });
+    $("#peopleList").innerHTML = d.people.mode === "only" ? chipEditor("people", d.people.list, DIRECTORY, "Add a user or group…", whoNA, v => v.endsWith("(group)") ? "group" : "user") : "";
+    $("#clientList").innerHTML = d.clients.mode === "approved" ? clientTable(d.clients.list, whoNA) : `<p class="gd" style="margin:0">Any client that Entra lets sign in with a <code>nimbus.*</code> scope can connect.</p>`;
+    $("#visibleMode").value = d.endpoints.visible;
+    $("#writeMode").value = d.endpoints.write;
+    $("#hiddenList").innerHTML = d.endpoints.visible === "except" ? chipEditor("hidden", d.endpoints.hidden, ENDPOINTS, "Hide an endpoint…", false, () => "hidden") : "";
+    $("#writeList").innerHTML = d.endpoints.write === "selected" ? chipEditor("writeList", d.endpoints.writeList, ENDPOINTS.filter(e => !d.endpoints.hidden.includes(e) || d.endpoints.visible === "all"), "Add an endpoint…", false, () => "") : "";
+
+    // 04 Limits
+    const L = d.limits;
+    $("#limits").innerHTML = [
+      limitRow("Tool calls", `Every MCP request, per user and client. Deployment maximum ${CEIL.requests}.`, "requests", L.requests, CEIL.requests, "per 60 s"),
+      limitRow("Message changes", `Resubmit, skip, report and classify. Deployment maximum ${CEIL.mutations}.`, "mutations", L.mutations, CEIL.mutations, "per 60 s"),
+    ].join("");
+
+    renderPreview(); renderConnect(); renderActivity(); renderDirty();
+    $("#mainFields").disabled = false;
+    document.querySelectorAll("#mainFields .dimmable").forEach(el => el.style.opacity = state.available ? "" : ".6");
+  }
+
+  function chipEditor(key, list, options, placeholder, disabled, kindOf) {
+    const left = options.filter(o => !list.includes(o));
+    return `<div class="chips">${list.map((v, i) => `<span class="chip">${esc(v.replace(" (group)", ""))}${kindOf(v) ? `<span class="kind">${kindOf(v)}</span>` : ""}<button type="button" aria-label="Remove ${esc(v)}" data-remove="${key}" data-i="${i}"${disabled ? " disabled" : ""}>×</button></span>`).join("")}
+      ${list.length === 0 ? `<span class="err">Nothing selected yet.</span>` : ""}</div>
+      <div class="adder" style="margin-top:8px"><select data-add-select="${key}" aria-label="${esc(placeholder)}"${disabled ? " disabled" : ""}><option value="">${esc(placeholder)}</option>${left.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>`;
+  }
+
+  function clientTable(list, disabled) {
+    return `<div class="tablewrap"><table><thead><tr><th>Client</th><th>May change messages</th><th>Last action</th><th></th></tr></thead><tbody>
+      ${list.map((c, i) => `<tr><td>${esc(c.name)}<span class="sm">${esc(c.id)}</span></td><td>${sw("clients.list." + i + ".write", c.write, "May change messages: " + c.name, disabled)}</td><td>${esc(c.last || "never")}</td><td><button type="button" class="x" aria-label="Remove ${esc(c.name)}" data-rmclient="${i}"${disabled ? " disabled" : ""}>×</button></td></tr>`).join("")}
+      ${list.length === 0 ? `<tr><td colspan="4" class="err">No approved clients. Every agent will be refused.</td></tr>` : ""}
+      </tbody></table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        <button type="button" class="btn sm" id="addClient"${disabled ? " disabled" : ""}>+ Approve a client</button>
+        ${state.scenario === "serving" && !list.some(c => c.id.startsWith("1b9e")) ? `<div class="refused">Refused today: <b>1b9e…7f04</b> · 4 calls from aisha.khan <button type="button" class="btn sm" id="approveRefused"${disabled ? " disabled" : ""}>Approve…</button></div>` : ""}
+      </div>`;
+  }
+
+  function limitRow(title, desc, key, val, max, unit) {
+    const over = !(val >= 1 && val <= max);
+    return `<div class="limit"><div class="lt">${title}</div><div class="ld2">${desc}</div>
+      <label class="lc"><input type="number" min="1" max="${max}" value="${val}" data-limit="${key}" aria-label="${esc(title)}">${unit}</label>
+      ${over ? `<div class="err" style="grid-column:1 / -1">Use 1–${max}.</div>` : ""}</div>`;
+  }
+
+  function access(d, p) {
+    // returns [rowName, ok, reason]
+    const rows = [];
+    const gate = !state.available ? "not set up" : !d.enabled ? "endpoint off" : (!p.delegated && !d.workloads) ? "workloads off" : null;
+    rows.push([`${READ_TOOLS.length} read tools`, !gate, gate || (state.local ? "Reader" : p.delegated ? "nimbus.observe" : "Nimbus.Observe role")]);
+    const capRow = (name, key) => {
+      if (gate) return [name, false, gate];
+      if (!d.caps[key]) return [name, false, "switched off here"];
+      if (!p.delegated) return [name, false, key === "payload" ? "no app role for payloads" : "workloads can't change"];
+      if (key === "payload") return p.pii ? [name, true, state.local ? "PiiReader" : "scope + PiiReader"] : [name, false, "needs PiiReader"];
+      return p.contributor ? [name, true, state.local ? "Contributor" : "scope + Contributor"] : [name, false, "needs Contributor"];
+    };
+    rows.push(capRow("payloads (includePayload)", "payload"));
+    rows.push(capRow("nimbus_set_message_reported", "report"));
+    rows.push(capRow("nimbus_classify_failure", "classify"));
+    rows.push(capRow("nimbus_resubmit_message", "resubmit"));
+    rows.push(capRow("nimbus_skip_message", "skip"));
+    const prep = rows[4][1] || rows[5][1];
+    rows.push(["nimbus_prepare_action", prep, gate || (prep ? "resubmit or skip allowed" : "needs resubmit or skip")]);
+    return rows;
+  }
+
+  function toolCount(d) {
+    if (!state.available || !d.enabled) return 0;
+    let n = READ_TOOLS.length;
+    for (const k of ["report","classify","resubmit","skip"]) if (d.caps[k]) n++;
+    if (d.caps.resubmit || d.caps.skip) n++;
+    return n;
+  }
+
+  function renderPreview() {
+    const dirty = changes(state.saved, state.draft).length > 0;
+    $("#prevHint").textContent = dirty ? "previewing your unsaved edits" : "saved settings";
+    $("#personas").innerHTML = Object.entries(PERSONAS).filter(([k]) => !(state.local && k === "workload")).map(([k, p]) => `<button type="button" data-persona="${k}" aria-pressed="${state.persona === k}">${p.label}</button>`).join("");
+    const p = PERSONAS[state.persona];
+    $("#preview").innerHTML = access(state.draft, p).map(([n, ok, why]) => `<div class="preview-row"><span class="${ok ? "yes" : "no"}" aria-label="${ok ? "allowed" : "blocked"}">${ok ? "✓" : "✕"}</span><span class="nm">${esc(n)}</span><span class="why2">${esc(why)}</span></div>`).join("");
+    const caller = p.delegated ? (state.local ? "Local Developer with the " + p.label + " role" : "a signed-in " + p.label + " using an approved client") : "an app-only token with Nimbus.Observe";
+    $("#previewSum").innerHTML = `<span>As ${esc(caller)}.</span><span><b>tools/list</b> returns ${toolCount(state.draft)} of 16 tools</span>`;
+  }
+
+  function renderConnect() {
+    const d = state.draft;
+    if (!state.available) { $("#connect").innerHTML = `<p class="gd" style="margin:0">Connection details appear here once the endpoint is set up.</p>`; return; }
+    const clients = d.clients.mode === "approved" ? d.clients.list : [{ name:"Your client registration", id:"<client-id>" }];
+    const c = clients[Math.min(state.connectClient, Math.max(clients.length - 1, 0))] || { name:"Your client registration", id:"<client-id>" };
+    const tabs = state.local ? [["claude","Claude Code"],["json",".mcp.json"]] : [["claude","Claude Code"],["other","Other clients"]];
+    if (!tabs.some(t => t[0] === state.connectTab)) state.connectTab = "claude";
+    let body = "";
+    if (state.local) {
+      body = state.connectTab === "claude"
+        ? code(`claude mcp add --transport http nimbus ${LOCAL}/mcp`, `<span class="k">claude</span> mcp add --transport http nimbus <span class="s">${LOCAL}/mcp</span>`)
+        : code(`{\n  "mcpServers": {\n    "nimbus": { "type": "http", "url": "${LOCAL}/mcp" }\n  }\n}`, esc(`{\n  "mcpServers": {\n    "nimbus": { "type": "http", "url": "${LOCAL}/mcp" }\n  }\n}`));
+      body += `<p class="gd" style="margin:0">No sign-in. Works only on this machine while the Aspire AppHost runs.</p>`;
+    } else if (state.connectTab === "claude") {
+      const raw = `claude mcp add --transport http \\\n  --client-id ${c.id} --callback-port 33418 \\\n  nimbus ${HOST}/mcp`;
+      body = code(raw, `<span class="k">claude</span> mcp add --transport http \\\n  --client-id <span class="s">${esc(c.id)}</span> --callback-port 33418 \\\n  nimbus <span class="s">${HOST}/mcp</span>\n<span class="c"># then run /mcp in a claude session and sign in as yourself</span>`);
+    } else {
+      const raw = `URL:        ${HOST}/mcp\nClient ID:  ${c.id}\nScopes:     api://${MCP_APP}/nimbus.observe\n            api://${MCP_APP}/nimbus.resubmit (optional)\nRedirect:   loopback, e.g. http://localhost:33418/callback`;
+      body = code(raw, esc(raw));
+    }
+    $("#connect").innerHTML = `<div class="pills" role="group" aria-label="Client">${tabs.map(([k, l]) => `<button type="button" data-ctab="${k}" aria-pressed="${state.connectTab === k}">${l}</button>`).join("")}</div>
+      ${!state.local && d.clients.mode === "approved" && clients.length > 1 ? `<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted-fg)">Client registration <select id="connectClient">${clients.map((x, i) => `<option value="${i}"${i === state.connectClient ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>` : ""}
+      ${body}
+      ${!state.local ? `<p class="gd" style="margin:0">Agents act as the person who signs in. There are no shared keys. NimBus roles and the switches on this page apply to every call.</p>` : ""}`;
+  }
+  const code = (raw, html) => `<div class="codewrap"><pre class="code">${html}</pre><button type="button" class="copy" data-copy="${esc(raw)}">Copy</button></div>`;
+
+  function renderActivity() {
+    $("#activity").innerHTML = state.activity.length
+      ? state.activity.map(a => `<div class="act"><span class="tm">${esc(a.t)}</span><span class="what"><span class="badge ${a.kind}">${esc(a.b)}</span>${esc(a.what)}</span><span class="who">${esc(a.who)}</span></div>`).join("")
+      : `<p class="gd" style="margin:0">No agent activity yet.</p>`;
+  }
+
+  function changes(a, b) {
+    const out = [];
+    const add = (text, widen) => out.push({ text, widen });
+    if (a.enabled !== b.enabled) add(b.enabled ? "Turn the MCP endpoint on" : "Turn the MCP endpoint off", b.enabled);
+    for (const c of CAPS) if (a.caps[c.key] !== b.caps[c.key]) add(`${b.caps[c.key] ? "Allow" : "Stop"} ${c.label.toLowerCase()}${c.risk === "high" && b.caps[c.key] ? " (high risk)" : ""}`, b.caps[c.key]);
+    if (a.workloads !== b.workloads) add(b.workloads ? "Allow workload (app-only) tokens for read tools" : "Refuse workload (app-only) tokens", b.workloads);
+    if (a.people.mode !== b.people.mode) add(b.people.mode === "all" ? "Let everyone with a NimBus role connect" : "Only listed users and groups may connect", b.people.mode === "all");
+    if (b.people.mode === "only") diffList(a.people.mode === "only" ? a.people.list : [], b.people.list, v => `Add ${v} to people`, v => `Remove ${v} from people`, true, a.people.mode !== "only").forEach(x => out.push(x));
+    if (a.clients.mode !== b.clients.mode) add(b.clients.mode === "any" ? "Accept any client pre-authorized in Entra" : "Accept only approved clients", b.clients.mode === "any");
+    if (b.clients.mode === "approved") {
+      const ai = new Map((a.clients.mode === "approved" ? a.clients.list : []).map(c => [c.id, c]));
+      const bi = new Map(b.clients.list.map(c => [c.id, c]));
+      for (const [id, c] of bi) { const o = ai.get(id); if (!o) { if (a.clients.mode === "approved") add(`Approve client ${c.name}${c.write ? " (may change messages)" : ""}`, true); } else if (o.write !== c.write) add(`${c.write ? "Let" : "Stop"} ${c.name} ${c.write ? "change" : "changing"} messages`, c.write); }
+      if (a.clients.mode === "approved") for (const [id, c] of ai) if (!bi.has(id)) add(`Remove client ${c.name}`, false);
+    }
+    if (a.endpoints.visible !== b.endpoints.visible) add(b.endpoints.visible === "all" ? "Show agents every endpoint the caller can read" : "Hide selected endpoints from agents", b.endpoints.visible === "all");
+    if (b.endpoints.visible === "except") diffList(a.endpoints.visible === "except" ? a.endpoints.hidden : [], b.endpoints.hidden, v => `Hide ${v}`, v => `Show ${v} again`, false, a.endpoints.visible !== "except").forEach(x => out.push(x));
+    if (a.endpoints.write !== b.endpoints.write) add(b.endpoints.write === "all" ? "Allow changes on every visible endpoint" : "Allow changes only on selected endpoints", b.endpoints.write === "all");
+    if (b.endpoints.write === "selected") diffList(a.endpoints.write === "selected" ? a.endpoints.writeList : [], b.endpoints.writeList, v => `Allow changes on ${v}`, v => `Stop changes on ${v}`, true, a.endpoints.write !== "selected").forEach(x => out.push(x));
+    for (const [k, l] of [["requests","Tool calls"],["mutations","Message changes"]]) {
+      if (a.limits[k] !== b.limits[k]) add(`${l}: ${a.limits[k]} → ${b.limits[k]} per 60 s`, b.limits[k] > a.limits[k]);
+    }
+    return out;
+  }
+  function diffList(a, b, addText, rmText, addWidens, silent) {
+    if (silent) return [{ text: "Set list: " + (b.join(", ") || "empty"), widen: false }];
+    const out = [];
+    b.filter(v => !a.includes(v)).forEach(v => out.push({ text: addText(v), widen: addWidens }));
+    a.filter(v => !b.includes(v)).forEach(v => out.push({ text: rmText(v), widen: !addWidens }));
+    return out;
+  }
+
+  function validate(d) {
+    if (d.people.mode === "only" && d.people.list.length === 0) return "Add at least one user or group, or let everyone with a NimBus role connect.";
+    if (d.clients.mode === "approved" && d.clients.list.length === 0 && !state.local) return "Approve at least one client, or accept any client pre-authorized in Entra.";
+    if (d.endpoints.visible === "except" && d.endpoints.hidden.length === 0) return "Pick at least one endpoint to hide, or show all endpoints.";
+    if (d.endpoints.write === "selected" && d.endpoints.writeList.length === 0) return "Pick at least one endpoint where agents may change messages.";
+    const L = d.limits;
+    if (!(L.requests >= 1 && L.requests <= CEIL.requests) || !(L.mutations >= 1 && L.mutations <= CEIL.mutations)) return "A limit is outside its allowed range.";
+    return "";
+  }
+
+  function renderDirty() {
+    const ch = changes(state.saved, state.draft);
+    $("#dirty").hidden = ch.length === 0;
+    $("#dirty").textContent = `${ch.length} unsaved change${ch.length === 1 ? "" : "s"}`;
+    $("#reviewBtn").disabled = ch.length === 0;
+    $("#resetBtn").disabled = ch.length === 0;
+    if (state.reviewing && ch.length === 0) state.reviewing = false;
+    $("#review").hidden = !state.reviewing;
+    if (state.reviewing) {
+      $("#reviewList").innerHTML = ch.map(c => `<li><span class="badge ${c.widen ? "warn" : "ok"}">${c.widen ? "widens" : "narrows"}</span>${esc(c.text)}</li>`).join("");
+      const widen = ch.some(c => c.widen);
+      const skipOn = state.draft.caps.skip && !state.saved.caps.skip;
+      $("#confirmWrap").hidden = !widen;
+      $("#confirmText").textContent = skipOn
+        ? "I confirm that agents may skip messages for signed-in Contributors, and that a skip can release later messages in a session and can't be undone."
+        : "I confirm that agents may do more after this change. Entra scopes and NimBus roles still apply.";
+      $("#saveBtn").disabled = widen && !$("#confirmBox").checked;
+    }
+  }
+
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3200);
+  }
+  function edited() { state.reviewing = false; $("#formErr").textContent = ""; $("#confirmBox").checked = false; render(); }
+
+  // Events
+  document.addEventListener("click", e => {
+    const swEl = e.target.closest(".switch[data-path]");
+    if (swEl && !swEl.disabled) { set(state.draft, swEl.dataset.path, !get(state.draft, swEl.dataset.path)); edited(); return; }
+    const rm = e.target.closest("[data-remove]");
+    if (rm) { const k = rm.dataset.remove; const list = k === "people" ? state.draft.people.list : state.draft.endpoints[k]; list.splice(+rm.dataset.i, 1); edited(); return; }
+    const rc = e.target.closest("[data-rmclient]");
+    if (rc) { state.draft.clients.list.splice(+rc.dataset.rmclient, 1); state.connectClient = 0; edited(); return; }
+    const pe = e.target.closest("[data-persona]");
+    if (pe) { state.persona = pe.dataset.persona; renderPreview(); return; }
+    const ct = e.target.closest("[data-ctab]");
+    if (ct) { state.connectTab = ct.dataset.ctab; renderConnect(); return; }
+    const cp = e.target.closest("[data-copy]");
+    if (cp) { const txt = cp.dataset.copy; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Copied."), () => toast("Copy isn't available here.")); return; }
+    const tt = e.target.closest("[data-toast]");
+    if (tt) { e.preventDefault(); toast(tt.dataset.toast); return; }
+    if (e.target.closest("[data-other]")) { toast("Only the MCP access tab is part of this mockup."); return; }
+    if (e.target.closest(".navitem")) { e.preventDefault(); return; }
+    if (e.target.closest("#addClient")) { $("#cName").value = ""; $("#cId").value = ""; $("#cWrite").checked = false; $("#clientDlg").showModal(); return; }
+    if (e.target.closest("#approveRefused")) { $("#cName").value = "VS Code — aisha.khan"; $("#cId").value = "1b9e5c3a-02f4-4b8e-a6d1-7c2e9f107f04"; $("#cWrite").checked = false; $("#clientDlg").showModal(); return; }
+    const close = e.target.closest("[data-close]");
+    if (close) { close.closest("dialog").close(); return; }
+    const sc = e.target.closest("#scenarios button");
+    if (sc) { loadScenario(sc.dataset.s); toast(`Scenario: ${sc.textContent}`); }
+  });
+  document.addEventListener("change", e => {
+    const t = e.target;
+    if (t.name === "people") { state.draft.people.mode = t.value; edited(); }
+    else if (t.name === "clients") { state.draft.clients.mode = t.value; state.connectClient = 0; edited(); }
+    else if (t.id === "visibleMode") { state.draft.endpoints.visible = t.value; edited(); }
+    else if (t.id === "writeMode") { state.draft.endpoints.write = t.value; edited(); }
+    else if (t.dataset.addSelect && t.value) { const k = t.dataset.addSelect; (k === "people" ? state.draft.people.list : state.draft.endpoints[k]).push(t.value); edited(); }
+    else if (t.dataset.limit) { state.draft.limits[t.dataset.limit] = Number(t.value); edited(); }
+    else if (t.id === "connectClient") { state.connectClient = +t.value; renderConnect(); }
+    else if (t.id === "confirmBox") renderDirty();
+  });
+  $("#form").addEventListener("submit", e => {
+    e.preventDefault();
+    const err = validate(state.draft);
+    $("#formErr").textContent = err;
+    if (err) return;
+    state.reviewing = true; $("#confirmBox").checked = false; renderDirty();
+    $("#review").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  $("#backBtn").addEventListener("click", () => { state.reviewing = false; renderDirty(); });
+  $("#resetBtn").addEventListener("click", () => { state.draft = clone(state.saved); edited(); toast("Changes discarded."); });
+  $("#saveBtn").addEventListener("click", () => {
+    const ch = changes(state.saved, state.draft);
+    const turnedOff = state.saved.enabled && !state.draft.enabled;
+    state.saved = clone(state.draft); state.revision += 1; state.savedBy = "you"; state.savedWhen = "just now"; state.reviewing = false;
+    if (turnedOff) { state.offSince = "just now"; state.offInfo = "Turned off by you just now."; }
+    if (state.saved.enabled) state.offInfo = null;
+    state.activity.unshift({ t:"now", kind:"warn", b:"Settings", what:`${ch.length} change${ch.length === 1 ? "" : "s"} (rev ${state.revision})`, who:"maria.lopez@contoso.com" });
+    render();
+    toast(`Saved revision ${state.revision}. This instance applies it now, the others within 30 s.`);
+  });
+  $("#killBtn").addEventListener("click", () => $("#killDlg").showModal());
+  $("#killConfirm").addEventListener("click", () => {
+    $("#killDlg").close();
+    state.saved.enabled = false; state.draft = clone(state.saved); state.revision += 1; state.savedBy = "you"; state.savedWhen = "just now";
+    state.offInfo = "Turned off by you just now with Turn off now."; state.offSince = "just now"; state.reviewing = false;
+    state.activity.unshift({ t:"now", kind:"warn", b:"Settings", what:`Turned MCP access off (rev ${state.revision})`, who:"maria.lopez@contoso.com · Turn off now" });
+    render(); toast("MCP access is off. Agents get 503 [Disabled].");
+  });
+  $("#cAdd").addEventListener("click", () => {
+    const name = $("#cName").value.trim(), id = $("#cId").value.trim();
+    if (!name || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { toast("Enter a name and a client ID (GUID)."); return; }
+    state.draft.clients.list.push({ name, id, write: $("#cWrite").checked, last: "never" });
+    $("#clientDlg").close(); edited();
+  });
+  $("#notesBtn").addEventListener("click", () => $("#notesDlg").showModal());
+  $("#themeBtn").addEventListener("click", () => document.documentElement.classList.toggle("dark"));
+  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.classList.add("dark");
+
+  loadScenario("serving");
+})();
+</script>
+</body>
+</html>

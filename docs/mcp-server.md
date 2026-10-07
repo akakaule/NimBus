@@ -80,6 +80,46 @@ to these tools are `[StaleMessage]`, `[ActionNotAllowed]` (the message's state d
 action), `[RateLimited]`, `[AuditUnavailable]` and `[OutcomeUnknown]` (publishing failed after the
 message was claimed; it was restored, so read it again before you retry).
 
+## Managing access in the WebApp
+
+A site Owner manages MCP access in **Admin → MCP access** ([Spec 037](spec/037-mcp-admin-access/spec.md)).
+There are two layers:
+
+- **The deployment** decides whether `/mcp` can exist and whom NimBus trusts for tokens:
+  `NimBus__Mcp__Enabled`, `NimBus__Mcp__EnableForLocalDevelopment`, `NimBus__Mcp__Entra__*`,
+  `NimBus__Mcp__AllowedOrigins__*` and the `RateLimiting__Mcp*` limits. The tab shows them but
+  cannot change them.
+- **The Admin policy** can only narrow that. A call proceeds only when the policy, the Entra scope
+  or app role, the NimBus role on the endpoint and the message state all allow it.
+
+The policy covers:
+
+| Setting | Effect |
+| --- | --- |
+| Serve the MCP endpoint | When off, every call gets `503 [Disabled]`. The protected-resource metadata keeps working. |
+| Raw payloads, mark reported, classify, resubmit, skip | A switched-off tool is removed from `tools/list` and from `permittedActions`; a direct call gets `[PermissionDenied] … turned off by an administrator`. The read tools have no switch. |
+| Unattended workloads | Whether app-only (`Nimbus.Observe`) tokens are accepted for the read tools. |
+| People | Everyone with a NimBus role, or only listed users and groups (email, user object id, or a group object id from the `groups` claim). Workloads are governed by the workload switch instead. |
+| Client applications | Any client Entra lets sign in, or only approved ones, matched on `azp` (then `appid`). Each approved client can be allowed or denied the tools that change messages. |
+| Endpoints | Hide endpoints from agents (they answer `[EndpointNotFound]`), and limit where agents may change messages. |
+| Limits | Lower the request and change limits below the deployment's values. |
+
+Callers refused by the people, client or workload rules get `403`. Refusals are audited as
+`McpAccessRefused` (at most one row per caller, client, reason and tool every 5 minutes per
+instance); every save is audited as `UpdateMcpSettings` with the list of changes.
+
+Changes apply without a restart: each instance re-reads the policy at most every 30 seconds, and
+the instance that saved it applies it at once. **Turn off now** turns the endpoint off on the
+latest saved policy, whatever revision the page last read. The policy fails closed: if it cannot
+be read, an instance keeps the last policy it loaded, and until it has loaded one at all it
+answers `503 [Unavailable]`. With no saved policy, everything the deployment allows is on, as
+before the tab existed.
+
+The policy is one record in shared storage (`IEndpointMetadataStore.GetMcpAccessSettings`;
+SQL Server migration `0023_McpAccessSettings.sql`, a fixed-id document in the Cosmos settings
+container). The API is `GET`/`PUT /api/admin/mcp/settings`, `POST /api/admin/mcp/turn-off` and
+`GET /api/admin/mcp/activity`.
+
 ## Local development (Aspire)
 
 With the NimBus Aspire AppHost (`src/NimBus.AppHost`) no setup is needed: it sets
@@ -198,7 +238,8 @@ can reach `/mcp`. Cloud-hosted agents need a path through the Application Gatewa
 
 `/mcp` has its own rate-limit policy, `nimbus-mcp`: 60 requests per 60 seconds, per tenant,
 client application and user. Tools that change a message are also limited to 5 per 60 seconds
-for the same caller (`RateLimiting:McpMutations`), and answer `[RateLimited]` beyond that. See
+for the same caller (`RateLimiting:McpMutations`), and answer `[RateLimited]` beyond that. A site
+Owner can lower both limits in Admin → MCP access, but not raise them. See
 [rate limiting](rate-limiting.md).
 
 ## Migrating from NimBus.Mcp

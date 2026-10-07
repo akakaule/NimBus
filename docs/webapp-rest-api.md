@@ -281,6 +281,14 @@ platform-config rotation, stale-Pending reconcile). The largest tag — 42
 operations. Treat with appropriate care; most operations require operator
 privileges.
 
+### McpAccess
+
+Admin → MCP access (Spec 037): `GET`/`PUT /api/admin/mcp/settings`,
+`POST /api/admin/mcp/turn-off` and `GET /api/admin/mcp/activity`. Site Owner only, under the
+`nimbus-admin` rate limit. The writes require the `X-NimBus-CSRF` antiforgery token that `GET`
+returns, and `PUT` is fenced by the policy revision (409 when stale). See
+[docs/mcp-server.md](mcp-server.md#managing-access-in-the-webapp).
+
 ### Message
 
 Search the message history (`/api/messages/search`). Cursor-paginated.
@@ -456,6 +464,8 @@ controller method that fires each one:
 | `ReconcileStalePending` | `AdminImplementation.PostAdminStalePendingReconcileAsync` — one row per invocation (request + counts as `Data`) plus one per repaired event |
 | `UpdateAuditSettings` | `AdminImplementation.PutAdminAuditSettingsAsync` — the disabled types as `Data`; always recorded |
 | `CommandNotSent`      | `OperatorCommandCoordinator` — a resubmit or skip was audited but publishing it failed, so the event was restored; always recorded |
+| `UpdateMcpSettings`   | `McpAccessImplementation.PutAdminMcpSettingsAsync` / `PostAdminMcpTurnOffAsync` — the revisions and the list of changes as `Data`; always recorded |
+| `McpAccessRefused`    | The operator MCP endpoint — a call refused by the Admin MCP access policy or for a missing scope, with `AccessDenied` set; deduplicated per caller, client, reason and tool for 5 minutes per instance |
 
 Resubmit, skip and resubmit-with-changes run through `OperatorCommandCoordinator`, shared with the
 operator MCP tools. Their `Data` records the channel (`WebApp` or `Mcp`), the reason and idempotency

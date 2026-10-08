@@ -90,7 +90,7 @@ flowchart LR
 
 ## Solution structure
 
-The solution in `src/NimBus.sln` is organized into three broad groups.
+The solution in `src/NimBus.slnx` is organized into three broad groups.
 
 ### 1. Deployable applications
 

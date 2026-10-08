@@ -22,10 +22,10 @@ full audit trail, a management WebApp (resubmit/skip), and declarative topology 
 ## Build & test
 
 ```bash
-dotnet build src/NimBus.sln                    # .NET 10
-dotnet test src/NimBus.sln
-dotnet build src/NimBus.sln -c Release         # what CI runs — do this before pushing
-dotnet test src/NimBus.sln -c Release --no-build
+dotnet build src/NimBus.slnx                    # .NET 10
+dotnet test src/NimBus.slnx
+dotnet build src/NimBus.slnx -c Release         # what CI runs — do this before pushing
+dotnet test src/NimBus.slnx -c Release --no-build
 npm --prefix src/NimBus.WebApp/ClientApp install   # Node.js 22
 npm --prefix src/NimBus.WebApp/ClientApp run test:ci
 npm --prefix src/NimBus.WebApp/ClientApp run build

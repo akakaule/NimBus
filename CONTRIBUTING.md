@@ -20,14 +20,14 @@ NimBus is MIT-licensed. By submitting a contribution you agree to license it und
 
 ## Development setup
 
-Requirements: **.NET 10 SDK** and **Node.js 22** (for the WebApp client).
+Requirements: **.NET 10 SDK**, **Azure Functions Core Tools** and **Node.js 22** (for the WebApp client).
 
 ```bash
 # From the repository root: build the whole solution
-dotnet build src/NimBus.sln
+dotnet build src/NimBus.slnx
 
 # Run all tests
-dotnet test src/NimBus.sln
+dotnet test src/NimBus.slnx
 
 # WebApp client
 npm --prefix src/NimBus.WebApp/ClientApp install
@@ -40,7 +40,7 @@ dotnet run --project src/NimBus.AppHost -- --UseEmulator true
 CI (`.github/workflows/dotnet.yml`) runs `restore` → `build --configuration Release` → `test` on every PR to `master`, including the SQL Server message-store conformance suite in a service container. **Reproduce failures locally by building Release**, since that's where compiler warnings become errors:
 
 ```bash
-dotnet build src/NimBus.sln --configuration Release
+dotnet build src/NimBus.slnx --configuration Release
 ```
 
 The local AppHost uses SQL Server in a container and can use the NimBus Service Bus emulator. A running Docker-compatible container runtime is required. See [Getting Started](docs/getting-started.md) for Azure and Cosmos alternatives. The WebApp builds its frontend during the .NET build; NSwag runs from its NuGet package without a local tool manifest.
@@ -104,8 +104,8 @@ NimBus has a deliberately narrow focus. Contributions that fit the direction are
 Before you open a PR, confirm:
 
 - [ ] There's a linked issue (for anything beyond a trivial fix), and the approach was agreed.
-- [ ] `dotnet build src/NimBus.sln --configuration Release` is clean (no warnings).
-- [ ] `dotnet test src/NimBus.sln` passes, and new/changed behavior has tests.
+- [ ] `dotnet build src/NimBus.slnx --configuration Release` is clean (no warnings).
+- [ ] `dotnet test src/NimBus.slnx` passes, and new/changed behavior has tests.
 - [ ] Public API changes have XML docs; removed API is bridged with `[Obsolete]`, not deleted.
 - [ ] Docs updated if behavior or configuration changed (and an ADR added if the change is architectural).
 - [ ] The PR is focused on one logical change with a Conventional-Commit title.

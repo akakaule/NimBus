@@ -108,15 +108,19 @@ internal sealed class AzureCliRunner : IAzureCliRunner
         return JsonDocument.Parse(payload);
     }
 
+    // Callers handle a failure themselves (often an expected one, like a show call that
+    // probes for a resource a fresh deployment lacks), so az's stderr is kept on the
+    // result rather than printed as an alarming "ERROR: (ResourceNotFound)".
     public Task<ProcessResult> TryRunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken) =>
-        RunAzAsync(arguments, cancellationToken, throwOnFailure: false, echoStandardOutput: false);
+        RunAzAsync(arguments, cancellationToken, throwOnFailure: false, echoStandardOutput: false, echoStandardError: false);
 
     private async Task<ProcessResult> RunAzAsync(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken,
         string? workingDirectory = null,
         bool throwOnFailure = true,
-        bool echoStandardOutput = true)
+        bool echoStandardOutput = true,
+        bool echoStandardError = true)
     {
         var allArguments = new List<string>(arguments.Count + 1);
         allArguments.AddRange(arguments);
@@ -129,6 +133,7 @@ internal sealed class AzureCliRunner : IAzureCliRunner
             processArguments,
             workingDirectory,
             echoStandardOutput,
+            echoStandardError,
             cancellationToken).ConfigureAwait(false);
         if (throwOnFailure && !result.Succeeded)
         {

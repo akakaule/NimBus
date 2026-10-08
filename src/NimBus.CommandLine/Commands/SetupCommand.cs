@@ -23,7 +23,7 @@ internal static class SetupCommand
             var resourceGroup = setupCommand.Option("--resource-group <NAME>", "Azure resource group name.", CommandOptionType.SingleValue).IsRequired();
             var repoRoot = setupCommand.Option("--repo-root <PATH>", "Repository root for a source build. Implies --from-source.", CommandOptionType.SingleValue);
             var setupFromSource = setupCommand.Option("--from-source", "Build the applications from a repository clone instead of deploying the published release artifacts.", CommandOptionType.NoValue);
-            var location = setupCommand.Option("--location <AZURE-REGION>", "Optional location override passed to the bicep templates.", CommandOptionType.SingleValue);
+            var location = setupCommand.Option("--location <AZURE-REGION>", "Azure region for new resources. Defaults to the resource group's region; existing resources keep theirs.", CommandOptionType.SingleValue);
             var resourceNamePostfix = setupCommand.Option("--resource-name-postfix <VALUE>", "Reserved for compatibility with the legacy pipeline scripts.", CommandOptionType.SingleValue);
             var webAppVersion = setupCommand.Option("--webapp-version <VALUE>", "Version string stored in the web app settings.", CommandOptionType.SingleValue);
             var configuration = setupCommand.Option("--configuration <NAME>", "Build configuration passed to dotnet publish.", CommandOptionType.SingleValue);

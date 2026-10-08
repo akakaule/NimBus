@@ -1,6 +1,8 @@
 param solutionId string
 param environment string = 'dev'
-param locationParam string = 'westeurope'
+// Region for new resources. Defaults to the resource group's region; existing resources
+// keep theirs through the per-resource overrides below.
+param locationParam string = resourceGroup().location
 param resolverId string
 
 // Deprecated and ignored. It used to seed the Elastic Premium content share name, which

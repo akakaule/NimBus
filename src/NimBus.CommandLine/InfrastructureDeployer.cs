@@ -48,7 +48,9 @@ internal sealed class InfrastructureDeployer
             cancellationToken).ConfigureAwait(false);
         if (!eventGridRegistration.Succeeded)
         {
-            CliOutput.WriteLine("Warning: could not register the Microsoft.EventGrid provider (requires subscription-level permission). Pre-register it once per subscription if you plan to use Event Grid storage hooks.");
+            CliOutput.WriteLine(
+                "Warning: could not register the Microsoft.EventGrid provider (requires subscription-level permission). Pre-register it once per subscription if you plan to use Event Grid storage hooks." +
+                $"{Environment.NewLine}{eventGridRegistration.StandardError}".TrimEnd());
         }
 
         if (!string.IsNullOrWhiteSpace(options.ResourceNamePostFix))
@@ -138,7 +140,7 @@ internal sealed class InfrastructureDeployer
         if (isPrivate)
         {
             NetworkSelection.ValidateManagementPlanSku(managementPlanSku);
-            privateNetwork = await ResolvePrivateNetworkAsync(options, network, names, resolverPlan, existingLocations, cancellationToken).ConfigureAwait(false);
+            privateNetwork = await ResolvePrivateNetworkAsync(options, network, names, resolverPlan, existingLocations, resourceGroup.Location, cancellationToken).ConfigureAwait(false);
             CliOutput.WriteLine(network.AllowPublicAccess
                 ? "Network mode: private-transition (private endpoints and VNet integration; public access stays on)."
                 : "Network mode: private (public network access off).");
@@ -590,9 +592,6 @@ internal sealed class InfrastructureDeployer
     private static string GetServiceBusFullyQualifiedNamespace(string namespaceName) =>
         $"{namespaceName}.servicebus.windows.net";
 
-    // Mirrors the locationParam default in both entry templates.
-    private const string DefaultLocation = "westeurope";
-
     private async Task<string?> ReadResolverContentShareAsync(string resourceGroupName, string functionAppName, CancellationToken cancellationToken)
     {
         var result = await _az.TryRunAsync(
@@ -706,6 +705,7 @@ internal sealed class InfrastructureDeployer
         DeploymentNames names,
         ResolverPlanChoice resolverPlan,
         IReadOnlyDictionary<string, string> existingLocations,
+        string? resourceGroupLocation,
         CancellationToken cancellationToken)
     {
         var vnetLocations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -713,15 +713,16 @@ internal sealed class InfrastructureDeployer
         var resolverSubnet = await DescribeSubnetAsync(network.ResolverSubnetId!, vnetLocations, cancellationToken).ConfigureAwait(false);
         var webAppSubnet = await DescribeSubnetAsync(network.WebAppSubnetId!, vnetLocations, cancellationToken).ConfigureAwait(false);
 
-        // Each app stays where it is (or where its plan is); a new one goes to --location.
+        // Each app stays where it is (or where its plan is); a new one goes to --location,
+        // else to the resource group's region, as the templates' locationParam default does.
         var resolverLocation = LocationOf(existingLocations, names.ResolverFunctionAppName)
             ?? LocationOf(existingLocations, names.CoreAppServicePlanName)
             ?? options.Location
-            ?? DefaultLocation;
+            ?? resourceGroupLocation;
         var webAppLocation = LocationOf(existingLocations, names.WebAppName)
             ?? LocationOf(existingLocations, names.ManagementAppServicePlanName)
             ?? options.Location
-            ?? DefaultLocation;
+            ?? resourceGroupLocation;
 
         NetworkSelection.ValidateSubnet(privateEndpointSubnet, SubnetRole.PrivateEndpoints, resolverPlan, appLocation: null);
         NetworkSelection.ValidateSubnet(resolverSubnet, SubnetRole.Resolver, resolverPlan, resolverLocation);

@@ -100,7 +100,7 @@ before they are released.
 | `--environment` | Yes | Environment name (dev, staging, prod) |
 | `--resource-group` | Yes | Azure resource group name |
 | `--repo-root` | No | Developer override: use the bicep templates in a repository clone instead of the ones shipped in the CLI |
-| `--location` | No | Azure region override |
+| `--location` | No | Azure region for new resources. Default: the resource group's region |
 | `--webapp-version` | No | Version string for web app settings |
 | `--storage-provider` | No | Storage backend: `cosmos` (default) or `sqlserver` |
 | `--sql-mode` | No | When `--storage-provider sqlserver`: `provision` (default, creates a new Azure SQL server + DB) or `external` (use an existing SQL Server) |
@@ -150,7 +150,7 @@ cancellation.
 
 Deploys core infrastructure (Service Bus, App Insights, and either Cosmos DB or Azure SQL depending on `--storage-provider`) and the web app infrastructure via bicep. The provisioned SQL path uses AAD managed-identity auth (`Authentication=Active Directory Default`); the external path uses the supplied connection string verbatim. Resolves required resource endpoints/namespace settings. It creates no Application Insights API key: the WebApp queries Application Insights with its managed identity, which the web app template grants Reader on the component ([details](authentication.md#application-insights-log-queries)).
 
-**Existing-resource location pinning.** Before deploying, the CLI lists the resources already in the target resource group and pins each known NimBus resource (Service Bus, App Insights, Cosmos, SQL Server, function storage, app service plans, function app, web app) to its current location. This avoids the `InvalidResourceLocation` error Azure raises when a same-named resource already exists in another region. Net-new resources still use `--location` (or `westeurope` if unset). To actually move a resource between regions, delete it first.
+**Existing-resource location pinning.** Before deploying, the CLI lists the resources already in the target resource group and pins each known NimBus resource (Service Bus, App Insights, Cosmos, SQL Server, function storage, app service plans, function app, web app) to its current location. This avoids the `InvalidResourceLocation` error Azure raises when a same-named resource already exists in another region. Net-new resources use `--location`, or the resource group's region if unset. To actually move a resource between regions, delete it first.
 
 **Existing-plan pinning.** The same applies to hosting plans: an existing core App Service Plan pins the resolver plan type (Azure cannot convert between Elastic Premium and Flex Consumption in place), and an existing management plan pins its SKU so re-runs never silently rescale it. Explicit `--resolver-plan` / `--management-plan-sku` flags win; a `--resolver-plan` that conflicts with the existing plan type fails with guidance (delete both the resolver Function App and the core plan first).
 

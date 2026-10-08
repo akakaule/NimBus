@@ -22,7 +22,9 @@ param cosmosAccountEndpoint string = ''
 @secure()
 param sqlConnectionString string = ''
 param serviceBusFullyQualifiedNamespace string
-param locationParam string = 'westeurope'
+// Region for new resources. Defaults to the resource group's region; existing resources
+// keep theirs through the per-resource overrides below.
+param locationParam string = resourceGroup().location
 
 // Optional bootstrap admin for NimBus.Extensions.Identity. When both are set AND
 // the active storage provider is SQL Server, the WebApp is configured to use

@@ -81,6 +81,13 @@ Deploying your own event catalog rather than the built-in demo one means adding 
 
 To deploy unreleased changes from a working tree, add `--from-source --repo-root .` from a clone.
 
+New resources go to the resource group's region unless you pass `--location`; resources that already exist keep their region.
+
+**Configure WebApp sign-in.** The deployment creates no Entra app registration, and the WebApp refuses to start until it has a sign-in method. Choose one:
+
+- **Username and password** (SQL Server storage): add `--identity-admin-email <email>` with `NIMBUS_IDENTITY_ADMIN_PASSWORD` set ([details](authentication.md#on-azure-via-the-nb-cli)).
+- **Microsoft Entra ID**: register an app with the web redirect URI `https://<webapp-host>/.auth/login/aad/callback` (the WebApp's default `AzureAd:CallbackPath`), then set the WebApp app settings `AzureAd__TenantId`, `AzureAd__ClientId`, `AzureAd__Domain` and, for a confidential client, `AzureAd__ClientSecret` ([reference](authentication.md#configuration-reference)). Later `nb setup` runs keep these settings.
+
 ## Path 2: GitHub Actions
 
 The repository ships [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) — a manually triggered (`workflow_dispatch`) workflow that logs in with OIDC (no stored secrets) and runs `infra apply` → `topology apply` → `deploy apps`.
@@ -236,6 +243,7 @@ Neither needs a repository clone: `nb deploy apps` deploys the Resolver and WebA
 | Symptom | Cause / fix |
 |---|---|
 | `The existing core App Service Plan is X but --resolver-plan requested Y` | Azure cannot convert ElasticPremium ↔ FlexConsumption in place. Delete the resolver Function App **and** the core plan, then redeploy. |
+| WebApp fails to start: `No sign-in method is configured for the NimBus WebApp` | No Entra or username/password sign-in is configured. See [Configure WebApp sign-in](#path-1-one-command). |
 | `InvalidResourceLocation` / region errors | A same-named resource exists in another region. The CLI pins existing resources automatically; raw-Bicep users must pass the per-resource `*Location` override params. To actually move a resource, delete it first. |
 | `Failed to register Azure provider` warning | The identity lacks subscription-level `/register` permission. Harmless unless you use Event Grid storage hooks — then pre-register once per subscription (see Prerequisites). |
 | SQL server name conflict after deleting an environment | Azure SQL server DNS names are held globally for 24–72 h after deletion. Use `--sql-server-name` (or the `sqlServerName` param) to pick a fresh name. |

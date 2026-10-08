@@ -73,6 +73,23 @@ public sealed class DeploymentSecretTests
         Assert.Equal(new[] { false, false }, processRunner.EchoStandardOutputValues);
     }
 
+    /// <summary>
+    /// TryRunAsync backs existence probes such as "servicebus namespace show" on a fresh
+    /// deployment, whose expected failure used to print "ERROR: (ResourceNotFound)". Its
+    /// callers handle the failure; the stderr stays on the result.
+    /// </summary>
+    [Fact]
+    public async Task TryRun_DoesNotEchoStandardError_WhileOtherCommandsDo()
+    {
+        var processRunner = new RecordingProcessRunner("output");
+        var azureCli = new AzureCliRunner(processRunner);
+
+        await azureCli.CaptureValueAsync(new[] { "example", "capture" }, CancellationToken.None, "capture failed");
+        await azureCli.TryRunAsync(new[] { "example", "try" }, CancellationToken.None);
+
+        Assert.Equal(new[] { true, false }, processRunner.EchoStandardErrorValues);
+    }
+
     [Fact]
     public async Task ProcessRunner_CapturesWithoutEchoingStandardOutput()
     {
@@ -95,6 +112,34 @@ public sealed class DeploymentSecretTests
         finally
         {
             Console.SetOut(originalOut);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProcessRunner_EchoesStandardErrorOnlyWhenAsked(bool echoStandardError)
+    {
+        var originalError = Console.Error;
+        using var consoleError = new StringWriter();
+        try
+        {
+            Console.SetError(consoleError);
+            var result = await new ProcessRunner().RunAsync(
+                "dotnet",
+                new[] { "nimbus-no-such-command" },
+                workingDirectory: null,
+                echoStandardOutput: false,
+                echoStandardError,
+                CancellationToken.None);
+
+            Assert.False(result.Succeeded);
+            Assert.False(string.IsNullOrWhiteSpace(result.StandardError));
+            Assert.Equal(echoStandardError, consoleError.ToString().Contains(result.StandardError.Trim(), StringComparison.Ordinal));
+        }
+        finally
+        {
+            Console.SetError(originalError);
         }
     }
 
@@ -228,14 +273,18 @@ public sealed class DeploymentSecretTests
 
         public List<bool> EchoStandardOutputValues { get; } = new();
 
+        public List<bool> EchoStandardErrorValues { get; } = new();
+
         public Task<ProcessResult> RunAsync(
             string fileName,
             IReadOnlyList<string> arguments,
             string? workingDirectory,
             bool echoStandardOutput,
+            bool echoStandardError,
             CancellationToken cancellationToken)
         {
             EchoStandardOutputValues.Add(echoStandardOutput);
+            EchoStandardErrorValues.Add(echoStandardError);
             return Task.FromResult(new ProcessResult(0, _standardOutput, string.Empty));
         }
     }

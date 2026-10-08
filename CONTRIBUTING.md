@@ -112,7 +112,7 @@ Before you open a PR, confirm:
 
 ## Review & merge
 
-A maintainer will review for design fit, correctness, tests, and the conventions above. Expect a round or two of feedback — it's normal. Once approved and green, a maintainer merges to `master`. Releases are published as `Akaule.NimBus.*` packages separately.
+A maintainer will review for design fit, correctness, tests, and the conventions above. Expect a round or two of feedback — it's normal. Once approved and green, a maintainer adds the PR to the `master` merge queue. The queue re-runs CI on top of the latest `master`, so you don't need to keep your branch up to date yourself. Releases are published as `Akaule.NimBus.*` packages separately.
 
 ## Questions
 

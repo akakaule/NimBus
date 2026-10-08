@@ -8,6 +8,10 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  # The org ruleset requires PR branches to be up to date with master. The master merge
+  # queue meets that by testing each queued PR on top of master, so "ci" must also run
+  # for merge groups or queued PRs never get the check.
+  merge_group:
 
 jobs:
   build:

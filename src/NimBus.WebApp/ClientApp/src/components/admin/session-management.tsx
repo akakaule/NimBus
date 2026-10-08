@@ -37,8 +37,8 @@ export default function SessionManagement() {
   return <SessionPurgeCard endpoints={endpoints} />;
 }
 
-export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selectedEndpoint, setSelectedEndpoint] = useState<string[]>([]);
+export function SessionPurgeCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selectedEndpoint, setSelectedEndpoint] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [sessionId, setSessionId] = useState("");
   const [preview, setPreview] = useState<api.SessionPurgePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -280,6 +280,7 @@ export function SessionPurgeCard({ endpoints }: { endpoints: EndpointOption[] })
         onClose={() => setShowConfirm(false)}
         onConfirm={handlePurge}
         title="Purge Session"
+        confirmLabel="Purge session"
         description={`This will remove all active messages, deferred messages (including Deferred subscription), stored events, and clear the session state for "${confirmText}".`}
         confirmText={confirmText}
         isLoading={purging}

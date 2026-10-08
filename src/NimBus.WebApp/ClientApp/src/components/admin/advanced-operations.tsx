@@ -52,8 +52,8 @@ export default function AdvancedOperations() {
 
 // ──────────────────── Subscription Purge ────────────────────────
 
-export function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function SubscriptionPurgeCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [subscription, setSubscription] = useState("");
   const [purgeActive, setPurgeActive] = useState(true);
   const [purgeDeferred, setPurgeDeferred] = useState(true);
@@ -148,7 +148,7 @@ export function SubscriptionPurgeCard({ endpoints }: { endpoints: EndpointOption
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Purge Subscription Messages" description={`This will purge ${preview?.totalMatching ?? 0} messages from endpoint "${selected[0] ?? ""}".`}
+            title="Purge Subscription Messages" confirmLabel="Purge subscription" description={`This will purge ${preview?.totalMatching ?? 0} messages from endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -166,8 +166,8 @@ const ALL_STATUSES: api.AdminDeleteStatus[] = [
   api.AdminDeleteStatus.Pending,
 ];
 
-export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function DeleteByStatusCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [statuses, setStatuses] = useState<Set<api.AdminDeleteStatus>>(new Set());
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -248,7 +248,7 @@ export function DeleteByStatusCard({ endpoints }: { endpoints: EndpointOption[] 
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Delete Events by Status" description={`This will delete ${previewCount ?? 0} events with status [${Array.from(statuses).join(", ")}] from endpoint "${selected[0] ?? ""}".`}
+            title="Delete Events by Status" confirmLabel="Delete events" description={`This will delete ${previewCount ?? 0} events with status [${Array.from(statuses).join(", ")}] from endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -268,8 +268,8 @@ const SKIPPABLE_STATUSES: api.AdminSkipSourceStatus[] = [
   api.AdminSkipSourceStatus.Published,
 ];
 
-export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function SkipMessagesCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [statuses, setStatuses] = useState<Set<api.AdminSkipSourceStatus>>(new Set());
   const [before, setBefore] = useState("");
   const [previewCount, setPreviewCount] = useState<number | null>(null);
@@ -358,7 +358,7 @@ export function SkipMessagesCard({ endpoints }: { endpoints: EndpointOption[] })
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Skip Messages" description={`This will mark ${previewCount ?? 0} events as Skipped on endpoint "${selected[0] ?? ""}".`}
+            title="Skip Messages" confirmLabel="Skip messages" tone="primary" description={`This will mark ${previewCount ?? 0} events as Skipped on endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -434,7 +434,7 @@ export function DeleteMessagesByToCard() {
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Delete Messages by To" description={`This will delete ${previewCount ?? 0} messages where To="${toField}".`}
+            title="Delete Messages by To" confirmLabel="Delete messages" description={`This will delete ${previewCount ?? 0} messages where To="${toField}".`}
             confirmText={toField} isLoading={executing} />
         </div>
       </CardContent>
@@ -444,8 +444,8 @@ export function DeleteMessagesByToCard() {
 
 // ──────────────────── Copy Endpoint Data ────────────────────────
 
-export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function CopyEndpointCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [targetConnStr, setTargetConnStr] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -529,7 +529,7 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
           )}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Copy Endpoint Data" description={`This will copy data from endpoint "${selected[0] ?? ""}" to the target instance.`}
+            title="Copy Endpoint Data" confirmLabel="Copy data" description={`This will copy data from endpoint "${selected[0] ?? ""}" to the target instance.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>
@@ -539,8 +539,8 @@ export function CopyEndpointCard({ endpoints }: { endpoints: EndpointOption[] })
 
 // ──────────────────── Delete All Events ────────────────────────
 
-export function DeleteAllEventsCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function DeleteAllEventsCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
   const [executing, setExecuting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -576,7 +576,7 @@ export function DeleteAllEventsCard({ endpoints }: { endpoints: EndpointOption[]
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Delete All Events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire storage container will be removed. This action cannot be undone.`}
+            title="Delete All Events" confirmLabel="Delete all events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire storage container will be removed. This action cannot be undone.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>

@@ -25,6 +25,8 @@ afterEach(() => cleanup());
 describe("Topbar breadcrumbs", () => {
   it.each([
     ["/Operations", "Operations"],
+    ["/Operations/resubmit", "Operations/Bulk resubmit failed"],
+    ["/Operations/all", "Operations/Delete all events"],
     ["/Topology", "Topology"],
     ["/Topology/subscriptions", "Topology/Subscriptions"],
     ["/Topology/drift", "Topology/Catalog drift"],

@@ -122,6 +122,18 @@ public partial class Startup
         }
         else
         {
+            // Without a ClientId this branch still starts, then every request (anonymous
+            // ones included) fails with Microsoft.Identity.Web's IDW10106 when the OIDC
+            // handler initializes. Fail at startup instead, naming the settings to fix.
+            if (!hasEntraId)
+            {
+                throw new InvalidOperationException(
+                    "No sign-in method is configured for the NimBus WebApp. Set AzureAd:ClientId and AzureAd:TenantId " +
+                    "(app settings AzureAd__ClientId, AzureAd__TenantId) for Microsoft Entra ID sign-in, or " +
+                    "NimBusIdentity:ConnectionString for username/password sign-in. For local development only, set " +
+                    "EnableLocalDevAuthentication=true in the Development environment. See docs/authentication.md.");
+            }
+
             // Entra ID only (original behavior)
             services
             .AddAuthentication("Az")

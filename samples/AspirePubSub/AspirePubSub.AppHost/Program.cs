@@ -13,6 +13,8 @@ var resolver = builder.AddProject<Projects.AspirePubSub_ResolverWorker>("resolve
 
 var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
     .WithReference(servicebus)
+    // Local-dev sign-in bypass (Development only), so no Entra app registration is needed.
+    .WithEnvironment("EnableLocalDevAuthentication", "true")
     .WaitFor(provisioner).WithExternalHttpEndpoints();
 
 if (storageProvider == "sqlserver")

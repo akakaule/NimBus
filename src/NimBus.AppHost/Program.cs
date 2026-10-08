@@ -105,8 +105,8 @@ var webapp = builder.AddProject<Projects.NimBus_WebApp>("webapp")
     .WithReference(servicebus)
     .WithExternalHttpEndpoints()
     // Operator MCP endpoint (Spec 035) at <webapp>/mcp. The WebApp maps it only when its
-    // local-dev bypass is on (EnableLocalDevAuthentication in the developer's
-    // appsettings.Development.json), so no sign-in is needed; otherwise it stays off.
+    // local-dev bypass is on (set below unless Identity sign-in is enabled), so no
+    // sign-in is needed; otherwise it stays off.
     .WithEnvironment("NimBus__Mcp__EnableForLocalDevelopment", "true")
     .WaitForCompletion(provisioner);
 
@@ -163,6 +163,14 @@ if (identityEnabled)
     Console.WriteLine(
         $"Local Identity: enabled. Sign in at /account/login as {adminEmail} " +
         "(override with NIMBUS_IDENTITY_ADMIN_EMAIL / NIMBUS_IDENTITY_ADMIN_PASSWORD).");
+}
+else
+{
+    // Local-dev sign-in bypass. A fresh clone has no WebApp sign-in configured (its
+    // appsettings.Development.json is gitignored), so without this the WebApp refuses
+    // to start. Aspire runs the WebApp in Development, the only environment in which
+    // the WebApp honors this flag. Matches CrmErpDemo.AppHost.
+    webapp.WithEnvironment("EnableLocalDevAuthentication", "true");
 }
 
 if (simulationEnabled)

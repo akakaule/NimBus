@@ -212,12 +212,14 @@ configured):
 | `AzureAd:CallbackPath` | yes | Typically `/signin-oidc` |
 | `AzureAd:ClientSecret` | conditional | Confidential client; can be replaced by a federated credential |
 
-When neither Identity nor Entra is configured, `Startup.cs` calls
-`AddMicrosoftIdentityWebAppAuthentication(Configuration, "AzureAd")`
-which then fails on the first request with `IDW10106: The 'ClientId'
-option must be provided`. The fix is to configure one provider — pick
-Identity for SQL-backed deployments without an Entra registration,
-otherwise Entra.
+When no provider is configured (no local-dev bypass, no Identity and an
+empty `AzureAd:ClientId`), the WebApp refuses to start with
+`No sign-in method is configured for the NimBus WebApp`. Before this
+check it started and then failed every request with `IDW10106: The
+'ClientId' option must be provided`. The fix is to configure one
+provider: Identity for SQL-backed deployments without an Entra
+registration, otherwise Entra. The Aspire AppHosts turn on the local-dev
+bypass themselves unless Identity is enabled.
 
 ## Application Insights log queries
 

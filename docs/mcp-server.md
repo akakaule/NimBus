@@ -183,13 +183,19 @@ In the tenant that signs in your operators:
    app role grants payload access or changes messages.
 6. **Token configuration** (optional): add the `groups` claim if your NimBus role grants use Entra
    groups. Grants keyed by object id or email work without it.
-7. **Register the MCP clients you allow.** Entra does not support dynamic client registration, so
-   every MCP client needs a client id of its own. For a desktop client such as Claude Code, create
-   a second single-tenant app registration with a **Mobile and desktop** redirect URI on the
-   client's loopback callback (for Claude Code `http://localhost:<port>/callback`, with the port
-   you pass as `--callback-port`) and **Allow public client flows** turned on; it needs no secret.
-   Then, on the MCP resource, pre-authorize that client id for `nimbus.observe`, and for the other
-   scopes only where needed, or grant consent for them.
+7. **Register an MCP client.** Entra does not support dynamic client registration, so every MCP
+   client needs a client id of its own. Do not use the MCP resource's client id from step 1.1 (the
+   WebApp shows it as **MCP resource (API) app ID**): it has no redirect URI, so Entra refuses the
+   sign-in with `AADSTS500113: No reply address is registered for the application`. For a desktop
+   client such as Claude Code, create a second single-tenant app registration, for example
+   `NimBus MCP Client (dev)`:
+   - **Authentication:** add a **Mobile and desktop** redirect URI on the client's loopback
+     callback. For Claude Code that is `http://localhost:<port>/callback`, where `<port>` is the
+     port you pass as `--callback-port`; pick any free port, but it must match exactly.
+   - Turn on **Allow public client flows**. The client needs no secret.
+   - On the MCP resource (**Expose an API → Authorized client applications**), pre-authorize the
+     client id for `nimbus.observe`, and for the other scopes only where needed, or grant consent
+     for them.
 
 The endpoint accepts v2.0 tokens (issuer `https://login.microsoftonline.com/<tenant>/v2.0`,
 audience the client id) and v1.0 tokens (issuer `https://sts.windows.net/<tenant>/`, audience the
@@ -203,7 +209,7 @@ Set these app settings on the management WebApp:
 | --- | --- |
 | `NimBus__Mcp__Enabled` | `true` |
 | `NimBus__Mcp__Entra__TenantId` | Tenant id |
-| `NimBus__Mcp__Entra__ClientId` | The MCP app registration's client id |
+| `NimBus__Mcp__Entra__ClientId` | The MCP resource's client id from step 1.1, not a client from step 1.7 |
 | `NimBus__Mcp__Entra__ApplicationIdUri` | Only if you changed it from `api://<client-id>`. The scopes' identifier, not the endpoint URL from step 1.3 |
 | `NimBus__Mcp__Entra__Instance` | Only for a sovereign cloud; default `https://login.microsoftonline.com/` |
 | `NimBus__Mcp__AllowedOrigins__0` | Only for browser-based MCP clients: their origin |
@@ -223,12 +229,15 @@ keys, rather than serving an unauthenticated endpoint.
 - `POST https://<webapp>/mcp` without a token returns `401` with a `WWW-Authenticate` header that
   points at that metadata.
 - An MCP client that signs in with the `nimbus.observe` scope can call `nimbus_get_capabilities`.
-  For Claude Code, add the server with the client registration from step 1.7, then run `/mcp` in
-  a `claude` session and authenticate `nimbus` in the browser:
+  For Claude Code, add the server with the client registration from step 1.7 and the port of its
+  redirect URI, then run `/mcp` in a `claude` session and authenticate `nimbus` in the browser:
 
   ```bash
   claude mcp add --transport http --client-id <mcp-client-app-id> --callback-port <port> nimbus https://<webapp>/mcp
   ```
+
+  The WebApp's **Settings → MCP access → Connect** tab shows this command, filled with an approved
+  client when the policy approves specific clients.
 
 - With a write scope and Contributor, `nimbus_get_capabilities` lists the action in
   `permittedActions`. After you add a scope to the registration, sign in again so the token

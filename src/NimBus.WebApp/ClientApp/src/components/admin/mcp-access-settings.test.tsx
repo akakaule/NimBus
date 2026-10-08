@@ -62,6 +62,42 @@ describe("MCP access settings in the Settings panel", () => {
     expect(screen.getByText("01 · Activation")).toBeTruthy();
   });
 
+  it("labels the configured Entra app as the MCP resource, not a client", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "overview");
+
+    const label = await screen.findByText("MCP resource (API) app ID");
+    expect(label.nextElementSibling?.textContent).toBe("mcp-app");
+    expect(screen.queryByText(/MCP app \(client\) ID/)).toBeNull();
+  });
+
+  it("explains that the connect command needs a separate client registration", async () => {
+    mockFetch(Response.json(state()), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "connect");
+
+    const command = await screen.findByText(/claude mcp add/);
+    expect(command.textContent).toContain("--client-id <client-id> --callback-port <port>");
+    expect(command.textContent).not.toContain("33418");
+    const help = screen.getByText(/not the MCP resource \(API\) app ID/);
+    expect(help.textContent).toContain("http://localhost:<port>/callback");
+    expect(help.textContent).toContain("nimbus.*");
+  });
+
+  it("fills the connect command with an approved client and flags the resource ID used as a client", async () => {
+    const approved = (clientId: string) => ({ ...settings(), clients: { mode: "approved" as const, approved: [{ clientId, name: "Claude", mayChange: false }] } });
+    mockFetch(Response.json(state({ saved: approved("5e39b51a-a6f6-4242-83b8-4f27bd96c2b0") })), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "connect");
+
+    expect((await screen.findByText(/claude mcp add/)).textContent).toContain("--client-id 5e39b51a-a6f6-4242-83b8-4f27bd96c2b0");
+    expect(screen.queryByText(/AADSTS500113/)).toBeNull();
+
+    cleanup();
+    mockFetch(Response.json(state({ saved: approved("MCP-APP") })), Response.json(activity));
+    renderInPanel(<McpAccessSettings />, "mcp", "connect");
+
+    expect((await screen.findByText(/AADSTS500113/)).textContent).toMatch(/is the MCP resource/);
+  });
+
   it("counts unsaved changes and reviews them from the footer, replacing the tabs", async () => {
     mockFetch(Response.json(state()), Response.json(activity));
     const { onDirtyChange } = renderInPanel(<McpAccessSettings />, "mcp", "permissions");

@@ -188,7 +188,7 @@ export default function McpAccessSettings() {
                       <dt className="text-muted-foreground">Mode</dt><dd>Local-dev bypass: every call runs as Local Developer, loopback only</dd>
                     </> : <>
                       <dt className="text-muted-foreground">Tenant</dt><dd className="font-mono text-xs break-all">{deployment.tenantId ?? "not set"}</dd>
-                      <dt className="text-muted-foreground">MCP app (client) ID</dt><dd className="font-mono text-xs break-all">{deployment.clientId ?? "not set"}</dd>
+                      <dt className="text-muted-foreground">MCP resource (API) app ID</dt><dd className="font-mono text-xs break-all">{deployment.clientId ?? "not set"}</dd>
                       <dt className="text-muted-foreground">Application ID URI</dt><dd className="font-mono text-xs break-all">{deployment.applicationIdUri ?? "—"}</dd>
                       <dt className="text-muted-foreground">Browser origins</dt><dd className="text-xs">{deployment.allowedOrigins.length ? deployment.allowedOrigins.join(", ") : "none (desktop and CLI clients only)"}</dd>
                     </>}
@@ -547,7 +547,8 @@ function ConnectCard({ draft, state }: { draft: McpSettings; state: McpState }) 
   }
   const command = d.mode === "localDevelopment"
     ? `claude mcp add --transport http nimbus ${d.endpointUrl}`
-    : `claude mcp add --transport http \\\n  --client-id ${selected} --callback-port 33418 \\\n  nimbus ${d.endpointUrl}`;
+    : `claude mcp add --transport http \\\n  --client-id ${selected} --callback-port <port> \\\n  nimbus ${d.endpointUrl}`;
+  const resourceAsClient = !!d.clientId && selected.toLowerCase() === d.clientId.toLowerCase();
   return (
     <Card><CardHeader><CardTitle>Connect an agent</CardTitle></CardHeader><CardContent className="space-y-3 pt-4">
       {clients.length > 1 && (
@@ -557,6 +558,12 @@ function ConnectCard({ draft, state }: { draft: McpSettings; state: McpState }) 
       )}
       <pre className="overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-amber-100">{command}</pre>
       <Button type="button" size="sm" variant="outline" onClick={() => void navigator.clipboard?.writeText(command.replace(/\\\n\s*/g, ""))}>Copy command</Button>
+      {d.mode === "entra" && <p className="text-xs text-muted-foreground">
+        <code>--client-id</code> is an MCP client app registration, not the MCP resource (API) app ID under Sign-in: a public client
+        with the redirect URI <code>http://localhost:&lt;port&gt;/callback</code>, the same port as <code>--callback-port</code>, pre-authorized
+        on the MCP resource for the <code>nimbus.*</code> scopes it needs.
+      </p>}
+      {resourceAsClient && <p className="text-xs text-status-danger">This client ID is the MCP resource, which has no redirect URI: Entra refuses its sign-in with AADSTS500113. Approve a separate client registration.</p>}
       <p className="text-xs text-muted-foreground">{d.mode === "localDevelopment"
         ? "No sign-in. Works only on this machine while the Aspire AppHost runs."
         : "Then run /mcp in a claude session and sign in as yourself. Agents act as the person who signs in; there are no shared keys."}</p>

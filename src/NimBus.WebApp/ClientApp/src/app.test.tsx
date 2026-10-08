@@ -42,4 +42,17 @@ describe("App", () => {
       await screen.findByRole("heading", { level: 1, name: "Operations" }, { timeout: 5000 }),
     ).toBeTruthy();
   });
+
+  // Spec 038 §5.2: each operation has its own URL.
+  it("routes an operation's URL to the Operations page", async () => {
+    render(
+      <MemoryRouter initialEntries={["/Operations/dlq"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Operations" }, { timeout: 5000 }),
+    ).toBeTruthy();
+  });
 });

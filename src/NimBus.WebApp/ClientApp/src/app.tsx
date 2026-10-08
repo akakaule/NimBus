@@ -119,7 +119,7 @@ const navigation: Navigation = [
   },
   {
     name: "Operations",
-    path: "/Operations",
+    path: "/Operations/:operation?",
     header: true,
     render: () => <Operations />,
   },

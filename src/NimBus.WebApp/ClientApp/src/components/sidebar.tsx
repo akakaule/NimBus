@@ -18,6 +18,8 @@ interface NavItem {
   badge?: string;
   /** Optional attention count — rendered as a status-danger pill when above zero. */
   count?: number;
+  /** Endpoints with receive paused — rendered as a status-warning pill when above zero. */
+  paused?: number;
 }
 
 interface NavGroup {
@@ -301,7 +303,12 @@ const NAV: NavGroup[] = [
   {
     label: "Manage",
     items: [
-      { name: "Operations", path: "/Operations", icon: Icon.operations },
+      {
+        name: "Operations",
+        path: "/Operations",
+        matchPrefix: "/Operations",
+        icon: Icon.operations,
+      },
       {
         name: "Topology",
         path: "/Topology",
@@ -370,8 +377,15 @@ const FAILED_POLL_MS = 60_000;
 
 // Unresolved failures (Failed + DeadLettered + Unsupported) across all endpoints, for the
 // Failed item's attention badge. Fail-soft: no badge when the counts can't be read.
-const useFailedBacklog = (): number | undefined => {
-  const [count, setCount] = useState<number>();
+// Spec 038 §5.1: endpoints whose receive is disabled. A null subscriptionStatus is
+// "unknown" (the metadata probe failed), never paused. Send status is not in this
+// payload, so send-paused endpoints show on the Operations page only.
+const pausedEndpoints = (counts: api.EndpointStatusCount[]): number =>
+  counts.filter((c) => c.subscriptionStatus === "disabled").length;
+
+// One poll feeds both the Failed and the Operations badge.
+const useFailedBacklog = (): { failed?: number; paused?: number } => {
+  const [count, setCount] = useState<{ failed?: number; paused?: number }>({});
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -380,7 +394,7 @@ const useFailedBacklog = (): number | undefined => {
           api.CookieAuth(),
         ).getEndpointStatusCountAll();
         if (cancelled || !Array.isArray(counts)) return;
-        setCount(failureBacklog(counts));
+        setCount({ failed: failureBacklog(counts), paused: pausedEndpoints(counts) });
       } catch {
         // No badge rather than a broken sidebar.
       }
@@ -431,11 +445,15 @@ const LogoMark = ({ size = 22 }: { size?: number }) => (
 
 const Sidebar = () => {
   const env = useEnv();
-  const failedBacklog = useFailedBacklog();
+  const backlog = useFailedBacklog();
   const nav = useVisibleNav().map((group) => ({
     ...group,
     items: group.items.map((item) =>
-      item.path === "/Failed" ? { ...item, count: failedBacklog } : item,
+      item.path === "/Failed"
+        ? { ...item, count: backlog.failed }
+        : item.path === "/Operations"
+          ? { ...item, paused: backlog.paused }
+          : item,
     ),
   }));
 
@@ -496,6 +514,14 @@ const Sidebar = () => {
                     aria-label={`${item.count} unresolved failures`}
                   >
                     {item.count!.toLocaleString()}
+                  </span>
+                )}
+                {(item.paused ?? 0) > 0 && (
+                  <span
+                    className="ml-auto font-mono text-[10px] px-1.5 py-px rounded-full font-bold bg-status-warning-50 text-status-warning-ink"
+                    aria-label={`${item.paused} ${item.paused === 1 ? "endpoint" : "endpoints"} paused`}
+                  >
+                    {item.paused!.toLocaleString()} paused
                   </span>
                 )}
                 {item.badge && (

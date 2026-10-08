@@ -7,7 +7,7 @@ normal Azure Service Bus topology, a NimBus event handler consumes it, and a con
 `Azure.Messaging.ServiceBus`.
 
 This sample is self-contained (its own solution file, own folder) and is **not** part of
-`src/NimBus.sln` or CI. See [ADR-013](../../docs/adr/013-cloudevents-interoperability.md) for the
+`src/NimBus.slnx` or CI. See [ADR-013](../../docs/adr/013-cloudevents-interoperability.md) for the
 design rationale.
 
 ## The 4-step flow
@@ -92,7 +92,7 @@ event that both the NimBus subscriber and the non-NimBus consumer receive indepe
 dotnet build CloudEventsInterop.slnx
 ```
 
-This solution is separate from `src/NimBus.sln` and is not referenced by it; NimBus source is
+This solution is separate from `src/NimBus.slnx` and is not referenced by it; NimBus source is
 pulled in via `ProjectReference` so the sample always builds against the current SDK.
 
 ## Seeing native vs. CloudEvents side by side

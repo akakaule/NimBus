@@ -1,0 +1,135 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Core/">
+    <Project Path="NimBus.Abstractions/NimBus.Abstractions.csproj" />
+    <Project Path="NimBus.Core/NimBus.Core.csproj" />
+    <Project Path="NimBus.SDK/NimBus.SDK.csproj" />
+    <Project Path="NimBus/NimBus.csproj" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="../docs/architecture.md" />
+    <File Path="../docs/deferred-messages.md" />
+    <File Path="../docs/extensions.md" />
+    <File Path="../docs/message-flows.md" />
+    <File Path="../docs/pipeline-middleware.md" />
+  </Folder>
+  <Folder Name="/Extensions/">
+    <Project Path="NimBus.Extensions.Identity/NimBus.Extensions.Identity.csproj" />
+    <Project Path="NimBus.Extensions.Notifications/NimBus.Extensions.Notifications.csproj" />
+  </Folder>
+  <Folder Name="/Hosting/">
+    <Project Path="NimBus.AppHost/NimBus.AppHost.csproj" />
+    <Project Path="NimBus.ServiceDefaults/NimBus.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/Management/">
+    <Project Path="NimBus.CommandLine/NimBus.CommandLine.csproj" />
+    <Project Path="NimBus.WebApp/NimBus.WebApp.csproj" />
+  </Folder>
+  <Folder Name="/MessageStore/">
+    <Project Path="NimBus.MessageStore.Abstractions/NimBus.MessageStore.Abstractions.csproj" />
+    <Project Path="NimBus.MessageStore.CosmosDb/NimBus.MessageStore.CosmosDb.csproj" />
+    <Project Path="NimBus.MessageStore.SqlServer/NimBus.MessageStore.SqlServer.csproj" />
+    <Project Path="NimBus.Resolver/NimBus.Resolver.csproj" />
+  </Folder>
+  <Folder Name="/Observability/">
+    <Project Path="../tests/NimBus.OpenTelemetry.Tests/NimBus.OpenTelemetry.Tests.csproj" />
+    <Project Path="NimBus.OpenTelemetry/NimBus.OpenTelemetry.csproj" />
+  </Folder>
+  <Folder Name="/Outbox/">
+    <Project Path="NimBus.Outbox.SqlServer/NimBus.Outbox.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/Samples/" />
+  <Folder Name="/Samples/AspirePubSub/">
+    <Project Path="../samples/AspirePubSub/AspirePubSub.AppHost/AspirePubSub.AppHost.csproj" />
+    <Project Path="../samples/AspirePubSub/AspirePubSub.Provisioner/AspirePubSub.Provisioner.csproj" />
+    <Project Path="../samples/AspirePubSub/AspirePubSub.Publisher/AspirePubSub.Publisher.csproj" />
+    <Project Path="../samples/AspirePubSub/AspirePubSub.ResolverWorker/AspirePubSub.ResolverWorker.csproj" />
+    <Project Path="../samples/AspirePubSub/AspirePubSub.Subscriber/AspirePubSub.Subscriber.csproj" />
+  </Folder>
+  <Folder Name="/Samples/CrmErpDemo/">
+    <Project Path="../samples/CrmErpDemo/CrmErpDemo.AppHost/CrmErpDemo.AppHost.csproj" />
+    <Project Path="../samples/CrmErpDemo/CrmErpDemo.Contracts/CrmErpDemo.Contracts.csproj" />
+    <Project Path="../samples/CrmErpDemo/CrmErpDemo.Provisioner/CrmErpDemo.Provisioner.csproj" />
+    <Project Path="../samples/CrmErpDemo/PartnerPortal/PartnerPortal.csproj" />
+  </Folder>
+  <Folder Name="/Samples/CrmErpDemo/Crm/">
+    <Project Path="../samples/CrmErpDemo/Crm.Adapter/Crm.Adapter.csproj" />
+    <Project Path="../samples/CrmErpDemo/Crm.Api/Crm.Api.csproj" />
+  </Folder>
+  <Folder Name="/Samples/CrmErpDemo/DataPlatform/">
+    <Project Path="../samples/CrmErpDemo/DataPlatform.Adapter.Functions/DataPlatform.Adapter.Functions.csproj" />
+  </Folder>
+  <Folder Name="/Samples/CrmErpDemo/Erp/">
+    <Project Path="../samples/CrmErpDemo/Erp.Adapter.Functions/Erp.Adapter.Functions.csproj" />
+    <Project Path="../samples/CrmErpDemo/Erp.Api/Erp.Api.csproj" />
+  </Folder>
+  <Folder Name="/Samples/DynamicsBcDemo/">
+    <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Adapter/BusinessCentral.Adapter.csproj" />
+    <Project Path="../samples/DynamicsBcDemo/BusinessCentral.Api/BusinessCentral.Api.csproj" />
+    <Project Path="../samples/DynamicsBcDemo/D365Sales.Adapter/D365Sales.Adapter.csproj" />
+    <Project Path="../samples/DynamicsBcDemo/D365Sales.Api/D365Sales.Api.csproj" />
+    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.AppHost/DynamicsBcDemo.AppHost.csproj" />
+    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.Contracts/DynamicsBcDemo.Contracts.csproj" />
+    <Project Path="../samples/DynamicsBcDemo/DynamicsBcDemo.Provisioner/DynamicsBcDemo.Provisioner.csproj" />
+  </Folder>
+  <Folder Name="/Tests/" />
+  <Folder Name="/Tests/CommandLine/">
+    <Project Path="../tests/NimBus.CommandLine.Tests/NimBus.CommandLine.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/Core/">
+    <Project Path="../tests/NimBus.Core.Tests/NimBus.Core.Tests.csproj" />
+    <Project Path="../tests/NimBus.SDK.Tests/NimBus.SDK.Tests.csproj" />
+    <Project Path="NimBus.Testing/NimBus.Testing.csproj" />
+  </Folder>
+  <Folder Name="/Tests/CrmErpDemo/">
+    <Project Path="../tests/CrmErpDemo.AppHost.Tests/CrmErpDemo.AppHost.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/DynamicsBcDemo/">
+    <Project Path="../tests/DynamicsBcDemo.Tests/DynamicsBcDemo.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/EndToEnd/">
+    <Project Path="../tests/NimBus.EndToEnd.Tests/NimBus.EndToEnd.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/MessageStore/">
+    <Project Path="../tests/NimBus.MessageStore.CosmosDb.Tests/NimBus.MessageStore.CosmosDb.Tests.csproj" />
+    <Project Path="../tests/NimBus.MessageStore.InMemory.Tests/NimBus.MessageStore.InMemory.Tests.csproj" />
+    <Project Path="../tests/NimBus.MessageStore.SqlServer.Tests/NimBus.MessageStore.SqlServer.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/Resolver/">
+    <Project Path="../tests/NimBus.Resolver.Tests/NimBus.Resolver.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/Transport/">
+    <Project Path="../tests/NimBus.ServiceBus.Tests/NimBus.ServiceBus.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Transport/">
+    <Project Path="NimBus.Management.ServiceBus/NimBus.Management.ServiceBus.csproj" />
+    <Project Path="NimBus.ServiceBus/NimBus.ServiceBus.csproj" />
+  </Folder>
+  <Project Path="../samples/AspirePubSub/AspirePubSub.WarehouseSubscriber/AspirePubSub.WarehouseSubscriber.csproj" />
+  <Project Path="../samples/CrmErpDemo/CrmErpDemo.AgentZone/CrmErpDemo.AgentZone.csproj" />
+  <Project Path="../samples/CrmErpDemo/EnrichmentAgent/EnrichmentAgent.csproj" />
+  <Project Path="../tests/EnrichmentAgent.Tests/EnrichmentAgent.Tests.csproj" />
+  <Project Path="../tests/NimBus.Agents.Tests/NimBus.Agents.Tests.csproj" />
+  <Project Path="../tests/NimBus.AspireHosting.Tests/NimBus.AspireHosting.Tests.csproj" />
+  <Project Path="../tests/NimBus.Extensions.Http.Tests/NimBus.Extensions.Http.Tests.csproj" />
+  <Project Path="../tests/NimBus.Extensions.Identity.Tests/NimBus.Extensions.Identity.Tests.csproj" />
+  <Project Path="../tests/NimBus.Extensions.IntegrationIntelligence.Tests/NimBus.Extensions.IntegrationIntelligence.Tests.csproj" />
+  <Project Path="../tests/NimBus.Extensions.Notifications.Tests/NimBus.Extensions.Notifications.Tests.csproj" />
+  <Project Path="../tests/NimBus.Inbox.SqlServer.Tests/NimBus.Inbox.SqlServer.Tests.csproj" />
+  <Project Path="../tests/NimBus.Outbox.SqlServer.Tests/NimBus.Outbox.SqlServer.Tests.csproj" />
+  <Project Path="../tests/NimBus.ServiceBusEmulator.Tests/NimBus.ServiceBusEmulator.Tests.csproj" />
+  <Project Path="../tests/NimBus.WebApp.Tests/NimBus.WebApp.Tests.csproj" />
+  <Project Path="NimBus.Agents/NimBus.Agents.csproj" />
+  <Project Path="NimBus.AspireHosting/NimBus.AspireHosting.csproj" />
+  <Project Path="NimBus.Extensions.Http/NimBus.Extensions.Http.csproj" />
+  <Project Path="NimBus.Extensions.IntegrationIntelligence/NimBus.Extensions.IntegrationIntelligence.csproj" />
+  <Project Path="NimBus.Inbox.SqlServer/NimBus.Inbox.SqlServer.csproj" />
+  <Project Path="NimBus.Manager/NimBus.Manager.csproj" />
+  <Project Path="NimBus.Resolver.Host/NimBus.Resolver.Host.csproj" />
+  <Project Path="NimBus.ServiceBusEmulator.AspireHosting/NimBus.ServiceBusEmulator.AspireHosting.csproj" />
+  <Project Path="NimBus.ServiceBusEmulator/NimBus.ServiceBusEmulator.csproj" />
+</Solution>

@@ -128,10 +128,13 @@ function addRound(totals: RepairTotals, round: api.StalePendingReconcileResult):
 
 export function StalePendingReconcileCard({
   endpoints,
+  initialEndpoint,
 }: {
   endpoints: EndpointOption[];
+  /** Pre-selects the endpoint, e.g. from an Endpoints table row action. */
+  initialEndpoint?: string;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [cutoff, setCutoff] = useState(defaultCutoff);
   const [note, setNote] = useState("");
   const [preview, setPreview] = useState<api.StalePendingPreview | null>(null);
@@ -429,6 +432,7 @@ export function StalePendingReconcileCard({
             }
             confirmText={endpointId}
             confirmLabel={repairLabel}
+            tone="primary"
             isLoading={executing}
           />
         </div>

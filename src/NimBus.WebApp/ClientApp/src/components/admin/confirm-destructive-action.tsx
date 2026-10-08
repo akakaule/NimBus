@@ -25,6 +25,12 @@ interface ConfirmDestructiveActionProps {
   confirmLabel?: string;
   /** Require exact casing when the confirmed value is a case-sensitive resource id. */
   caseSensitive?: boolean;
+  /**
+   * "danger" (default) for deletes and purges: red button and an undo warning.
+   * "primary" for recovery operations that replay messages (Spec 038 §6.4):
+   * still typed-confirmed, but neither red nor described as irreversible.
+   */
+  tone?: "danger" | "primary";
 }
 
 export default function ConfirmDestructiveAction({
@@ -37,6 +43,7 @@ export default function ConfirmDestructiveAction({
   isLoading = false,
   confirmLabel,
   caseSensitive = false,
+  tone = "danger",
 }: ConfirmDestructiveActionProps) {
   const [inputValue, setInputValue] = useState("");
   const isMatch = caseSensitive
@@ -56,22 +63,24 @@ export default function ConfirmDestructiveAction({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} size="md" label={title}>
       <ModalHeader onClose={handleClose}>{title}</ModalHeader>
       <ModalBody>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">{description}</p>
-          <div className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-3 flex items-start gap-2">
-            <span
-              aria-hidden="true"
-              className="text-status-danger font-bold leading-tight"
-            >
-              ⚠
-            </span>
-            <p className="text-sm text-status-danger-ink dark:text-red-200 font-semibold m-0">
-              This action cannot be undone.
-            </p>
-          </div>
+          {tone === "danger" && (
+            <div className="bg-status-danger-50 border border-status-danger/30 dark:bg-red-950/30 dark:border-red-900/60 rounded-nb-md p-3 flex items-start gap-2">
+              <span
+                aria-hidden="true"
+                className="text-status-danger font-bold leading-tight"
+              >
+                ⚠
+              </span>
+              <p className="text-sm text-status-danger-ink dark:text-red-200 font-semibold m-0">
+                This action cannot be undone.
+              </p>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
               Type <span className="font-mono font-bold">{confirmText}</span> to
@@ -97,7 +106,7 @@ export default function ConfirmDestructiveAction({
         </Button>
         <Button
           variant="solid"
-          colorScheme="red"
+          colorScheme={tone === "danger" ? "red" : "primary"}
           onClick={handleConfirm}
           disabled={!isMatch || isLoading}
           isLoading={isLoading}

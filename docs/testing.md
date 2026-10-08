@@ -55,7 +55,7 @@ flowchart TD
 From the repository root:
 
 ```powershell
-dotnet test .\src\NimBus.sln
+dotnet test .\src\NimBus.slnx
 ```
 
 Fast focused runs:

@@ -93,3 +93,49 @@ export const SETTINGS_FEATURES: readonly SettingsFeature[] = [
     tabs: [{ id: "types", label: "Action types", keywords: "audit record action types categories" }],
   },
 ];
+
+/** Blast-radius groups for the Operations list, safest first (Spec 038 §6.3). */
+export const OPERATION_GROUPS = [
+  { id: "recovery", label: "Recovery", caption: "Safe · reversible", tone: "success" },
+  { id: "cleanup", label: "Cleanup", caption: "Changes state · not replayed", tone: "warning" },
+  { id: "movement", label: "Data movement", caption: "Cross-environment", tone: "info" },
+  { id: "danger", label: "Irreversible", caption: "Audit-logged", tone: "danger" },
+] as const;
+
+export type OperationGroupId = (typeof OPERATION_GROUPS)[number]["id"];
+
+export interface OperationInfo {
+  /** URL segment: /Operations/:id. */
+  id: string;
+  group: OperationGroupId;
+  label: string;
+  description: string;
+  /** Whether the form starts from an endpoint, so `?endpoint=` can pre-fill it. */
+  takesEndpoint: boolean;
+}
+
+/** Bulk operations in list order; the first is the page's default. */
+export const OPERATIONS: readonly OperationInfo[] = [
+  { id: "resubmit", group: "recovery", label: "Bulk resubmit failed", takesEndpoint: true,
+    description: "Resubmit an endpoint's failed messages. Idempotent handlers absorb repeats." },
+  { id: "skip", group: "recovery", label: "Skip messages", takesEndpoint: true,
+    description: "Mark matching events as Skipped so their sessions continue." },
+  { id: "session", group: "recovery", label: "Session purge", takesEndpoint: true,
+    description: "Unblock one stuck session by clearing its deferred and blocked messages." },
+  { id: "stale", group: "recovery", label: "Reconcile stale pending", takesEndpoint: true,
+    description: "Repair rows a redelivered copy left Pending after the original completed." },
+  { id: "dlq", group: "cleanup", label: "Delete dead-lettered", takesEndpoint: true,
+    description: "Remove an endpoint's dead-lettered messages without reprocessing them." },
+  { id: "status", group: "cleanup", label: "Delete by status", takesEndpoint: true,
+    description: "Delete an endpoint's stored events in the chosen states." },
+  { id: "to", group: "cleanup", label: "Delete by To field", takesEndpoint: false,
+    description: "Delete messages addressed to one value, across endpoints." },
+  { id: "single", group: "cleanup", label: "Delete single event", takesEndpoint: true,
+    description: "Delete one event by its ID." },
+  { id: "purge", group: "movement", label: "Purge subscription", takesEndpoint: true,
+    description: "Drain an endpoint's Service Bus subscription. The messages are gone, not dead-lettered." },
+  { id: "copy", group: "movement", label: "Copy endpoint data", takesEndpoint: true,
+    description: "Copy an endpoint's stored events to another NimBus instance." },
+  { id: "all", group: "danger", label: "Delete all events", takesEndpoint: true,
+    description: "Permanently delete every stored event for an endpoint. The storage container is removed." },
+];

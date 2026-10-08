@@ -49,8 +49,8 @@ export default function BulkOperations() {
   );
 }
 
-export function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function BulkResubmitCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [preview, setPreview] = useState<api.BulkResubmitPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
@@ -166,6 +166,8 @@ export function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] })
             title="Bulk Resubmit Failed Messages"
             description={`This will resubmit ${preview?.eligibleCount ?? 0} failed messages for endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""}
+            confirmLabel="Resubmit"
+            tone="primary"
             isLoading={executing}
           />
         </div>
@@ -176,10 +178,13 @@ export function BulkResubmitCard({ endpoints }: { endpoints: EndpointOption[] })
 
 export function DeleteDeadLetteredCard({
   endpoints,
+  initialEndpoint,
 }: {
   endpoints: EndpointOption[];
+  /** Pre-selects the endpoint, e.g. from an Endpoints table row action. */
+  initialEndpoint?: string;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [count, setCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<api.BulkOperationResult | null>(null);
@@ -288,6 +293,7 @@ export function DeleteDeadLetteredCard({
             onClose={() => setShowConfirm(false)}
             onConfirm={handleDelete}
             title="Delete Dead-Lettered Messages"
+            confirmLabel="Delete dead-lettered"
             description={`This will permanently delete ${count ?? 0} dead-lettered messages for endpoint "${selected[0] ?? ""}".`}
             confirmText={selected[0] ?? ""}
             isLoading={executing}
@@ -298,10 +304,11 @@ export function DeleteDeadLetteredCard({
   );
 }
 
-export function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) {
-  const [selected, setSelected] = useState<string[]>([]);
+export function DeleteEventCard({ endpoints, initialEndpoint }: { endpoints: EndpointOption[]; initialEndpoint?: string }) {
+  const [selected, setSelected] = useState<string[]>(initialEndpoint ? [initialEndpoint] : []);
   const [eventId, setEventId] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [deleteResult, setDeleteResult] = useState<
     "success" | "not-found" | null
   >(null);
@@ -367,7 +374,7 @@ export function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) 
             </div>
             <Button
               colorScheme="red"
-              onClick={handleDelete}
+              onClick={() => setShowConfirm(true)}
               disabled={selected.length === 0 || !eventId.trim() || deleting}
               isLoading={deleting}
             >
@@ -385,6 +392,22 @@ export function DeleteEventCard({ endpoints }: { endpoints: EndpointOption[] }) 
               Event not found.
             </div>
           )}
+
+          {/* Typed like every other delete (Spec 038 §6.4); it used to delete on one click. */}
+          <ConfirmDestructiveAction
+            isOpen={showConfirm}
+            onClose={() => setShowConfirm(false)}
+            onConfirm={() => {
+              setShowConfirm(false);
+              void handleDelete();
+            }}
+            title="Delete Single Event"
+            description={`This will permanently delete event "${eventId.trim()}" from endpoint "${selected[0] ?? ""}".`}
+            confirmText={eventId.trim()}
+            confirmLabel="Delete event"
+            caseSensitive
+            isLoading={deleting}
+          />
         </div>
       </CardContent>
     </Card>

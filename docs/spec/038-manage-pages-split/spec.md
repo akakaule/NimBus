@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved 2026-10-07 (option B). Slice 1 in PR context-and-oss/NimBus#218. Slice 2 implemented on branch `claude/settings-panel-frame` ([plan](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md)); slices 3–4 not started. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
+| **Status** | Approved 2026-10-07 (option B). Slices 1 and 2 merged (context-and-oss/NimBus#218, #219; [slice 2 plan](../../plan/2026-10-08-spec-038-slice-2-settings-panel.md)). Slice 3 implemented on branch `claude/operations-redesign` ([plan](../../plan/2026-10-08-spec-038-slice-3-operations.md)); slice 4 not started. §13's open decisions take the proposed defaults unless the repo owner says otherwise. |
 | **Date** | 2026-10-07 |
 | **Baseline** | master `0f3b02ef` |
 | **Mockup** | [mockup.html](mockup.html). Open it in a browser. The yellow **Design notes** cite the sections below. The **Mock state** bar switches between the states in §7.3. [alternative-a.html](alternative-a.html) is the rejected alternative in §15. |
@@ -131,7 +131,7 @@ All values come from `getEndpointStatusCountAll`, except the paused count, which
 This replaces `EndpointControlsCard` and is the first thing on the page, because it is what an operator reaches for in an incident.
 
 - **Columns:** Endpoint, Receive (toggle), Send (toggle), Failed, Dead-letter, Pending, and row actions.
-- **Toggles** call the same APIs as today (`postEndpointSubscriptionstatus`, `postEndpointSendstatus`) and keep today's confirmation. Pausing *send* shows the existing quarantine warning: events forwarded in dead-letter at the source. A paused receive shows how long it has been paused, if the metadata records the time. Otherwise it shows "paused".
+- **Toggles** call the same APIs as today (`postEndpointSubscriptionstatus`, `postEndpointSendstatus`) and keep today's confirmation. Pausing *send* shows the existing quarantine warning: events forwarded in dead-letter at the source. A paused receive shows "Paused". It can't say for how long: `EndpointMetadata` records only the flag, not when it changed.
 - **Row actions:** *Resubmit…* (shown when failed or dead-lettered is above zero) and *⋯* for the other operations. Each one navigates to `/Operations/:operation?endpoint=:id`, which pre-fills that endpoint.
 - **Filtering:** a text box plus a **Needs attention** chip. The chip shows only endpoints with a pause, a failure or a dead letter. Endpoints that need attention get a warning-coloured stripe on the left.
 
@@ -148,10 +148,18 @@ The list is grouped by blast radius, keeping today's colours and captions:
 
 "Infrastructure" is renamed **Data movement**, because subscription *management* moved to Topology. Only one operation's form is shown at a time. The detail pane renders today's card components (`BulkResubmitCard`, `SkipMessagesCard`, …) unchanged, apart from accepting an `initialEndpoint` prop. Below 900 px the list collapses into a select above the detail pane.
 
-### 6.4 Safety rules (unchanged)
+### 6.4 Safety rules
 
 - Every operation previews its scope before it runs, as the cards already do.
-- **Every** operation keeps today's typed confirmation (`ConfirmDestructiveAction`). That includes the Recovery group: resubmit, skip and reconcile confirm with the endpoint name, Session purge with its own text, and Delete by To field with the To value. The confirmation states the count and what happens next. Only the button colour follows the group: primary for Recovery, red otherwise.
+- **Every** operation asks for a typed confirmation (`ConfirmDestructiveAction`):
+  - resubmit, skip and reconcile with the endpoint name;
+  - Session purge with its own text;
+  - Delete by To field with the To value;
+  - Delete single event with the event ID.
+- **Correction (slice 3):** Delete single event used to delete on one click. Typed confirmation was added in slice 3, at the repo owner's request (2026-10-08).
+- **Button colour and labels:** each confirmation names its action, e.g. "Resubmit", "Delete dead-lettered", "Purge subscription" (it used to read "Permanently messages").
+  - Resubmit, skip and reconcile replay messages, so they use a primary button with no "cannot be undone" warning.
+  - Every other operation stays red. Session purge is red too, although it sits in Recovery: it deletes the session's messages and stored events.
 - Progress uses the existing `OperationProgress`. The result links to the Audit Log.
 
 ## 7. Settings page

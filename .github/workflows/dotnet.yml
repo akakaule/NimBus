@@ -67,7 +67,7 @@ jobs:
       with:
         node-version: 22
     - name: Restore dependencies
-      run: dotnet restore src/NimBus.sln
+      run: dotnet restore src/NimBus.slnx
     - name: Prepare the Aspire CLI bundle
       # CrmErpDemo.AppHost and DynamicsBcDemo.AppHost set AspireUseCliBundle. On a runner
       # without the bundle, each runs this same setup into ~/.aspire during the parallel
@@ -75,7 +75,7 @@ jobs:
       # here lets both resolve it. Keep the version in step with Aspire.AppHost.Sdk.
       run: dotnet dnx --yes aspire.cli@13.5.4 -- setup --install-path "$HOME/.aspire"
     - name: Build
-      run: dotnet build src/NimBus.sln --no-restore --configuration Release
+      run: dotnet build src/NimBus.slnx --no-restore --configuration Release
     - name: Wait for Cosmos DB emulator
       # The gateway on 8081 answers almost immediately, so it is not a readiness signal;
       # the documented health probe on 8080 is. Probe both schemes so readiness does not
@@ -85,7 +85,7 @@ jobs:
           || curl -sfk https://localhost:8080/ready >/dev/null; do sleep 5; done'
     - name: Test
       run: |
-        dotnet test src/NimBus.sln --no-build --configuration Release --verbosity normal \
+        dotnet test src/NimBus.slnx --no-build --configuration Release --verbosity normal \
           --logger trx --results-directory TestResults \
           --collect "Code Coverage;Format=cobertura"
     - name: Resolver and SDK coverage report

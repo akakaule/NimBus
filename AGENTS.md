@@ -35,8 +35,8 @@ dotnet run --project src/NimBus.AppHost        # local Aspire stack
 - Release promotes **compiler (CS) warnings** to errors; analyzer warnings (CA/S/SA) stay
   non-fatal. **CS8767** (nullability mismatch on an interface implementation) fails Release
   while Debug stays green.
-- Several src projects opt out of `EnforceCodeStyleInBuild`. Tightening them is a backlog
-  item, not something to "fix" in passing.
+- Every project runs the .NET analyzers and `EnforceCodeStyleInBuild`. Don't opt a project
+  out; suppress a specific rule where it doesn't fit (see the test-file pragma below).
 - Use `npm run test:ci` (or `npm test -- --run`) for a terminating frontend test run;
   `npm test` can enter watch mode.
 - Live SQL Server conformance tests require `NIMBUS_SQL_TEST_CONNECTION`. Live Cosmos DB

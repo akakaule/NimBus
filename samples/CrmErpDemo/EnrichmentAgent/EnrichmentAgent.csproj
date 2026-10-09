@@ -7,7 +7,6 @@
     <RootNamespace>EnrichmentAgent</RootNamespace>
     <AssemblyName>EnrichmentAgent</AssemblyName>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>

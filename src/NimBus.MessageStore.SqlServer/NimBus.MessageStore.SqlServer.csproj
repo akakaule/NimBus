@@ -4,8 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <IsPackable>true</IsPackable>
     <Description>SQL Server-backed implementation of the NimBus message store contracts. Single-table-with-EndpointId-discriminator schema. Schema provisioning via DbUp.</Description>
   </PropertyGroup>

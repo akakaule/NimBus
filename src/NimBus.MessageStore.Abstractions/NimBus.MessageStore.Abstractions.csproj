@@ -3,8 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <IsPackable>true</IsPackable>
     <Description>Provider-neutral storage contracts for the NimBus messaging platform. Implemented by NimBus.MessageStore.CosmosDb and NimBus.MessageStore.SqlServer.</Description>
   </PropertyGroup>

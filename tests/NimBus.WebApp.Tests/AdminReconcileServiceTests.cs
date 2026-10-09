@@ -389,6 +389,7 @@ public sealed class AdminReconcileServiceTests
             sbAdmin: null!,
             sbClient: null!,
             managerClient: null!,
+            subscriptionAdmin: null!,
             logger: NullLogger<AdminService>.Instance,
             rawCosmosClient: null);
 }

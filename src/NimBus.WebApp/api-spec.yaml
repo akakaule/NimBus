@@ -2215,7 +2215,7 @@ paths:
           description: Event not found
   '/api/admin/endpoint/{endpointId}/delete-all':
     post:
-      summary: Delete all events for an endpoint (purges the entire container)
+      summary: Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
       operationId: post-admin-delete-all
       tags:
         - Admin

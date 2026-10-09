@@ -105,6 +105,7 @@ public sealed class SqlServerMessageStore : INimBusMessageStore, IHeartbeatHisto
     public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => _messageTracking.GetFailedMessage(eventId, endpointId);
     public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => _messageTracking.GetDeadletteredMessage(eventId, endpointId);
     public Task RemoveStoredMessage(string eventId, string messageId) => _messageTracking.RemoveStoredMessage(eventId, messageId);
+    public Task<int> PurgeStoredMessages(string endpointId) => _messageTracking.PurgeStoredMessages(endpointId);
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchMessages(filter, continuationToken, maxItemCount);
     public Task StoreMessage(MessageEntity message) => _messageTracking.StoreMessage(message);
     public Task StoreMessageAudit(string eventId, MessageAuditEntity auditEntity, string? endpointId = null, string? eventTypeId = null) => _messageTracking.StoreMessageAudit(eventId, auditEntity, endpointId, eventTypeId);

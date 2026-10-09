@@ -247,6 +247,9 @@ internal sealed class InstrumentingMessageTrackingStoreDecorator : IMessageTrack
     public Task RemoveStoredMessage(string eventId, string messageId) =>
         InstrumentAsync(nameof(RemoveStoredMessage), () => _inner.RemoveStoredMessage(eventId, messageId));
 
+    public Task<int> PurgeStoredMessages(string endpointId) =>
+        InstrumentAsync(nameof(PurgeStoredMessages), () => _inner.PurgeStoredMessages(endpointId));
+
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) =>
         InstrumentAsync(nameof(SearchMessages), () => _inner.SearchMessages(filter, continuationToken, maxItemCount));
 

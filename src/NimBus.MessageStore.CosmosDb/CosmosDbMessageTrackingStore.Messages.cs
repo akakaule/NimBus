@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using System.Net;
 
 namespace NimBus.MessageStore;
@@ -40,6 +41,45 @@ internal sealed partial class CosmosDbMessageTrackingStore
         {
             // Already deleted, ignore
         }
+    }
+
+    public async Task<int> PurgeStoredMessages(string endpointId)
+    {
+        var container = await _getMessagesContainer();
+        // The messages container is partitioned by eventId, so this is a cross-partition
+        // query; project only the keys each delete needs, not the message payloads.
+        var query = new QueryDefinition(
+                "SELECT c.id, c.eventId FROM c WHERE LOWER(c.endpointId) = LOWER(@endpointId)")
+            .WithParameter("@endpointId", endpointId);
+        var iterator = container.GetItemQueryIterator<MessageKeyProjection>(query);
+
+        var deleted = 0;
+        var deleteOptions = new ParallelOptions { MaxDegreeOfParallelism = 8 };
+        while (iterator.HasMoreResults)
+        {
+            var page = await iterator.ReadNextAsync();
+            await Parallel.ForEachAsync(page, deleteOptions, async (item, _) =>
+            {
+                try
+                {
+                    await container.DeleteItemAsync<MessageDocument>(item.Id, new PartitionKey(item.EventId));
+                    Interlocked.Increment(ref deleted);
+                }
+                catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
+                {
+                    // Expired by TTL or deleted concurrently — nothing left to remove.
+                }
+            });
+        }
+
+        _logger?.LogInformation("COSMOS PURGE: Deleted {Count} stored messages on endpoint {EndpointId}", deleted, endpointId);
+        return deleted;
+    }
+
+    private sealed class MessageKeyProjection
+    {
+        [JsonProperty("id")] public string Id { get; set; } = string.Empty;
+        [JsonProperty("eventId")] public string EventId { get; set; } = string.Empty;
     }
 
     public async Task<MessageEntity?> GetMessage(string eventId, string messageId)

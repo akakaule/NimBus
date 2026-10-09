@@ -923,6 +923,7 @@ public class ResolverServiceTests
         public Task<MessageEntity?> GetFailedMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId) => throw new NotSupportedException();
         public Task RemoveStoredMessage(string eventId, string messageId) => throw new NotSupportedException();
+        public Task<int> PurgeStoredMessages(string endpointId) => throw new NotSupportedException();
         public Task<IEnumerable<MessageAuditEntity>> GetMessageAudits(string eventId) => throw new NotSupportedException();
         public Task ArchiveFailedEvent(string eventId, string sessionId, string endpointId) => throw new NotSupportedException();
         public Task<EndpointMetricsResult> GetEndpointMetrics(DateTime from) => throw new NotSupportedException();

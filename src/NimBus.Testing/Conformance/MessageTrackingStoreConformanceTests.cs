@@ -1221,6 +1221,30 @@ public abstract class MessageTrackingStoreConformanceTests
     }
 
     [TestMethod]
+    public async Task PurgeStoredMessages_removes_only_the_target_endpoints_history()
+    {
+        var store = CreateStore();
+        var endpointId = Id("ep-purge-history");
+        var otherEndpointId = Id("ep-purge-history-other");
+        var purgedEventA = Id("purge-history-a");
+        var purgedEventB = Id("purge-history-b");
+        var keptEvent = Id("purge-history-kept");
+        var t = DateTime.UtcNow;
+        await store.StoreMessage(new MessageEntity { EventId = purgedEventA, MessageId = Id("ph-m1"), EndpointId = endpointId, EnqueuedTimeUtc = t, MessageContent = new MessageContent() });
+        await store.StoreMessage(new MessageEntity { EventId = purgedEventA, MessageId = Id("ph-m2"), EndpointId = endpointId, EnqueuedTimeUtc = t, MessageContent = new MessageContent() });
+        await store.StoreMessage(new MessageEntity { EventId = purgedEventB, MessageId = Id("ph-m3"), EndpointId = endpointId, EnqueuedTimeUtc = t, MessageContent = new MessageContent() });
+        await store.StoreMessage(new MessageEntity { EventId = keptEvent, MessageId = Id("ph-m4"), EndpointId = otherEndpointId, EnqueuedTimeUtc = t, MessageContent = new MessageContent() });
+
+        var removed = await store.PurgeStoredMessages(endpointId);
+
+        Assert.AreEqual(3, removed);
+        Assert.IsFalse((await store.GetEventHistory(purgedEventA)).Any());
+        Assert.IsFalse((await store.GetEventHistory(purgedEventB)).Any());
+        Assert.AreEqual(1, (await store.GetEventHistory(keptEvent)).Count());
+        Assert.AreEqual(0, await store.PurgeStoredMessages(endpointId), "A second purge has nothing left to remove.");
+    }
+
+    [TestMethod]
     public async Task GetBlockedEventsOnSession_pages_results_and_reports_total()
     {
         var store = CreateStore();

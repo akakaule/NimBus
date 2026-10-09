@@ -29,6 +29,11 @@ public interface IAdminService
     Task<BulkOperationResult> SkipMessagesAsync(string endpointId, List<string> statuses, System.DateTime? before);
     Task<CopyResult> CopyEndpointDataAsync(string endpointId, string targetConnectionString, System.DateTime? from, System.DateTime? to, List<string> statuses, int? batchSize);
     Task<DeferredReprocessResult> ReprocessDeferredAsync(string endpointId, string sessionId);
+    /// <summary>
+    /// Wipes an endpoint: deletes and re-provisions its own and its Deferred Service Bus
+    /// subscriptions (discarding their backlog), purges every stored event, and deletes the
+    /// endpoint's stored message history. Each of those four steps counts once in the result.
+    /// </summary>
     Task<BulkOperationResult> DeleteAllEventsAsync(string endpointId);
     Task<StalePendingPreview> PreviewStalePendingAsync(string endpointId, System.DateTime? enqueuedBefore, int maxRows);
     Task<StalePendingReconcileResult> ReconcileStalePendingAsync(string endpointId, System.DateTime enqueuedBefore, int? maxRepairs, string auditorName, string? note);

@@ -560,7 +560,7 @@ export function DeleteAllEventsCard({ endpoints, initialEndpoint }: { endpoints:
     <Card>
       <CardHeader>
         <CardTitle>Delete All Events</CardTitle>
-        <CardDescription>Delete the entire endpoint container from storage. This removes all events regardless of status.</CardDescription>
+        <CardDescription>Wipe the endpoint: delete and recreate its subscription and its Deferred subscription (discarding every queued and parked message), then delete all stored events regardless of status and the endpoint's message history.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -576,7 +576,7 @@ export function DeleteAllEventsCard({ endpoints, initialEndpoint }: { endpoints:
           {result && <OperationProgress processed={result.processed ?? 0} succeeded={result.succeeded ?? 0} failed={result.failed ?? 0} errors={result.errors} isComplete={true} />}
 
           <ConfirmDestructiveAction isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={handleExecute}
-            title="Delete All Events" confirmLabel="Delete all events" description={`This will permanently delete ALL events for endpoint "${selected[0] ?? ""}". The entire storage container will be removed. This action cannot be undone.`}
+            title="Delete All Events" confirmLabel="Delete all events" description={`This will permanently wipe endpoint "${selected[0] ?? ""}": its subscription and Deferred subscription are deleted and recreated empty, and every stored event and message-history record for it is deleted. This action cannot be undone.`}
             confirmText={selected[0] ?? ""} isLoading={executing} />
         </div>
       </CardContent>

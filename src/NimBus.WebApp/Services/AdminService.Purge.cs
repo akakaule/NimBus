@@ -578,23 +578,63 @@ public partial class AdminService
     public async Task<BulkOperationResult> DeleteAllEventsAsync(string endpointId)
     {
         var errors = new List<string>();
-        bool success = false;
+        var succeeded = 0;
+
+        // Service Bus first: once the backlog is gone nothing still queued can land in
+        // storage again after the purge below. A failed step doesn't stop the rest — the
+        // operator asked for everything gone, and the result names whatever was left.
+        foreach (var subscriptionName in new[] { endpointId, CoreConstants.DeferredSubscriptionName })
+        {
+            try
+            {
+                var recreated = await _subscriptionAdmin.RecreateSubscriptionAsync(endpointId, subscriptionName);
+                if (recreated.Succeeded)
+                {
+                    succeeded++;
+                }
+                else
+                {
+                    errors.Add($"Subscription {endpointId}/{subscriptionName}: {recreated.Message}");
+                    errors.AddRange(recreated.Errors ?? Enumerable.Empty<string>());
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDeleteAllEventsFailed(ex, endpointId);
+                errors.Add($"Subscription {endpointId}/{subscriptionName}: {ex.Message}");
+            }
+        }
 
         try
         {
-            success = await _messageStore.PurgeMessages(endpointId);
+            if (await _messageStore.PurgeMessages(endpointId))
+                succeeded++;
+            else
+                errors.Add("Events: nothing was deleted — the endpoint had no stored events, or the store refused the purge (see logs).");
         }
         catch (Exception ex)
         {
             LogDeleteAllEventsFailed(ex, endpointId);
-            errors.Add(ex.Message);
+            errors.Add($"Events: {ex.Message}");
         }
 
+        try
+        {
+            await _messageStore.PurgeStoredMessages(endpointId);
+            succeeded++;
+        }
+        catch (Exception ex)
+        {
+            LogDeleteAllEventsFailed(ex, endpointId);
+            errors.Add($"Message history: {ex.Message}");
+        }
+
+        const int steps = 4;
         return new BulkOperationResult
         {
-            Processed = 1,
-            Succeeded = success ? 1 : 0,
-            Failed = success ? 0 : 1,
+            Processed = steps,
+            Succeeded = succeeded,
+            Failed = steps - succeeded,
             Errors = errors
         };
     }

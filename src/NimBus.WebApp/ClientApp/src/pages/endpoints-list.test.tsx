@@ -27,10 +27,6 @@ vi.mock("js-cookie", () => ({
   },
 }));
 
-vi.mock("hooks/app-status", () => ({
-  getApplicationStatus: vi.fn().mockResolvedValue({ env: "dev" }),
-}));
-
 // Capture the DataTable props instead of rendering the full TanStack table —
 // the rows array and checkedEndpointIds are all we need to assert what the
 // user would see for a given checkbox state.

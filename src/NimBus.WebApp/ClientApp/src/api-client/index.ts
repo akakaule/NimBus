@@ -4673,7 +4673,7 @@ export class Client extends ApiClientBase {
     }
 
     /**
-     * Delete all events for an endpoint (purges the entire container)
+     * Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
      * @return OK
      */
     postAdminDeleteAll(endpointId: string): Promise<BulkOperationResult> {

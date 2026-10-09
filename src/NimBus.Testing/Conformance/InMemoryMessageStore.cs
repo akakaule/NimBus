@@ -503,6 +503,16 @@ public class InMemoryMessageStore : INimBusMessageStore, IHeartbeatHistoryStore
         return Task.CompletedTask;
     }
 
+    public Task<int> PurgeStoredMessages(string endpointId)
+    {
+        var keys = _messages
+            .Where(kv => string.Equals(kv.Value.EndpointId, endpointId, StringComparison.OrdinalIgnoreCase))
+            .Select(kv => kv.Key)
+            .ToList();
+        var removed = keys.Count(key => _messages.TryRemove(key, out _));
+        return Task.FromResult(removed);
+    }
+
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount)
     {
         IEnumerable<MessageEntity> q = _messages.Values;

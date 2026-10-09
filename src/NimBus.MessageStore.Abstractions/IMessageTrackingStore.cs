@@ -265,6 +265,12 @@ public interface IMessageTrackingStore
     /// <summary>Returns the newest message for the event on the endpoint, or null.</summary>
     Task<MessageEntity?> GetDeadletteredMessage(string eventId, string endpointId);
     Task RemoveStoredMessage(string eventId, string messageId);
+    /// <summary>
+    /// Hard-deletes every per-message history record stored for the endpoint
+    /// (matched on <see cref="MessageEntity.EndpointId"/>) and returns how many were
+    /// removed. Audit records are kept. Used by the WebApp's "Delete all events".
+    /// </summary>
+    Task<int> PurgeStoredMessages(string endpointId);
 
     /// <summary>
     /// Filtered message search. ID-like string filters (endpoint id, event id,

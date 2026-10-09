@@ -7,7 +7,6 @@ import {
 } from "functions/endpoint.functions";
 import DataTable, { ITableRow, ITableHeadCell } from "components/data-table";
 import Page from "components/page";
-import { getApplicationStatus } from "hooks/app-status";
 import EndpointRowActions from "components/endpoint-list/endpoint-row-actions";
 import EndpointStatusIcon from "components/endpoint-list/endpoint-status-icon";
 import Cookies from "js-cookie";
@@ -42,7 +41,6 @@ export default class EndpointsList extends React.Component<
   EndpointState
 > {
   private client!: api.Client;
-  private env: string | undefined;
   private cookieName = "endpointFilters";
 
   constructor(props: EndpointProps) {
@@ -68,15 +66,9 @@ export default class EndpointsList extends React.Component<
 
     this.client = new api.Client(api.CookieAuth());
     // If we didn't rehydrate with endpoint states, call the api to get them.
-    // The endpoint list and the app status are independent — fetch them in
-    // parallel instead of serially on mount.
-    const [endPointIds, appStatus] = await Promise.all([
-      this.props.endpointIds
-        ? Promise.resolve(this.props.endpointIds)
-        : this.client.getEndpointsAll(),
-      getApplicationStatus(),
-    ]);
-    this.env = appStatus.env;
+    const endPointIds = this.props.endpointIds
+      ? this.props.endpointIds
+      : await this.client.getEndpointsAll();
 
     // Drop ids the catalog no longer knows about, otherwise a stale saved
     // filter keeps requesting ghost endpoints (and can hide every row).
@@ -322,7 +314,6 @@ export default class EndpointsList extends React.Component<
                 deferred={deferredEventsCount}
                 pending={pendingEventsCount}
                 storageAvailable={endpointStatus.storageStatus !== "unavailable"}
-                env={this.env}
                 refreshEndpoint={this.refreshEndpoint}
                 startLoading={this.startLoading}
                 stopLoading={this.stopLoading}

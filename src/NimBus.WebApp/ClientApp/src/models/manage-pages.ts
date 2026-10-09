@@ -144,5 +144,5 @@ export const OPERATIONS: readonly OperationInfo[] = [
   { id: "copy", group: "movement", label: "Copy endpoint data", takesEndpoint: true,
     description: "Copy an endpoint's stored events to another NimBus instance." },
   { id: "all", group: "danger", label: "Delete all events", takesEndpoint: true,
-    description: "Permanently delete every stored event for an endpoint. The storage container is removed." },
+    description: "Wipe an endpoint: recreate its subscription and Deferred subscription empty, and delete every stored event and message-history record." },
 ];

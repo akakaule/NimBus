@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Newtonsoft.Json;
 using NimBus.Core.Messages;
@@ -39,12 +40,12 @@ internal sealed partial class SqlServerMessageTrackingStore : IMessageTrackingSt
     private static int DecodeOffset(string? token)
     {
         if (string.IsNullOrEmpty(token)) return 0;
-        try { return int.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token!))); }
+        try { return int.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token!)), CultureInfo.InvariantCulture); }
         catch { return 0; }
     }
 
     private static string EncodeOffset(int offset)
-        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(offset.ToString()));
+        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
 
     private static UnresolvedEvent MapUnresolvedEventRow(dynamic row)
     {

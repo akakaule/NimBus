@@ -604,10 +604,11 @@ public class StrictMessageHandler : MessageHandler
                     return new DiscardedFailure(exception, classifierName);
 
                 default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(disposition),
-                        disposition,
-                        "Failure disposition classifier returned an unsupported value.");
+                    // Keep the handler failure as the inner exception so the
+                    // dead-letter record still explains why the handler failed.
+                    throw new InvalidOperationException(
+                        $"Failure disposition classifier returned an unsupported value '{disposition}'.",
+                        exception);
             }
         }
     }

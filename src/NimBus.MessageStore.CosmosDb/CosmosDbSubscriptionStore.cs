@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -40,10 +41,10 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
         var formattedType = string.Equals(type, "mail", StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(type, "teams", StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(type, "mail;teams", StringComparison.OrdinalIgnoreCase)
-            ? type.ToLower()
-            : throw new Exception($"Invalid type.{type} valid: mail or teams ");
+            ? type.ToLowerInvariant()
+            : throw new ArgumentException($"Invalid type.{type} valid: mail or teams ", nameof(type));
 
-        if (!ValidateEmail(mail)) throw new Exception($"Invalid email: {mail}");
+        if (!ValidateEmail(mail)) throw new ArgumentException($"Invalid email: {mail}", nameof(mail));
 
         var subscriptionContainer = await _getSubscriptionsContainer();
         var subscription = new EndpointSubscription
@@ -201,7 +202,7 @@ internal sealed class CosmosDbSubscriptionStore : ISubscriptionStore
     public async Task<bool> UpdateSubscription(EndpointSubscription subscription)
     {
         subscription.ErrorList = await _getEndpointErrorList(subscription.EndpointId);
-        subscription.NotifiedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm");
+        subscription.NotifiedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
         try
         {
             var subscriberContainer = await _getSubscriptionsContainer();

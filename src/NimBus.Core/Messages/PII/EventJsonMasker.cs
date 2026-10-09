@@ -628,7 +628,7 @@ public class EventJsonMasker : IEventJsonMasker, IEventJsonRedactor
             var sb = new StringBuilder(hash.Length * 2);
             for (int i = 0; i < hash.Length; i++)
             {
-                sb.Append(hash[i].ToString("x2"));
+                sb.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
             }
             return sb.ToString();
         }

@@ -354,6 +354,28 @@ public class StrictMessageHandlerTests
         Assert.AreEqual(0, retryProvider.GetRetryPolicyCalls);
     }
 
+    [TestMethod]
+    public async Task HandleEventRequest_UnsupportedDisposition_DeadLettersWithOriginalExceptionAsInner()
+    {
+        var ctx = CreateContext(messageType: MessageType.EventRequest);
+        var failure = new InvalidOperationException("handler failure");
+        var observer = new RecordingLifecycleObserver();
+        var sut = new StrictMessageHandler(
+            new FakeEventContextHandler { ThrowOnHandle = failure },
+            new FakeResponseService(),
+            NullLogger.Instance,
+            retryPolicyProvider: null,
+            pipeline: null,
+            lifecycleNotifier: new MessageLifecycleNotifier([observer]),
+            failureDispositionClassifier: new FakeFailureDispositionClassifier((FailureDisposition)42));
+
+        await sut.Handle(ctx);
+
+        Assert.AreEqual(1, ctx.DeadLetterCalls);
+        Assert.IsInstanceOfType<InvalidOperationException>(observer.LastFailure);
+        Assert.AreSame(failure, observer.LastFailure.InnerException);
+    }
+
     // ── PendingHandoff outcome ──────────────────────────────────────────
 
     [TestMethod]

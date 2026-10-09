@@ -42,7 +42,7 @@ public static class ServiceExtensions
             // `__` key only exists when set literally (e.g. local.settings.json).
             var fqns = config.GetValue<string>("AzureWebJobsServiceBus:fullyQualifiedNamespace")
                 ?? config.GetValue<string>("AzureWebJobsServiceBus__fullyQualifiedNamespace");
-            if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey="))
+            if (!string.IsNullOrEmpty(fqns) && !fqns.Contains("SharedAccessKey=", StringComparison.OrdinalIgnoreCase))
                 return new ServiceBusClient(fqns, new DefaultAzureCredential());
 
             var connectionString = fqns

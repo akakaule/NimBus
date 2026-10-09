@@ -99,6 +99,10 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
     /// <summary>Every upserted document, in order.</summary>
     public List<object?> UpsertedItems { get; } = new();
 
+    /// <summary>When true, an upsert returns an OK response instead of null, for callers
+    /// that read the response's status code.</summary>
+    public bool UpsertReturnsResponse { get; set; }
+
     public List<ItemRequestOptions?> CapturedRequestOptions { get; } = new();
 
     /// <summary>Every patch, in order.</summary>
@@ -203,6 +207,11 @@ internal sealed class RecordingCosmosContainerAdapter : ICosmosContainerAdapter
 
         UpsertedItems.Add(item);
         CapturedRequestOptions.Add(requestOptions);
+        if (UpsertReturnsResponse)
+        {
+            return Task.FromResult<ItemResponse<T>>(new FakeItemResponse<T>(item, "\"etag\""));
+        }
+
         // The client under test is constructed without a logger, so the null-conditional
         // trace log never dereferences the (null) response.
         return Task.FromResult<ItemResponse<T>>(null!);

@@ -905,7 +905,7 @@ public class ResolverService : IMessageHandler
             return status;
         }
 
-        throw new ArgumentException($"Unexpected {nameof(MessageType)}", nameof(message.MessageType));
+        throw new ArgumentException($"Unexpected {nameof(MessageType)} {message.MessageType}", nameof(message));
     }
 
 }

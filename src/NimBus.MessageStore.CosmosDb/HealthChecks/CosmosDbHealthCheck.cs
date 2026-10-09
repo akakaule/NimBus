@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -10,6 +11,7 @@ namespace NimBus.MessageStore.HealthChecks;
 /// singleton registration (see <see cref="HealthCheckExtensions.AddCosmosDbHealthCheck"/>)
 /// — a per-probe instance would defeat the cache.
 /// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "The SemaphoreSlim never allocates a wait handle (AvailableWaitHandle is unused), and the check is a process-lifetime singleton.")]
 public class CosmosDbHealthCheck : IHealthCheck
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);

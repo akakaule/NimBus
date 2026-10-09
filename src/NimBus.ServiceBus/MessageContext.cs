@@ -4,6 +4,7 @@ using NimBus.Core.Messages;
 using NimBus.Core.Messages.Exceptions;
 using Newtonsoft.Json;
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -169,7 +170,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
 
     public int? RetryCount
     {
-        get { try { return Int32.Parse(GetUserProperty(UserPropertyName.RetryCount)); } catch (InvalidMessageException) { return null; } catch (FormatException) { return null; } }
+        get { try { return Int32.Parse(GetUserProperty(UserPropertyName.RetryCount), CultureInfo.InvariantCulture); } catch (InvalidMessageException) { return null; } catch (FormatException) { return null; } }
     }
 
     public string OriginalSessionId
@@ -184,7 +185,7 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
             try
             {
                 var value = GetUserProperty(UserPropertyName.DeferralSequence);
-                return value != null ? Int32.Parse(value) : null;
+                return value != null ? Int32.Parse(value, CultureInfo.InvariantCulture) : null;
             }
             catch (InvalidMessageException) { return null; }
             catch (FormatException) { return null; }

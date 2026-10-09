@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NimBus.Core.CircuitBreaker;
 using NimBus.ServiceBus;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -494,6 +495,7 @@ public class NimBusReceiverHostedService : BackgroundService
         return false;
     }
 
+    [SuppressMessage("Usage", "CA2208:Instantiate argument exceptions correctly", Justification = "ParamName names the invalid option property, which callers and tests rely on.")]
     private static void ValidateOptions(NimBusReceiverOptions options)
     {
         if (options.MaxConcurrentSessions <= 0)

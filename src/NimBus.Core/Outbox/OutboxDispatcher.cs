@@ -114,7 +114,7 @@ public class OutboxDispatcher
                 try
                 {
                     checkpointTask = _outbox.MarkAsDispatchedAsync(dispatched, CancellationToken.None);
-                    await checkpointTask.WaitAsync(_compensatingCheckpointTimeout);
+                    await checkpointTask.WaitAsync(_compensatingCheckpointTimeout, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {

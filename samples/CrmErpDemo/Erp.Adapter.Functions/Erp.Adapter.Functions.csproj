@@ -7,8 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Erp.Adapter.Functions</RootNamespace>
     <AssemblyName>Erp.Adapter.Functions</AssemblyName>
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 

@@ -7,7 +7,6 @@
     <AssemblyName>Crm.Adapter</AssemblyName>
     <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>

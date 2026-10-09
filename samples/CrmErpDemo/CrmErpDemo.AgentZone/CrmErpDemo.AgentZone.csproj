@@ -7,7 +7,6 @@
     <AssemblyName>CrmErpDemo.AgentZone</AssemblyName>
     <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>

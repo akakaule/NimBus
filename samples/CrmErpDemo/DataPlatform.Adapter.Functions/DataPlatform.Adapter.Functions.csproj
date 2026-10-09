@@ -7,8 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>DataPlatform.Adapter.Functions</RootNamespace>
     <AssemblyName>DataPlatform.Adapter.Functions</AssemblyName>
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 

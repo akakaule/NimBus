@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { manageResults } from "./manage-results";
 
-const titles = (query: string) => manageResults(query).map((r) => `${r.kind}: ${r.title} → ${r.route}`);
+const titles = (query: string, storageProvider?: string) =>
+  manageResults(query, storageProvider).map((r) => `${r.kind}: ${r.title} → ${r.route}`);
 
 // Spec 038 §10: site Owners can jump to the Manage pages, operations and settings.
 describe("manageResults", () => {
@@ -31,6 +32,13 @@ describe("manageResults", () => {
   it("finds the pages and the Topology views", () => {
     expect(titles("drift")).toContain("page: Topology › Catalog drift → /Topology/drift");
     expect(titles("operations")).toContain("page: Operations → /Operations");
+  });
+
+  it("offers the Storage view only on Cosmos DB, like the Topology page", () => {
+    const storage = "page: Topology › Storage → /Topology/storage";
+    expect(titles("storage", "Cosmos DB")).toContain(storage);
+    expect(titles("storage", "SQL Server")).not.toContain(storage);
+    expect(titles("storage")).not.toContain(storage);
   });
 
   it("lists pages, then operations, then settings", () => {

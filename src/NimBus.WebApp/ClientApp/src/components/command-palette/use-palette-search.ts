@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // land in the eager entry chunk — the runtime module is loaded on demand
 // inside the effects below via dynamic import.
 import type * as api from "api-client";
+import { useStorageProvider } from "hooks/app-status";
 import { manageResults } from "./manage-results";
 
 // 8-4-4-4-12 hex layout OR 32 contiguous hex chars (Service Bus session keys).
@@ -56,6 +57,8 @@ export function usePaletteSearch(
   enabled: boolean,
   canManage = false,
 ): PaletteSearchState {
+  // Cached app status, already loaded by the footer; decides the Storage view.
+  const storageProvider = useStorageProvider();
   const [endpoints, setEndpoints] = useState<string[] | undefined>(undefined);
   const [eventTypes, setEventTypes] = useState<api.EventType[] | undefined>(
     undefined,
@@ -161,7 +164,7 @@ export function usePaletteSearch(
     const lower = trimmed.toLowerCase();
     // Results are pushed in section order: the palette highlights by index into
     // this array but draws it grouped, so the two orders must agree.
-    const results: PaletteResult[] = canManage ? manageResults(trimmed) : [];
+    const results: PaletteResult[] = canManage ? manageResults(trimmed, storageProvider) : [];
 
     // Local matches — only when there's actual input (empty input shows hint).
     if (trimmed) {
@@ -242,6 +245,7 @@ export function usePaletteSearch(
   }, [
     query,
     canManage,
+    storageProvider,
     endpoints,
     eventTypes,
     remoteEvents,

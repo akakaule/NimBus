@@ -8,6 +8,13 @@ export const TOPOLOGY_VIEWS = [
   { id: "storage", label: "Storage" },
 ] as const;
 
+/**
+ * The Topology views this deployment has. Storage manages Cosmos DB containers,
+ * so it exists only on that provider; while the provider is unknown it is left out.
+ */
+export const availableTopologyViews = (storageProvider: string | undefined) =>
+  TOPOLOGY_VIEWS.filter((v) => v.id !== "storage" || storageProvider === "Cosmos DB");
+
 export interface SettingsTab {
   /** URL value: /Settings/:feature?tab=:id. */
   id: string;

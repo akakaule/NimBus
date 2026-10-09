@@ -5,9 +5,11 @@ import { CommandPalette } from "./command-palette";
 
 const mocks = vi.hoisted(() => ({
   access: { current: null as Record<string, unknown> | null },
+  storageProvider: { current: undefined as string | undefined },
 }));
 
 vi.mock("hooks/use-access", () => ({ useAccess: () => ({ access: mocks.access.current }) }));
+vi.mock("hooks/app-status", () => ({ useStorageProvider: () => mocks.storageProvider.current }));
 vi.mock("api-client", async () => {
   const actual: typeof import("api-client") = await vi.importActual("api-client");
   class FakeClient {
@@ -38,6 +40,7 @@ const options = () => within(screen.getByRole("listbox")).queryAllByRole("option
 
 beforeEach(() => {
   mocks.access.current = null;
+  mocks.storageProvider.current = undefined;
   // jsdom has no layout, so no scrollIntoView; the palette scrolls the highlighted row.
   Element.prototype.scrollIntoView = vi.fn();
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
@@ -85,6 +88,23 @@ describe("CommandPalette for a site Owner", () => {
 
     expect(await screen.findByText("MCP access › Limits")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();
+  });
+
+  it("offers the Storage view only on Cosmos DB", async () => {
+    mocks.storageProvider.current = "SQL Server";
+    renderPalette();
+    type("topology");
+
+    expect(await screen.findByText("Topology › Catalog drift")).toBeTruthy();
+    expect(screen.queryByText("Topology › Storage")).toBeNull();
+  });
+
+  it("offers the Storage view on Cosmos DB", async () => {
+    mocks.storageProvider.current = "Cosmos DB";
+    renderPalette();
+    type("topology");
+
+    expect(await screen.findByText("Topology › Storage")).toBeTruthy();
   });
 
   it("moves through the results in the order it shows them", async () => {

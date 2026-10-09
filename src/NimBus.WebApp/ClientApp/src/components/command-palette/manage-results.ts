@@ -1,8 +1,8 @@
 import {
+  availableTopologyViews,
   OPERATION_GROUPS,
   OPERATIONS,
   SETTINGS_FEATURES,
-  TOPOLOGY_VIEWS,
 } from "models/manage-pages";
 import type { PaletteResult } from "./use-palette-search";
 
@@ -18,19 +18,20 @@ interface Candidate extends PaletteResult {
   match: string;
 }
 
-const PAGE_LIST: PaletteResult[] = [
-  { key: "page::operations", kind: "page", title: "Operations", subtitle: "Endpoints and bulk operations", route: "/Operations" },
-  { key: "page::topology", kind: "page", title: "Topology", subtitle: "Service Bus and storage", route: "/Topology" },
-  { key: "page::settings", kind: "page", title: "Settings", subtitle: "Opt-in capabilities", route: "/Settings" },
-  ...TOPOLOGY_VIEWS.map((v) => ({
-    key: `page::topology::${v.id}`,
-    kind: "page" as const,
-    title: `Topology › ${v.label}`,
-    subtitle: "Topology",
-    route: `/Topology/${v.id}`,
-  })),
-];
-const PAGES: Candidate[] = PAGE_LIST.map((p) => ({ ...p, match: `${p.title} ${p.subtitle}`.toLowerCase() }));
+// The Topology views depend on the storage provider, the same as on the Topology page.
+const pages = (storageProvider: string | undefined): Candidate[] =>
+  [
+    { key: "page::operations", kind: "page" as const, title: "Operations", subtitle: "Endpoints and bulk operations", route: "/Operations" },
+    { key: "page::topology", kind: "page" as const, title: "Topology", subtitle: "Service Bus and storage", route: "/Topology" },
+    { key: "page::settings", kind: "page" as const, title: "Settings", subtitle: "Opt-in capabilities", route: "/Settings" },
+    ...availableTopologyViews(storageProvider).map((v) => ({
+      key: `page::topology::${v.id}`,
+      kind: "page" as const,
+      title: `Topology › ${v.label}`,
+      subtitle: "Topology",
+      route: `/Topology/${v.id}`,
+    })),
+  ].map((p) => ({ ...p, match: `${p.title} ${p.subtitle}`.toLowerCase() }));
 
 const OPERATION_ENTRIES: Candidate[] = OPERATIONS.map((o) => ({
   key: `operation::${o.id}`,
@@ -70,8 +71,8 @@ const pick = (candidates: Candidate[], query: string): PaletteResult[] =>
     .map(({ match: _match, ...result }) => result);
 
 /** Matching Manage entries, pages first, then operations, then settings. */
-export function manageResults(query: string): PaletteResult[] {
+export function manageResults(query: string, storageProvider?: string): PaletteResult[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return [...pick(PAGES, q), ...pick(OPERATION_ENTRIES, q), ...pick(SETTING_ENTRIES, q)];
+  return [...pick(pages(storageProvider), q), ...pick(OPERATION_ENTRIES, q), ...pick(SETTING_ENTRIES, q)];
 }

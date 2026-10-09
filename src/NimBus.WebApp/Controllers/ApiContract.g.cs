@@ -1542,7 +1542,7 @@ namespace NimBus.WebApp.ManagementApi
         System.Threading.Tasks.Task<Microsoft.AspNetCore.Mvc.IActionResult> DeleteAdminEventAsync(string endpointId, string eventId);
 
         /// <summary>
-        /// Delete all events for an endpoint (purges the entire container)
+        /// Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
         /// </summary>
 
 
@@ -2027,7 +2027,7 @@ namespace NimBus.WebApp.ManagementApi
         }
 
         /// <summary>
-        /// Delete all events for an endpoint (purges the entire container)
+        /// Wipe an endpoint (recreates its own and Deferred subscriptions, purges stored events and message history)
         /// </summary>
         /// <returns>OK</returns>
         [Microsoft.AspNetCore.Mvc.HttpPost, Microsoft.AspNetCore.Mvc.Route("api/admin/endpoint/{endpointId}/delete-all")]

@@ -38,6 +38,7 @@ public partial class AdminService : IAdminService
     private readonly ServiceBusAdministrationClient _sbAdmin;
     private readonly ServiceBusClient _sbClient;
     private readonly IManagerClient _managerClient;
+    private readonly ISubscriptionAdminService _subscriptionAdmin;
     private readonly ILogger<AdminService> _logger;
 
     private const int PageSize = 20;
@@ -52,6 +53,7 @@ public partial class AdminService : IAdminService
         ServiceBusAdministrationClient sbAdmin,
         ServiceBusClient sbClient,
         IManagerClient managerClient,
+        ISubscriptionAdminService subscriptionAdmin,
         ILogger<AdminService> logger,
         CosmosClient? rawCosmosClient = null)
     {
@@ -62,6 +64,7 @@ public partial class AdminService : IAdminService
         _sbAdmin = sbAdmin;
         _sbClient = sbClient;
         _managerClient = managerClient;
+        _subscriptionAdmin = subscriptionAdmin;
         _logger = logger;
     }
 

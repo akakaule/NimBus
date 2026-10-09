@@ -227,10 +227,24 @@ public class AdminImplementation : IAdminApiController
 
     public async Task<ActionResult<BulkOperationResult>> PostAdminDeleteAllAsync(string endpointId)
     {
-        if (!await IsSiteOwnerAsync()) return new ForbidResult();
+        if (!await IsSiteOwnerAsync())
+        {
+            await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+                accessDenied: true, endpointId: endpointId);
+            return new ForbidResult();
+        }
         if (!EndpointVerificationService.EndpointExists(_platform, endpointId)) return new NotFoundObjectResult("Endpoint not found");
 
         var result = await _adminService.DeleteAllEventsAsync(endpointId);
+        await _auditLogService.LogAuditAsync(MessageAuditType.PurgeMessages, _context,
+            endpointId: endpointId,
+            data: JsonConvert.SerializeObject(new
+            {
+                operation = "delete-all",
+                result.Processed,
+                result.Succeeded,
+                result.Failed,
+            }));
         return new OkObjectResult(result);
     }
 

@@ -315,6 +315,7 @@ public class CosmosDbClient : NimBus.MessageStore.Abstractions.INimBusMessageSto
     public Task<MessageSearchResult> SearchMessages(MessageFilter filter, string? continuationToken, int maxItemCount) => _messageTracking.SearchMessages(filter, continuationToken, maxItemCount);
     public Task StoreMessage(MessageEntity message) => _messageTracking.StoreMessage(message);
     public Task RemoveStoredMessage(string eventId, string messageId) => _messageTracking.RemoveStoredMessage(eventId, messageId);
+    public Task<int> PurgeStoredMessages(string endpointId) => _messageTracking.PurgeStoredMessages(endpointId);
     public Task<MessageEntity?> GetMessage(string eventId, string messageId) => _messageTracking.GetMessage(eventId, messageId);
     public Task<IEnumerable<MessageEntity>> GetEventHistory(string eventId) => _messageTracking.GetEventHistory(eventId);
     public Task<MessageEntity?> GetLatestEventRequestMessage(string eventId) => _messageTracking.GetLatestEventRequestMessage(eventId);

@@ -142,6 +142,21 @@ public class ResolverCompositionTests
     [TestMethod]
     [DataRow(Registration.ServiceCollection)]
     [DataRow(Registration.NimBusBuilder)]
+    public async Task ServiceBusClient_FromALowercaseConnectionStringInTheNamespaceSetting_UsesIt(Registration registration)
+    {
+        // Connection-string keys are case-insensitive, so a lowercase one must not be mistaken
+        // for a bare namespace.
+        await using var provider = Build(registration, new Dictionary<string, string?>
+        {
+            ["AzureWebJobsServiceBus:fullyQualifiedNamespace"] = ConnectionString.ToLowerInvariant(),
+        });
+
+        Assert.AreEqual(Namespace, provider.GetRequiredService<ServiceBusClient>().FullyQualifiedNamespace);
+    }
+
+    [TestMethod]
+    [DataRow(Registration.ServiceCollection)]
+    [DataRow(Registration.NimBusBuilder)]
     public async Task ServiceBusClient_WithoutConfiguration_FailsWithTheSettingName(Registration registration)
     {
         await using var provider = Build(registration, new Dictionary<string, string?>());

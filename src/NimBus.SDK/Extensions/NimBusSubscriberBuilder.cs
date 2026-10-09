@@ -7,6 +7,7 @@ using NimBus.Core.Messages;
 using NimBus.SDK.EventHandlers;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 
@@ -327,6 +328,7 @@ public class NimBusSubscriberBuilder
     /// </summary>
     /// <param name="configure">Configures retention, cleanup frequency, and the explicitly selected keyed provider.</param>
     /// <returns>This builder for chaining.</returns>
+    [SuppressMessage("Usage", "CA2208:Instantiate argument exceptions correctly", Justification = "ParamName names the invalid InboxOptions property, which callers and tests rely on.")]
     public NimBusSubscriberBuilder UseInbox(Action<InboxOptions> configure)
     {
         if (InboxConfiguration is not null)

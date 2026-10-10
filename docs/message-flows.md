@@ -302,9 +302,14 @@ Resolver treats Cosmos DB 429s more deliberately. Scheduled replacements and
 broker redeliveries consume one shared ten-attempt budget
 (`ThrottleRetryCount + DeliveryCount`). On the final attempt Resolver explicitly
 dead-letters with the stable reason `CosmosDbThrottled`; generic storage
-transients retain the existing redelivery behavior. Owners can inspect and
-atomically replay these regular Resolver dead letters from Topology → Subscriptions;
-see [the subscription incident-response guide](service-bus-subscription-admin.md#replaying-resolver-dead-letters).
+transients retain the existing redelivery behavior. If the replacement can't be
+scheduled at all (no sender, or the broker refuses it), the original is left for
+the session to redeliver instead. Heartbeats never get a scheduled replacement:
+a throttled heartbeat is retried in place, because a copy arriving minutes later
+could overwrite a newer heartbeat. Owners can inspect and atomically replay
+these regular Resolver dead letters from Topology → Subscriptions; a replay keeps
+the `MessageId` and drops `ThrottleRetryCount`, so it starts a fresh budget. See
+[the subscription incident-response guide](service-bus-subscription-admin.md#replaying-resolver-dead-letters).
 
 ```mermaid
 sequenceDiagram

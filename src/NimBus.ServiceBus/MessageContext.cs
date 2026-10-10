@@ -655,6 +655,15 @@ public class MessageContext : IMessageContext, IMessageDeliveryContext
             throw new Core.Messages.Exceptions.TransientException(
                 "Scheduled redelivery not available in current configuration. Message will retry after lock expiration.");
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The broker refused the copy (busy, entity disabled, quota, missing Send claim). The
+            // original is still unsettled, so surface it as transient: the caller then lets the
+            // broker redeliver the original instead of the failure escaping its handler and
+            // ending as MaxDeliveryCountExceeded. Cancellation still propagates for shutdown.
+            throw new Core.Messages.Exceptions.TransientException(
+                "Could not schedule the redelivery copy. Message will retry after lock expiration.", ex);
+        }
 
         // Complete original message only after successful scheduling. Completion
         // failures must retain their own semantics rather than masquerading as a

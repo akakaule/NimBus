@@ -849,6 +849,32 @@ public class MessageContextTests
     }
 
     [TestMethod]
+    public async Task ScheduleRedelivery_WhenTheBrokerRejectsTheCopy_LeavesOriginalUnsettled()
+    {
+        // Not only a missing sender: a throttled, disabled or unauthorized schedule call must also
+        // surface as transient, or the Resolver's fallback never runs and the message ends up
+        // dead-lettered as MaxDeliveryCountExceeded instead of retried.
+        Exception[] brokerFailures =
+        [
+            new ServiceBusException("busy", ServiceBusFailureReason.ServiceBusy),
+            new ServiceBusException("disabled", ServiceBusFailureReason.MessagingEntityDisabled),
+            new UnauthorizedAccessException("missing Send claim"),
+        ];
+
+        foreach (var brokerFailure in brokerFailures)
+        {
+            var session = new FakeServiceBusSession { ScheduleException = brokerFailure };
+            var context = CreateScheduledRedeliveryContext(session);
+
+            var exception = await Assert.ThrowsExactlyAsync<TransientException>(
+                () => context.ScheduleRedelivery(TimeSpan.FromSeconds(30), throttleRetryCount: 2));
+
+            Assert.AreSame(brokerFailure, exception.InnerException, brokerFailure.Message);
+            Assert.AreEqual(0, session.CompleteCalls, brokerFailure.Message);
+        }
+    }
+
+    [TestMethod]
     public async Task ScheduleRedelivery_WhenCompletionFails_PropagatesCompletionFailureAfterScheduling()
     {
         var completionFailure = new InvalidOperationException("completion failed");
